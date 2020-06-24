@@ -63,6 +63,8 @@
   <exec_depend>suitesparse</exec_depend>
   <exec_depend>libopenni2-dev</exec_depend>
 
+  <depend>rosbag</depend>
+
   <export>
     <build_type>cmake</build_type>
   </export>

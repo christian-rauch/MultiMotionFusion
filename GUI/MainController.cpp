@@ -21,6 +21,9 @@
 #include "Tools/KlgLogReader.h"
 #include "Tools/LiveLogReader.h"
 #include "Tools/ImageLogReader.h"
+#ifdef ROSBAG
+#include "Tools/RosBagReader.hpp"
+#endif
 
 #include <boost/algorithm/string.hpp>
 #include <GUI/Tools/PangolinReader.h>
@@ -33,6 +36,7 @@
     -run    Run dataset immediately (otherwise start paused).
     -q      Quit when finished a log.
     -cal    Loads a camera calibration file specified as fx fy cx cy.
+    -scale  Scale images and intrinsics
     -p      Loads ground truth poses to use instead of estimated pose.
     -d      Cutoff distance for depth processing (default 5m).
     -i      Relative ICP/RGB tracking weight (default 10).
@@ -67,7 +71,7 @@
     -offset        Offset between creating models
     -keep          Keep all models (even bad, deactivated)
 
-    -l             Processes a log-file (*.klg/pangolin).
+    -l             Processes a log-file (*.klg/pangolin/rosbag).
     -dir           Processes a log-directory (Default: Color####.png + Depth####.exr [+ Mask####.png])
     -depthdir      Separate depth directory (==dir if not provided)
     -maskdir       Separate mask directory (==dir if not provided)
@@ -104,9 +108,12 @@ MainController::MainController(int argc, char* argv[])
   Parse::get().arg(argc, argv, "-cal", calibrationFile);
   if (calibrationFile.size()) calibrationFile = baseDir + calibrationFile;
 
+  float s = 1;
+  Parse::get().arg(argc, argv, "-scale", s);
+
   // Asus is default camera (might change later)
-  Resolution::setResolution(640, 480);
-  Intrinsics::setIntrinics(528, 528, 320, 240);
+  Resolution::setResolution(s*640, s*480);
+  Intrinsics::setIntrinics(s*528, s*528, s*320, s*240);
 
   if (calibrationFile.length()) loadCalibration(calibrationFile);
 
@@ -116,6 +123,10 @@ MainController::MainController(int argc, char* argv[])
   if (logFile.length()) {
     if (std::filesystem::exists(logFile) && boost::algorithm::ends_with(logFile, ".klg")) {
       logReader = std::make_unique<KlgLogReader>(logFile, Parse::get().arg(argc, argv, "-f", empty) > -1);
+#ifdef ROSBAG
+    } else if (std::filesystem::exists(logFile) && boost::algorithm::ends_with(logFile, ".bag")) {
+      logReader = std::make_unique<RosBagReader>(logFile, Parse::get().arg(argc, argv, "-f", empty) > -1, s);
+#endif
     } else {
       logReader = std::make_unique<PangolinReader>(logFile, Parse::get().arg(argc, argv, "-f", empty) > -1);
     }

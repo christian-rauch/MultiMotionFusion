@@ -6,6 +6,8 @@ set(CMAKE_CXX_STANDARD 17)
 
 message(STATUS "Evaluating GUI/CMAKE")
 
+option(ROSBAG "rosbag reader" ON)
+
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}")
 find_package(ZLIB REQUIRED)
 find_package(CUDA REQUIRED)
@@ -13,6 +15,11 @@ find_package(OpenNI2 REQUIRED)
 find_package(OpenCV REQUIRED )
 find_package(Boost REQUIRED)
 find_package(JPEG REQUIRED)
+
+if(ROSBAG)
+    find_package(rosbag REQUIRED)
+    find_package(cv_bridge REQUIRED)
+endif()
 
 include_directories(${ZLIB_INCLUDE_DIR})
 include_directories(${CUDA_INCLUDE_DIRS})
@@ -44,25 +51,16 @@ add_definitions(-Dlinux=1)
 
 add_executable(CoFusion
                ${srcs}
-               ${tools_srcs}
 )
 
 target_link_libraries(CoFusion
                       cofusion
-                      ${ZLIB_LIBRARY}
-                      ${Pangolin_LIBRARIES}
-                      ${CUDA_LIBRARIES}
-                      ${OPENNI2_LIBRARY}
-                      ${OpenCV_LIBRARIES}
-                      boost_filesystem
-                      boost_system
-                      pthread
+                      CoFusionTools
                       gSLICr_lib # this should be included by target 'cofusion'
                       ${JPEG_LIBRARIES}
 )
 
-add_library(CoFusionTools SHARED
-            ${tools_srcs})
+add_library(CoFusionTools ${tools_srcs})
 
 target_link_libraries(CoFusionTools
                       ${ZLIB_LIBRARY}
@@ -84,6 +82,16 @@ target_include_directories(CoFusionTools PUBLIC
                             ${OpenCV_INCLUDE_DIRS}
                             ${BOOST_INCLUDE_DIRS}
 )
+
+if(ROSBAG)
+    target_include_directories(CoFusionTools PUBLIC
+        ${rosbag_INCLUDE_DIRS}
+        ${cv_bridge_INCLUDE_DIRS})
+    target_link_libraries(CoFusionTools
+        ${rosbag_LIBRARIES}
+        ${cv_bridge_LIBRARIES})
+    add_definitions(-DROSBAG)
+endif()
 
 include(GNUInstallDirs)
 
