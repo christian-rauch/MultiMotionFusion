@@ -109,7 +109,7 @@ Model::GPUSetup::GPUSetup()
 #ifdef COFUSION_NUM_SURFELS
 const int Model::TEXTURE_DIMENSION = 32 * (int)(sqrt(COFUSION_NUM_SURFELS) / 32);
 #else
-const int Model::TEXTURE_DIMENSION = 3072;
+const int Model::TEXTURE_DIMENSION = 1024;
 #endif
 
 const int Model::MAX_VERTICES = Model::TEXTURE_DIMENSION * Model::TEXTURE_DIMENSION;
