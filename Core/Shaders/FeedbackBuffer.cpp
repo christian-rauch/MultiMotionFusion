@@ -56,12 +56,17 @@ FeedbackBuffer::FeedbackBuffer(std::shared_ptr<Shader> program)
 
   program->Bind();
 
+#ifdef NVIDIA_VARYINGS
   int loc[3] = {
       glGetVaryingLocationNV(program->programId(), "vPosition0"), glGetVaryingLocationNV(program->programId(), "vColor0"),
       glGetVaryingLocationNV(program->programId(), "vNormRad0"),
   };
 
   glTransformFeedbackVaryingsNV(program->programId(), 3, loc, GL_INTERLEAVED_ATTRIBS);
+#else
+  const GLchar* varyings[] = {"vPosition0", "vColor0", "vNormRad0"};
+  glTransformFeedbackVaryings(program->programId(), 3, varyings, GL_INTERLEAVED_ATTRIBS);
+#endif
 
   program->Unbind();
 

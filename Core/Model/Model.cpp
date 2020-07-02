@@ -36,27 +36,40 @@ Model::GPUSetup::GPUSetup()
   frameBuffer.AttachDepth(renderBuffer);
 
   updateProgram->Bind();
+#ifdef NVIDIA_VARYINGS
   int locUpdate[3] = {
       glGetVaryingLocationNV(updateProgram->programId(), "vPosition0"), glGetVaryingLocationNV(updateProgram->programId(), "vColor0"),
       glGetVaryingLocationNV(updateProgram->programId(), "vNormRad0"),
   };
   glTransformFeedbackVaryingsNV(updateProgram->programId(), 3, locUpdate, GL_INTERLEAVED_ATTRIBS);
+#else
+  const GLchar* varyings[] = {"vPosition0", "vColor0", "vNormRad0"};
+  glTransformFeedbackVaryings(updateProgram->programId(), 3, varyings, GL_INTERLEAVED_ATTRIBS);
+#endif
   updateProgram->Unbind();
 
   dataProgram->Bind();
+#ifdef NVIDIA_VARYINGS
   int dataUpdate[3] = {
       glGetVaryingLocationNV(dataProgram->programId(), "vPosition0"), glGetVaryingLocationNV(dataProgram->programId(), "vColor0"),
       glGetVaryingLocationNV(dataProgram->programId(), "vNormRad0"),
   };
   glTransformFeedbackVaryingsNV(dataProgram->programId(), 3, dataUpdate, GL_INTERLEAVED_ATTRIBS);
+#else
+  glTransformFeedbackVaryings(dataProgram->programId(), 3, varyings, GL_INTERLEAVED_ATTRIBS);
+#endif
   dataProgram->Unbind();
 
   unstableProgram->Bind();
+#ifdef NVIDIA_VARYINGS
   int unstableUpdate[3] = {
       glGetVaryingLocationNV(unstableProgram->programId(), "vPosition0"), glGetVaryingLocationNV(unstableProgram->programId(), "vColor0"),
       glGetVaryingLocationNV(unstableProgram->programId(), "vNormRad0"),
   };
   glTransformFeedbackVaryingsNV(unstableProgram->programId(), 3, unstableUpdate, GL_INTERLEAVED_ATTRIBS);
+#else
+  glTransformFeedbackVaryings(unstableProgram->programId(), 3, varyings, GL_INTERLEAVED_ATTRIBS);
+#endif
   unstableProgram->Unbind();
 
   // eraseProgram->Bind();
@@ -69,12 +82,16 @@ Model::GPUSetup::GPUSetup()
   // eraseProgram->Unbind();
 
   initProgram->Bind();
+#ifdef NVIDIA_VARYINGS
   int locInit[3] = {
       glGetVaryingLocationNV(initProgram->programId(), "vPosition0"), glGetVaryingLocationNV(initProgram->programId(), "vColor0"),
       glGetVaryingLocationNV(initProgram->programId(), "vNormRad0"),
   };
 
   glTransformFeedbackVaryingsNV(initProgram->programId(), 3, locInit, GL_INTERLEAVED_ATTRIBS);
+#else
+  glTransformFeedbackVaryings(initProgram->programId(), 3, varyings, GL_INTERLEAVED_ATTRIBS);
+#endif
   initProgram->Unbind();
 
   depth_tmp.resize(RGBDOdometry::NUM_PYRS);

@@ -93,6 +93,9 @@ if(CMAKE_BUILD_TYPE MATCHES Debug)
     set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}  "-g")
 endif(CMAKE_BUILD_TYPE MATCHES Debug)
 
+# disable to use standard 'glTransformFeedbackVaryings' in palce of 'glTransformFeedbackVaryingsNV'
+add_definitions(-DNVIDIA_VARYINGS)
+
 CUDA_COMPILE(cuda_objs ${cuda})
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -msse -msse2 -msse3 -DSHADER_DIR=${cofusion_SHADER_DIR}")

@@ -36,11 +36,16 @@ Deformation::Deformation()
 
   sampleProgram->Bind();
 
+#ifdef NVIDIA_VARYINGS
   int loc[1] = {
       glGetVaryingLocationNV(sampleProgram->programId(), "vData"),
   };
 
   glTransformFeedbackVaryingsNV(sampleProgram->programId(), 1, loc, GL_INTERLEAVED_ATTRIBS);
+#else
+  const GLchar* varyings[] = {"vData"};
+  glTransformFeedbackVaryings(sampleProgram->programId(), 1, varyings, GL_INTERLEAVED_ATTRIBS);
+#endif
 
   sampleProgram->Unbind();
 
