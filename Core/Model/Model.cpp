@@ -383,12 +383,15 @@ void Model::initICP(bool doFillIn, bool frameToFrameRGB, float depthCutoff, GPUT
 }
 
 void Model::performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight, bool pyramid, bool fastOdom, bool so3,
-                            float maxDepthProcessed, GPUTexture* rgb, int64_t logTimestamp, bool doFillIn) {
+                            float maxDepthProcessed, GPUTexture* rgb, int64_t logTimestamp, bool doFillIn,
+                            const Eigen::MatrixX2f &kp_coordinates, const Eigen::MatrixXf &kp_descriptors) {
   assert(fillIn || !doFillIn);
   lastPose = pose;
 
   // TODO Allow fillIn again
   initICP(doFillIn, frameToFrameRGB, maxDepthProcessed, rgb);  // TODO: Don't copy RGB
+
+  getFrameOdometry().setKeypoints(kp_coordinates, kp_descriptors);
 
   TICK("odom - Model: " + std::to_string(id));
 

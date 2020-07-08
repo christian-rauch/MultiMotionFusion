@@ -72,6 +72,7 @@
   <depend>image_transport</depend>
   <depend>cv_bridge</depend>
   <depend>image_geometry</depend>
+  <depend>super_point_inference</depend>
 
   <export>
     <build_type>cmake</build_type>

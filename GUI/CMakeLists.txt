@@ -18,6 +18,10 @@ find_package(OpenCV REQUIRED )
 find_package(Boost REQUIRED)
 find_package(JPEG REQUIRED)
 
+# TODO: Why do we have to do this here again?
+find_package(super_point_inference REQUIRED)
+find_package(feature_matches_interface REQUIRED)
+
 if(ROSBAG)
     find_package(rosbag REQUIRED)
     find_package(tf2 REQUIRED)
@@ -73,6 +77,7 @@ target_link_libraries(CoFusion
                       CoFusionTools
                       gSLICr_lib # this should be included by target 'cofusion'
                       ${JPEG_LIBRARIES}
+                      super_point_inference
 )
 
 add_library(CoFusionTools SHARED ${tools_srcs})

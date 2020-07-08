@@ -40,6 +40,9 @@
 #include <iomanip>
 #include <memory>
 
+// TODO: load implementation dynamically
+#include <super_point_inference.hpp>
+
 class CoFusion {
  public:
   CoFusion(const int timeDelta = 200, const int countThresh = 35000, const float errThresh = 5e-05, const float covThresh = 1e-05,
@@ -47,7 +50,7 @@ class CoFusion {
            const float initConfidenceGlobal = 4, const float initConfidenceObject = 2, const float depthCut = 3, const float icpThresh = 10,
            const bool fastOdom = false, const float fernThresh = 0.3095, const bool so3 = true, const bool frameToFrameRGB = false,
            const unsigned modelSpawnOffset = 20, const Model::MatchingType matchingType = Model::MatchingType::Drost,
-           const std::string& exportDirectory = "", const bool exportSegmentationResults = false);
+           const std::string& exportDirectory = "", const bool exportSegmentationResults = false, const std::string keypoint_predictor_path = {});
 
   virtual ~CoFusion();
 
@@ -322,6 +325,8 @@ class CoFusion {
   CallbackBuffer<std::shared_ptr<Model>> inactiveModelListeners;
 
   RGBDOdometry modelToModel;
+
+  const SuperPoint sp;
 
   // TODO move to model?
   Ferns ferns;

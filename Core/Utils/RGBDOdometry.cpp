@@ -477,3 +477,8 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 }
 
 Eigen::MatrixXd RGBDOdometry::getCovariance() { return lastA.cast<double>().lu().inverse(); }
+
+void RGBDOdometry::setKeypoints(const Eigen::MatrixX2f &kp_coordinates, const Eigen::MatrixXf &kp_descriptors) {
+    this->kp_coordinates.upload(kp_coordinates.data(), kp_coordinates.cols() * sizeof(float), kp_coordinates.rows(), kp_coordinates.cols());
+    this->kp_descriptors.upload(kp_descriptors.data(), kp_descriptors.cols() * sizeof(float), kp_descriptors.rows(), kp_descriptors.cols());
+}

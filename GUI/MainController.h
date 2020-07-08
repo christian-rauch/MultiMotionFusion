@@ -69,5 +69,7 @@ class MainController {
   bool streaming;
   bool resetButton;
 
+  std::string keypoint_model_path;
+
   GPUResize* resizeStream;
 };

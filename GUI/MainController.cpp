@@ -305,6 +305,8 @@ MainController::MainController(int argc, char* argv[])
   if (Parse::get().arg(argc, argv, "-thNew", tmpFloat) > -1) gui->thresholdNew->Ref()->Set(tmpFloat);
   if (Parse::get().arg(argc, argv, "-k", tmpFloat) > -1) gui->unaryErrorK->Ref()->Set(tmpFloat);
 
+  Parse::get().arg(argc, argv, "-model", keypoint_model_path);
+
   gui->flipColors->Ref()->Set(logReader->flipColors);
   gui->rgbOnly->Ref()->Set(false);
   gui->enableMultiModel->Ref()->Set(Parse::get().arg(argc, argv, "-static", empty) <= -1);

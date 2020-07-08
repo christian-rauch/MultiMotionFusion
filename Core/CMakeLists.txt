@@ -15,6 +15,10 @@ find_package(OpenCV REQUIRED)
 find_package(OpenMP)
 find_package(Eigen3 REQUIRED NO_MODULE)
 
+find_package(super_point_inference REQUIRED)
+# define 'super_point_inference' depedency 'feature_matches_interface' again
+find_package(feature_matches_interface REQUIRED)
+
 if(PCL_FOUND)
     # See: https://github.com/PointCloudLibrary/pcl/issues/776
     get_directory_property(dir_defs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} COMPILE_DEFINITIONS)
@@ -135,6 +139,7 @@ target_link_libraries(${PROJECT_NAME}
     ${CUDA_LIBRARIES}
     ${SUITESPARSE_LIBRARIES}
     ${OpenCV_LIBRARIES}
+    super_point_inference
 )
 
 

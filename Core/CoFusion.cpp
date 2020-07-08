@@ -22,12 +22,14 @@ CoFusion::CoFusion(const int timeDelta, const int countThresh, const float errTh
                    const bool iclnuim, const bool reloc, const float photoThresh, const float initConfidenceGlobal,
                    const float initConfidenceObject, const float depthCut, const float icpThresh, const bool fastOdom,
                    const float fernThresh, const bool so3, const bool frameToFrameRGB, const unsigned modelSpawnOffset,
-                   const Model::MatchingType matchingType, const std::string& exportDirectory, const bool exportSegmentationResults)
+                   const Model::MatchingType matchingType, const std::string& exportDirectory, const bool exportSegmentationResults,
+                   const std::string keypoint_predictor_path)
     : modelMatchingType(matchingType),
       newModelListeners(0),
       inactiveModelListeners(0),
       modelToModel(Resolution::getInstance().width(), Resolution::getInstance().height(), Intrinsics::getInstance().cx(),
                    Intrinsics::getInstance().cy(), Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy()),
+      sp(keypoint_predictor_path),
       ferns(500, depthCut * 1000, photoThresh),
       tick(1),
       timeDelta(timeDelta),
@@ -183,6 +185,20 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
   // Upload RGB to graphics card
   textures[GPUTexture::RGB]->texture->Upload(frame.rgb.data, GL_RGB, GL_UNSIGNED_BYTE);
 
+  TICK("Keypoints");
+  // get normalised keypoints and feature maps
+  Eigen::MatrixX2d coordinates;
+  Eigen::MatrixXd descriptors;
+  std::tie(std::ignore, coordinates, descriptors) = sp.getFeatures(frame.rgb);
+//  cv::Mat img;
+//  cv::cvtColor(frame.rgb, img, cv::COLOR_RGB2GRAY);
+//  for(int i=0; i<coordinates.rows(); i++) {
+//      cv::circle(img, cv::Point(coordinates(i,0)*img.cols, coordinates(i,1)*img.rows), 5, cv::Scalar(255));
+//  }
+//  cv::imshow("img", img);
+//  cv::waitKey(1);
+  TOCK("Keypoints");
+
   TICK("Preprocess");
 
   textures[GPUTexture::DEPTH_METRIC]->texture->Upload((float*)frame.depth.data, GL_LUMINANCE, GL_FLOAT);
@@ -218,7 +234,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       TICK("odom");
       for (auto model : models) {
         model->performTracking(frameToFrameRGB, rgbOnly, icpWeight, pyramid, fastOdom, so3, maxDepthProcessed, textures[GPUTexture::RGB],
-                               frame.timestamp, requiresFillIn(model));
+                               frame.timestamp, requiresFillIn(model), coordinates.cast<float>(), descriptors.cast<float>());
       }
       TOCK("odom");
 
