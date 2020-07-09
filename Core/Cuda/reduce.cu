@@ -944,6 +944,232 @@ void computeRgbResidual(const float & minScale,
     sigmaSum = out_host.y;
 }
 
+struct KPResidual
+{
+    float minScale;
+
+    PtrStepSz<short> dIdx;
+    PtrStepSz<short> dIdy;
+
+    PtrStepSz<float> lastDepth;
+    PtrStepSz<float> nextDepth;
+
+    PtrStepSz<float> lastKeypoints;
+    PtrStepSz<float> nextKeypoints;
+
+    PtrStepSz<unsigned char> lastMask;
+    PtrStepSz<unsigned char> nextMask;
+
+    mutable PtrStepSz<DataTerm> corresImg;
+
+    float maxDepthDelta;
+
+    float3 kt;
+    mat33 krkinv;
+
+    int cols;
+    int rows;
+    int N;
+
+#ifdef MASK_RGB_RESIDUAL
+    unsigned char maskID;
+#endif
+
+    int pitch;
+//    int imgPitch;
+
+    int2 * out;
+    cudaSurfaceObject_t outErrorSurface;
+
+    __device__ __forceinline__ int2
+    getProducts(int k) const
+    {
+        int i = k / cols;
+        int j0 = k - (i * cols);
+
+        int2 value = {0, 0};
+
+        DataTerm corres;
+
+        corres.valid = false;
+
+        if(i >= 0 && i < rows && j0 >= 0 && j0 < cols)
+        {
+            if(j0 < cols - 5 && i < rows - 1)
+            {
+                bool valid = true;
+
+//                for(int u = max(i - 2, 0); u < min(i + 2, rows); u++)
+//                {
+//                    for(int v = max(j0 - 2, 0); v < min(j0 + 2, cols); v++)
+//                    {
+
+//                        valid = valid && (nextImage.ptr(u)[v] > 0)
+//#ifdef MASK_RGB_RESIDUAL
+//                                && (nextMask.ptr(u)[v] == maskID)
+//#endif
+//                                ;
+//                    }
+//                }
+
+                if(valid)
+                {
+                    short * ptr_input_x = (short*) ((unsigned char*) dIdx.data + i * pitch);
+                    short * ptr_input_y = (short*) ((unsigned char*) dIdy.data + i * pitch);
+
+                    short valx = ptr_input_x[j0];
+                    short valy = ptr_input_y[j0];
+                    float mTwo = (valx * valx) + (valy * valy);
+
+                    if(mTwo >= minScale)
+                    {
+                        int y = i;
+                        int x = j0;
+
+                        float d1 = nextDepth.ptr(y)[x];
+
+                        if(!isnan(d1))
+                        {
+                            float transformed_d1 = (float)(d1 * (krkinv.data[2].x * x + krkinv.data[2].y * y + krkinv.data[2].z) + kt.z);
+                            int u0 = __float2int_rn((d1 * (krkinv.data[0].x * x + krkinv.data[0].y * y + krkinv.data[0].z) + kt.x) / transformed_d1);
+                            int v0 = __float2int_rn((d1 * (krkinv.data[1].x * x + krkinv.data[1].y * y + krkinv.data[1].z) + kt.y) / transformed_d1);
+
+                            if(u0 >= 0 && v0 >= 0 && u0 < lastDepth.cols && v0 < lastDepth.rows)
+                            {
+                                float d0 = lastDepth.ptr(v0)[u0];
+
+//                                if(d0 > 0 && std::abs(transformed_d1 - d0) <= maxDepthDelta && lastImage.ptr(v0)[u0] != 0)
+//                                {
+//                                    corres.zero.x = u0;
+//                                    corres.zero.y = v0;
+//                                    corres.one.x = x;
+//                                    corres.one.y = y;
+////                                    corres.diff = static_cast<float>(nextImage.ptr(y)[x]) - static_cast<float>(lastImage.ptr(v0)[u0]);
+//                                    corres.valid = true;
+//                                    value.x = 1;
+//                                    value.y = corres.diff * corres.diff;
+////                                    if(outErrorSurface) surf2Dwrite(0.00001f * value.y, outErrorSurface, x*sizeof(float), y);
+//                                    if(outErrorSurface) surf2Dwrite(0.001f * value.y, outErrorSurface, x*sizeof(float), y);
+//                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if(!corres.valid && outErrorSurface) surf2Dwrite(0.0f, outErrorSurface, j0*sizeof(float), i);
+        corresImg.data[k] = corres;
+
+        return value;
+    }
+
+    __device__ __forceinline__ void
+    operator () () const
+    {
+        int2 sum = {0, 0};
+
+        for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < N; i += blockDim.x * gridDim.x)
+        {
+            int2 val = getProducts(i);
+            sum.x += val.x;
+            sum.y += val.y;
+        }
+
+        sum = blockReduceSum(sum);
+
+        if(threadIdx.x == 0)
+        {
+            out[blockIdx.x] = sum;
+        }
+    }
+};
+
+__global__ void residualKernel (const KPResidual kp)
+{
+    kp();
+}
+
+void computeKPResidual(const float & minScale,
+                        const DeviceArray2D<short> & dIdx,
+                        const DeviceArray2D<short> & dIdy,
+                        const DeviceArray2D<float> & lastDepth,
+                        const DeviceArray2D<float> & nextDepth,
+                        const DeviceArray2D<float> & lastKeypoints,
+                        const DeviceArray2D<float> & nextKeypoints,
+                        const DeviceArray2D<unsigned char> & lastMask,
+                        const DeviceArray2D<unsigned char> & nextMask,
+                        DeviceArray2D<DataTerm> & corresImg,
+                        DeviceArray<int2> & sumResidual,
+                        const float maxDepthDelta,
+                        const float3 & kt,
+                        const mat33 & krkinv,
+                        int & sigmaSum,
+                        int & count,
+                        int threads,
+                        int blocks,
+                        const cudaSurfaceObject_t& rgbErrorSurface,
+                        unsigned char maskID)
+{
+    int cols = nextDepth.cols ();
+    int rows = nextDepth.rows ();
+
+    KPResidual rgb;
+
+    rgb.minScale = minScale;
+
+    rgb.dIdx = dIdx;
+    rgb.dIdy = dIdy;
+
+    rgb.lastDepth = lastDepth;
+    rgb.nextDepth = nextDepth;
+
+    rgb.lastKeypoints = lastKeypoints;
+    rgb.nextKeypoints = nextKeypoints;
+
+    rgb.lastMask = lastMask;
+    rgb.nextMask = nextMask;
+
+    rgb.corresImg = corresImg;
+
+    rgb.maxDepthDelta = maxDepthDelta;
+
+    rgb.kt = kt;
+    rgb.krkinv = krkinv;
+
+    rgb.cols = cols;
+    rgb.rows = rows;
+    rgb.pitch = dIdx.step();
+//    rgb.imgPitch = nextImage.step();
+
+    rgb.N = cols * rows;
+    rgb.out = sumResidual;
+    rgb.outErrorSurface = rgbErrorSurface;
+
+#ifdef MASK_RGB_RESIDUAL
+    rgb.maskID = maskID;
+#endif
+
+    residualKernel<<<blocks, threads>>>(rgb);
+
+    int2 out_host = {0, 0};
+    int2 * out;
+
+    cudaMalloc(&out, sizeof(int2));
+    cudaMemcpy(out, &out_host, sizeof(int2), cudaMemcpyHostToDevice);
+
+    reduceSum<<<1, MAX_THREADS>>>(sumResidual, out, blocks);
+
+    cudaSafeCall(cudaGetLastError());
+    cudaSafeCall(cudaDeviceSynchronize());
+
+    cudaMemcpy(&out_host, out, sizeof(int2), cudaMemcpyDeviceToHost);
+    cudaFree(out);
+
+    count = out_host.x;
+    sigmaSum = out_host.y;
+}
+
 struct SO3Reduction
 {
     PtrStepSz<unsigned char> lastImage;

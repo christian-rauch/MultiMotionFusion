@@ -137,9 +137,6 @@ class RGBDOdometry {
 
   unsigned char maskID;
 
-  DeviceArray2D<float> kp_coordinates;
-  DeviceArray2D<float> kp_descriptors;
-
   // N x (2+D) matrix that stores N keypoints row-wise
   // with 2 nromalised [0,1] coordinates (x,y) and a D feature vector
   DeviceArray2D<float> nextKeypoints;

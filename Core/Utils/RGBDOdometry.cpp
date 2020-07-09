@@ -360,7 +360,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       int sigma = 0;
       int rgbSize = 0;
 
-      if (rgb) {
+      if (rgb && nextKeypoints.rows()==0) {
         TICK("computeRgbResidual");
         computeRgbResidual(pow(minimumGradientMagnitudes[i], 2.0) / pow(sobelScale, 2.0), nextdIdx[i], nextdIdy[i], lastDepth[i],
                            nextDepth[i], lastImage[i], nextImage[i], lastMask[i], nextMask[i], corresImg[i], sumResidualRGB,
@@ -368,6 +368,17 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
                            GPUConfig::getInstance().rgbResBlocks,
                            (i == 0 && j == iterations[i]-1) ? rgbErrorSurface : 0, maskID);
         TOCK("computeRgbResidual");
+      }
+      else if (nextKeypoints.rows()>0) {
+        TICK("computeKPResidual");
+        computeKPResidual(pow(minimumGradientMagnitudes[i], 2.0) / pow(sobelScale, 2.0), nextdIdx[i], nextdIdy[i],
+                          lastDepth[i], nextDepth[i],
+                          lastKeypoints, nextKeypoints,
+                          lastMask[i], nextMask[i], corresImg[i], sumResidualRGB,
+                           maxDepthDeltaRGB, kt, krkInv, sigma, rgbSize, GPUConfig::getInstance().rgbResThreads,
+                           GPUConfig::getInstance().rgbResBlocks,
+                           (i == 0 && j == iterations[i]-1) ? rgbErrorSurface : 0, maskID);
+        TOCK("computeKPResidual");
       }
 
       float tmpError = sqrt(sigma) / rgbSize;
@@ -479,6 +490,9 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 Eigen::MatrixXd RGBDOdometry::getCovariance() { return lastA.cast<double>().lu().inverse(); }
 
 void RGBDOdometry::setKeypoints(const Eigen::MatrixX2f &kp_coordinates, const Eigen::MatrixXf &kp_descriptors) {
-    this->kp_coordinates.upload(kp_coordinates.data(), kp_coordinates.cols() * sizeof(float), kp_coordinates.rows(), kp_coordinates.cols());
-    this->kp_descriptors.upload(kp_descriptors.data(), kp_descriptors.cols() * sizeof(float), kp_descriptors.rows(), kp_descriptors.cols());
+    Eigen::MatrixXf kp(kp_coordinates.rows(), kp_coordinates.cols()+kp_descriptors.cols());
+    kp.leftCols(kp_coordinates.cols()) = kp_coordinates;
+    kp.rightCols(kp_descriptors.cols()) = kp_descriptors;
+
+    this->nextKeypoints.upload(kp.data(), kp.cols() * sizeof(float), kp.rows(), kp.cols());
 }
