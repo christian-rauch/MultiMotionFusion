@@ -798,6 +798,12 @@ void MainController::drawScene(DRAW_COLOR_TYPE backgroundColor, DRAW_COLOR_TYPE 
     for (auto model = itBegin; model != itEnd; model++) {
       gui->displayImg("ICP" + std::to_string(++i), (*model)->getICPErrorTexture());
       // gui->displayImg("P" + std::to_string(i), (*model)->getUnaryConfTexture());
+      if (gui->showModProj->Get()) {
+        gui->displayImg("P" + std::to_string(i), (*model)->getRGBProjection());
+      }
+      else {
+        gui->displayImg("P" + std::to_string(i), (*model)->getRGBErrorTexture());
+      }
       if (i >= 4) break;
     }
     for (; i < 4;) {

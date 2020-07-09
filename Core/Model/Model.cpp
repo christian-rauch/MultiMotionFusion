@@ -134,8 +134,7 @@ Model::Model(unsigned char id, float confidenceThresh, bool enableFillIn, bool e
                    ? std::make_unique<GPUTexture>(Resolution::getInstance().width(), Resolution::getInstance().height(), GL_R32F, GL_RED,
                                                   GL_FLOAT, true, true, cudaGraphicsRegisterFlagsSurfaceLoadStore, "ICP")
                    : nullptr),
-      rgbError(
-          /*enableErrorRecording ? std::make_unique<GPUTexture>(Resolution::getInstance().width(), Resolution::getInstance().height(), GL_R32F, GL_RED, GL_FLOAT, true, true, cudaGraphicsRegisterFlagsSurfaceLoadStore, "RGB") :*/ nullptr),  // FIXME
+      rgbError(enableErrorRecording ? std::make_unique<GPUTexture>(Resolution::getInstance().width(), Resolution::getInstance().height(), GL_R32F, GL_RED, GL_FLOAT, true, true, cudaGraphicsRegisterFlagsSurfaceLoadStore, "RGB") : nullptr),  // FIXME
       gpu(Model::GPUSetup::getInstance()),
       frameToModel(Resolution::getInstance().width(), Resolution::getInstance().height(), Intrinsics::getInstance().cx(),
                    Intrinsics::getInstance().cy(), Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), id),

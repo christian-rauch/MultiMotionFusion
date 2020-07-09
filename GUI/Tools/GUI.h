@@ -230,6 +230,7 @@ class GUI {
     drawPoints = new pangolin::Var<bool>("ui.Draw points", false, true);
     drawColors = new pangolin::Var<bool>("ui.Draw colors", showcaseMode, true);
     drawLabelColors = new pangolin::Var<bool>("ui.Draw label-color", false, true);
+    showModProj = new pangolin::Var<bool>("ui.Show projections", true, true);
     drawPoseLog = new pangolin::Var<bool>("ui.Draw pose log", false, true);
     drawFxaa = new pangolin::Var<bool>("ui.Draw FXAA", showcaseMode, true);
     drawWindow = new pangolin::Var<bool>("ui.Draw time window", false, true);
@@ -610,7 +611,7 @@ class GUI {
   pangolin::Var<bool> *pause, *step, *skip, *savePoses, *saveView, *saveCloud,
       //* saveDepth,
       *reset, *flipColors, *rgbOnly, *enableMultiModel, *enableSmartDelete, *pyramid, *so3, *frameToFrameRGB, *fastOdom, *followPose,
-      *drawRawCloud, *drawFilteredCloud, *drawNormals, *autoSettings, *drawDefGraph, *drawColors, *drawPoseLog, *drawLabelColors, *drawFxaa,
+      *drawRawCloud, *drawFilteredCloud, *drawNormals, *autoSettings, *drawDefGraph, *drawColors, *drawPoseLog, *drawLabelColors, *showModProj, *drawFxaa,
       *drawGlobalModel, *drawObjectModels, *drawUnstable, *drawPoints, *drawTimes, *drawFerns, *drawDeforms, *drawWindow;
   pangolin::Var<int>* gpuMem;
   pangolin::Var<std::string> *totalPoints, *totalNodes, *totalFerns, *totalDefs, *totalFernDefs, *trackInliers, *trackRes, *logProgress;
