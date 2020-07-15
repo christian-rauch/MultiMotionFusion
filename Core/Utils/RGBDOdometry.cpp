@@ -371,6 +371,8 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       }
       else if (nextKeypoints.rows()>0) {
         TICK("computeKPResidual");
+        std::cout << "next kp: " << nextKeypoints.rows() << std::endl;
+        std::cout << "last kp: " << lastKeypoints.rows() << std::endl;
         computeKPResidual(pow(minimumGradientMagnitudes[i], 2.0) / pow(sobelScale, 2.0), nextdIdx[i], nextdIdy[i],
                           lastDepth[i], nextDepth[i],
                           lastKeypoints, nextKeypoints,
@@ -489,10 +491,17 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 
 Eigen::MatrixXd RGBDOdometry::getCovariance() { return lastA.cast<double>().lu().inverse(); }
 
-void RGBDOdometry::setKeypoints(const Eigen::MatrixX2f &kp_coordinates, const Eigen::MatrixXf &kp_descriptors) {
+void setKeypoints(const Eigen::MatrixX2f &kp_coordinates, const Eigen::MatrixXf &kp_descriptors, DeviceArray2D<float> &keypoints) {
     Eigen::MatrixXf kp(kp_coordinates.rows(), kp_coordinates.cols()+kp_descriptors.cols());
     kp.leftCols(kp_coordinates.cols()) = kp_coordinates;
     kp.rightCols(kp_descriptors.cols()) = kp_descriptors;
+    keypoints.upload(kp.data(), kp.cols() * sizeof(float), kp.rows(), kp.cols());
+}
 
-    this->nextKeypoints.upload(kp.data(), kp.cols() * sizeof(float), kp.rows(), kp.cols());
+void RGBDOdometry::setNextKeypoints(const Eigen::MatrixX2f &kp_coordinates, const Eigen::MatrixXf &kp_descriptors) {
+    setKeypoints(kp_coordinates, kp_descriptors, nextKeypoints);
+}
+
+void RGBDOdometry::setLastKeypoints(const Eigen::MatrixX2f &kp_coordinates, const Eigen::MatrixXf &kp_descriptors) {
+    setKeypoints(kp_coordinates, kp_descriptors, lastKeypoints);
 }

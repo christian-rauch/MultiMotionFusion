@@ -1038,19 +1038,19 @@ struct KPResidual
                             {
                                 float d0 = lastDepth.ptr(v0)[u0];
 
-//                                if(d0 > 0 && std::abs(transformed_d1 - d0) <= maxDepthDelta && lastImage.ptr(v0)[u0] != 0)
-//                                {
-//                                    corres.zero.x = u0;
-//                                    corres.zero.y = v0;
-//                                    corres.one.x = x;
-//                                    corres.one.y = y;
-////                                    corres.diff = static_cast<float>(nextImage.ptr(y)[x]) - static_cast<float>(lastImage.ptr(v0)[u0]);
-//                                    corres.valid = true;
-//                                    value.x = 1;
+                                if(d0 > 0 && std::abs(transformed_d1 - d0) <= maxDepthDelta /*&& lastImage.ptr(v0)[u0] != 0*/)
+                                {
+                                    corres.zero.x = u0;
+                                    corres.zero.y = v0;
+                                    corres.one.x = x;
+                                    corres.one.y = y;
+//                                    corres.diff = static_cast<float>(nextImage.ptr(y)[x]) - static_cast<float>(lastImage.ptr(v0)[u0]);
+                                    corres.valid = true;
+                                    value.x = 1;
 //                                    value.y = corres.diff * corres.diff;
-////                                    if(outErrorSurface) surf2Dwrite(0.00001f * value.y, outErrorSurface, x*sizeof(float), y);
-//                                    if(outErrorSurface) surf2Dwrite(0.001f * value.y, outErrorSurface, x*sizeof(float), y);
-//                                }
+//                                    if(outErrorSurface) surf2Dwrite(0.00001f * value.y, outErrorSurface, x*sizeof(float), y);
+                                    if(outErrorSurface) surf2Dwrite(0.001f * value.y, outErrorSurface, x*sizeof(float), y);
+                                }
                             }
                         }
                     }

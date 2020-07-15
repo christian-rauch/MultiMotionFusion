@@ -59,7 +59,8 @@ class RGBDOdometry {
 
   Eigen::MatrixXd getCovariance();
 
-  void setKeypoints(const Eigen::MatrixX2f &kp_coordinates, const Eigen::MatrixXf &kp_descriptors);
+  void setNextKeypoints(const Eigen::MatrixX2f &kp_coordinates, const Eigen::MatrixXf &kp_descriptors);
+  void setLastKeypoints(const Eigen::MatrixX2f &kp_coordinates, const Eigen::MatrixXf &kp_descriptors);
 
   float lastICPError;
   float lastICPCount;
