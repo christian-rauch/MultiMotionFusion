@@ -230,7 +230,7 @@ class GUI {
     drawPoints = new pangolin::Var<bool>("ui.Draw points", false, true);
     drawColors = new pangolin::Var<bool>("ui.Draw colors", showcaseMode, true);
     drawLabelColors = new pangolin::Var<bool>("ui.Draw label-color", false, true);
-    showModProj = new pangolin::Var<bool>("ui.Show projections", true, true);
+    showModProj = new pangolin::Var<bool>("ui.Show projections", false, true);
     drawPoseLog = new pangolin::Var<bool>("ui.Draw pose log", false, true);
     drawFxaa = new pangolin::Var<bool>("ui.Draw FXAA", showcaseMode, true);
     drawWindow = new pangolin::Var<bool>("ui.Draw time window", false, true);

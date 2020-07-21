@@ -132,6 +132,7 @@ cv::Mat GPUTexture::downloadTexture() {
         cvType = CV_8UC3;
         break;
       case GL_RED:
+      case GL_RED_INTEGER:
         cvType = CV_8UC1;
         break;
     }

@@ -189,14 +189,15 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
   // get normalised keypoints and feature maps
   Eigen::MatrixX2d coordinates;
   Eigen::MatrixXd descriptors;
-  std::tie(std::ignore, coordinates, descriptors) = sp.getFeatures(frame.rgb);
+  cv::Mat features;
+  std::tie(features, coordinates, descriptors) = sp.getFeatures(frame.rgb);
 //  cv::Mat img;
 //  cv::cvtColor(frame.rgb, img, cv::COLOR_RGB2GRAY);
 //  for(int i=0; i<coordinates.rows(); i++) {
 //      cv::circle(img, cv::Point(coordinates(i,0)*img.cols, coordinates(i,1)*img.rows), 5, cv::Scalar(255));
 //  }
 //  cv::imshow("current observation", img);
-////  cv::waitKey(1);
+//  cv::waitKey(1);
 
 //  // rendered state at t-1
 //  int i=0;
@@ -247,6 +248,14 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
     computeFeedbackBuffers();
     globalModel->initialise(*feedbackBuffers[FeedbackBuffer::RAW], *feedbackBuffers[FeedbackBuffer::FILTERED]);
     globalModel->getFrameOdometry().initFirstRGB(textures[GPUTexture::RGB]);
+    if (frameToFrameRGB) {
+        // set the initial keypoint such that in the next iteration, when next becoems last,
+        // we will compare identical features and keypoints
+        for (auto model : models) {
+            model->getFrameOdometry().setNextKeypoints(coordinates.cast<float>(), descriptors.cast<float>());
+            model->getFrameOdometry().setNextFeatureMap(features);
+        }
+      }
   } else {
     bool trackingOk = true;
 
@@ -255,14 +264,11 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       Model::generateCUDATextures(textures[GPUTexture::DEPTH_METRIC_FILTERED], textures[GPUTexture::MASK]);
 
       TICK("odom");
+      // NOTE: each model will individually store a copy of the 'last' and 'next' feature maps and keypoints on GPU
+      // TODO: use one global store for the feature maps and keypoints for the current and last observed frame
       for (auto model : models) {
-        Eigen::MatrixX2d mod_coordinates;
-        Eigen::MatrixXd mod_descriptors;
-        std::tie(std::ignore, mod_coordinates, mod_descriptors) = sp.getFeatures(model->getRGBProjection()->downloadTexture());
         model->performTracking(frameToFrameRGB, rgbOnly, icpWeight, pyramid, fastOdom, so3, maxDepthProcessed, textures[GPUTexture::RGB],
-                               frame.timestamp, requiresFillIn(model),
-                coordinates.cast<float>(), descriptors.cast<float>(),
-                mod_coordinates.cast<float>(), mod_descriptors.cast<float>());
+                               textures[GPUTexture::MASK], frame.timestamp, requiresFillIn(model), features, coordinates.cast<float>(), descriptors.cast<float>());
       }
       TOCK("odom");
 

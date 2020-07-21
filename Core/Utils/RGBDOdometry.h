@@ -50,6 +50,8 @@ class RGBDOdometry {
 
   void initRGBModel(GPUTexture* rgb);
 
+  void initRGBDFromPrveious();
+
   void initFirstRGB(GPUTexture* rgb);
 
   // Get relative transformation, executes optimisation
@@ -60,7 +62,12 @@ class RGBDOdometry {
   Eigen::MatrixXd getCovariance();
 
   void setNextKeypoints(const Eigen::MatrixX2f &kp_coordinates, const Eigen::MatrixXf &kp_descriptors);
-  void setLastKeypoints(const Eigen::MatrixX2f &kp_coordinates, const Eigen::MatrixXf &kp_descriptors);
+  void setLastKeypointsFromPrevious();
+
+  void setNextFeatureMap(const cv::Mat &feat);
+  void setLastFeatureMapFromPrevious();
+
+  void setLastSegmentation(const cv::Mat &segm);
 
   float lastICPError;
   float lastICPCount;
@@ -139,9 +146,13 @@ class RGBDOdometry {
   unsigned char maskID;
 
   // N x (2+D) matrix that stores N keypoints row-wise
-  // with 2 nromalised [0,1] coordinates (x,y) and a D feature vector
+  // with 2 normalised [0,1] coordinates (x,y) and a D feature vector
   DeviceArray2D<float> nextKeypoints;
   DeviceArray2D<float> lastKeypoints;
+
+  // W x H x D tensor
+  DeviceArray2D<float> nextFeatureMaps;
+  DeviceArray2D<float> lastFeatureMaps;
 };
 
 #endif /* RGBDODOMETRY_H_ */

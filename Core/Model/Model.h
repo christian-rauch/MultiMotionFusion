@@ -126,9 +126,8 @@ class Model {
   // ----- Tracking and fusion
 
   virtual void performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight, bool pyramid, bool fastOdom, bool so3,
-                               float maxDepthProcessed, GPUTexture* rgb, int64_t logTimestamp, bool tryFillIn = false,
-                               const Eigen::MatrixX2f &kp_coordinates = {}, const Eigen::MatrixXf &kp_descriptors = {},
-                               const Eigen::MatrixX2f &mod_kp_coordinates = {}, const Eigen::MatrixXf &mod_kp_descriptors = {});
+                               float maxDepthProcessed, GPUTexture* rgb, GPUTexture *last_segmentation, int64_t logTimestamp, bool tryFillIn = false,
+                               const cv::Mat &features = {}, const Eigen::MatrixX2f &kp_coordinates = {}, const Eigen::MatrixXf &kp_descriptors = {});
 
   // Compute fusion-weight based on velocity
   virtual float computeFusionWeight(float weightMultiplier) const;

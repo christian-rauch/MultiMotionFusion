@@ -19,6 +19,8 @@
 #include "Model.h"
 #include "ModelMatching.h"
 
+#include <opencv2/opencv.hpp>
+
 Model::GPUSetup::GPUSetup()
     : initProgram(loadProgramFromFile("init_unstable.vert")),
       drawProgram(loadProgramFromFile("draw_feedback.vert", "draw_feedback.frag")),
@@ -366,13 +368,22 @@ void Model::generateCUDATextures(GPUTexture* depth, GPUTexture* mask) {
 void Model::initICP(bool doFillIn, bool frameToFrameRGB, float depthCutoff, GPUTexture* rgb) {
   TICK("odomInit - Model: " + std::to_string(id));
 
-  // WARNING initICP* must be called before initRGB*
-  if (doFillIn) {
-    frameToModel.initICPModel(getFillInVertexTexture(), getFillInNormalTexture(), depthCutoff, getPose());
-    frameToModel.initRGBModel(getFillInImageTexture());
-  } else {
-    frameToModel.initICPModel(getVertexConfProjection(), getNormalProjection(), depthCutoff, getPose());
-    frameToModel.initRGBModel(frameToFrameRGB && allowsFillIn() ? getFillInImageTexture() : getRGBProjection());
+  if (frameToFrameRGB) {
+      // shift raw RGB-D observation to 'last' position
+      frameToModel.initRGBDFromPrveious();
+      frameToModel.setLastKeypointsFromPrevious();
+      frameToModel.setLastFeatureMapFromPrevious();
+  }
+  else {
+      // TODO: we do not consider keypoints for projected models, if required extract keypoints from 'lastImage[0]'
+      // WARNING initICP* must be called before initRGB*
+      if (doFillIn) {
+        frameToModel.initICPModel(getFillInVertexTexture(), getFillInNormalTexture(), depthCutoff, getPose());
+        frameToModel.initRGBModel(getFillInImageTexture());
+      } else {
+        frameToModel.initICPModel(getVertexConfProjection(), getNormalProjection(), depthCutoff, getPose());
+        frameToModel.initRGBModel(frameToFrameRGB && allowsFillIn() ? getFillInImageTexture() : getRGBProjection());
+      }
   }
 
   // frameToModel.initICP(filteredDepth, depthCutoff, mask);
@@ -383,18 +394,26 @@ void Model::initICP(bool doFillIn, bool frameToFrameRGB, float depthCutoff, GPUT
 }
 
 void Model::performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight, bool pyramid, bool fastOdom, bool so3,
-                            float maxDepthProcessed, GPUTexture* rgb, int64_t logTimestamp, bool doFillIn,
-                            const Eigen::MatrixX2f &kp_coordinates, const Eigen::MatrixXf &kp_descriptors,
-                            const Eigen::MatrixX2f &mod_kp_coordinates, const Eigen::MatrixXf &mod_kp_descriptors) {
+                            float maxDepthProcessed, GPUTexture* rgb, GPUTexture* last_segmentation, int64_t logTimestamp, bool doFillIn,
+                            const cv::Mat &features, const Eigen::MatrixX2f &kp_coordinates, const Eigen::MatrixXf &kp_descriptors) {
   assert(fillIn || !doFillIn);
   lastPose = pose;
 
   // TODO Allow fillIn again
+  // move "old" next to last keypoints and images
   initICP(doFillIn, frameToFrameRGB, maxDepthProcessed, rgb);  // TODO: Don't copy RGB
 
-  // keypoints detected in current "live" image
+  // set new features and keypoints detected in current "next" image
   getFrameOdometry().setNextKeypoints(kp_coordinates, kp_descriptors);
-  getFrameOdometry().setLastKeypoints(mod_kp_coordinates, mod_kp_descriptors);
+  getFrameOdometry().setNextFeatureMap(features);
+  // TODO: skip download/upload to/from OpenCV image
+//  cv::Mat bla = last_segmentation->downloadTexture();
+//  cv::imshow("segm", bla);
+//  cv::waitKey(1);
+//  double min, max;
+//  cv::minMaxLoc(bla, &min, &max);
+//  std::cout << min << ", " << max << std::endl;
+  getFrameOdometry().setLastSegmentation(last_segmentation->downloadTexture());
 
   TICK("odom - Model: " + std::to_string(id));
 
