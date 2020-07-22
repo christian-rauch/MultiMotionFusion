@@ -153,6 +153,15 @@ class RGBDOdometry {
   // W x H x D tensor
   DeviceArray2D<float> nextFeatureMaps;
   DeviceArray2D<float> lastFeatureMaps;
+
+  // local host copies
+  typedef Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> mXXf;
+  mXXf next_keypoints;
+  mXXf last_keypoints;
+  cv::Mat next_features;
+  cv::Mat last_features;
+  cv::Mat next_segmentation;
+  cv::Mat last_segmentation;
 };
 
 #endif /* RGBDODOMETRY_H_ */

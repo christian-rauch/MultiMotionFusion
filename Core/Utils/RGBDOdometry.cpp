@@ -19,6 +19,8 @@
 #include "RGBDOdometry.h"
 
 #include <opencv2/opencv.hpp>
+#include <opencv2/core/eigen.hpp>
+
 
 // download a 1-channel device array to an OpenCV matrix
 template<typename T>
@@ -235,6 +237,71 @@ void RGBDOdometry::initFirstRGB(GPUTexture* rgb) {
   }
 }
 
+std::vector<std::tuple<int, int, float>>
+pairwise_matches(const Eigen::MatrixXf &last_keypoints,
+                 const Eigen::MatrixXf &next_keypoints,
+                 const cv::Mat_<bool> &last_mask)
+{
+  // remove 'last' keypoint coordinates outside of mask
+  Eigen::MatrixXf last_keypoints_match = Eigen::MatrixXf::Constant(last_keypoints.rows(), last_keypoints.cols(), std::numeric_limits<float>::signaling_NaN());
+  int kp_matches = 0;
+  std::vector<int> last_mask_id;
+  for(int i=0; i<last_keypoints.rows(); i++) {
+      const Eigen::Array2f xy_norm = last_keypoints.leftCols(2).row(i);
+      const cv::Point2i xy(xy_norm.x()*last_mask.cols, xy_norm.y()*last_mask.rows);
+      if (last_mask.at<bool>(xy)) {
+        // copy match over
+        last_keypoints_match.row(kp_matches) = last_keypoints.row(i);
+        kp_matches++;
+        // store original ID of last keypoint within valid segment
+        last_mask_id.push_back(i);
+      }
+  }
+  last_keypoints_match = last_keypoints_match.topRows(kp_matches);
+
+  cv::Mat last_descr;
+  cv::eigen2cv(Eigen::MatrixXf(last_keypoints_match.rightCols(last_keypoints_match.cols()-2)), last_descr);
+  cv::Mat next_descr;
+  cv::eigen2cv(Eigen::MatrixXf(next_keypoints.rightCols(next_keypoints.cols()-2)), next_descr);
+
+  std::vector<cv::DMatch> matches;
+  cv::BFMatcher(cv::NORM_L2, true).match(next_descr, last_descr, matches);
+
+  // store correspondences (last_id, next_id)
+  std::vector<std::tuple<int, int, float>> match_ids;
+  for(const cv::DMatch &match : matches)
+    match_ids.push_back(std::make_tuple(last_mask_id[match.trainIdx], match.queryIdx, match.distance));
+
+  return match_ids;
+}
+
+cv::Mat
+draw_matches(const Eigen::MatrixXf &last_keypoints,
+             const Eigen::MatrixXf &next_keypoints,
+             const std::vector<std::tuple<int, int, float>> &correspondences,
+             const cv::Mat &mask)
+{
+  std::vector<cv::DMatch> matches;
+  for(const auto &match : correspondences)
+    matches.emplace_back(std::get<1>(match), std::get<0>(match), std::get<2>(match));
+
+//  for(const auto &match : correspondences)
+//    std::cout << last_keypoints.row(std::get<0>(match)).leftCols(2) << " -> " << next_keypoints.row(std::get<1>(match)).leftCols(2) << std::endl;
+
+  std::vector<cv::KeyPoint> last_kp(last_keypoints.rows());
+  for(size_t i=0; i<last_kp.size(); i++)
+      last_kp[i].pt = cv::Point(last_keypoints.row(i)[0]*mask.cols, last_keypoints.row(i)[1]*mask.rows);
+
+  std::vector<cv::KeyPoint> next_kp(next_keypoints.rows());
+  for(size_t i=0; i<next_kp.size(); i++)
+      next_kp[i].pt = cv::Point(next_keypoints.row(i)[0]*mask.cols, next_keypoints.row(i)[1]*mask.rows);
+
+  cv::Mat img_matches;
+  const cv::Mat empty(mask.size(), CV_8UC1, cv::Scalar(0)); // empty image
+  cv::drawMatches(empty, next_kp, mask, last_kp, matches, img_matches);
+  return img_matches;
+}
+
 void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::Matrix<float, 3, 3, Eigen::RowMajor>& rot,
                                                 const bool& rgbOnly, const float& icpWeight, const bool& pyramid, const bool& fastOdom,
                                                 const bool& so3, const cudaSurfaceObject_t& icpErrorSurface,
@@ -254,6 +321,12 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       computeDerivativeImages(nextImage[i], nextdIdx[i], nextdIdy[i]);
     }
   }
+
+  // keypoint correspondences
+  const auto matches = pairwise_matches(last_keypoints, next_keypoints, last_segmentation==maskID);
+  const cv::Mat img_matches = draw_matches(last_keypoints, next_keypoints, matches, last_segmentation==maskID);
+//  cv::imshow("matches", img_matches);
+//  cv::waitKey(1);
 
   Eigen::Matrix<double, 3, 3, Eigen::RowMajor> resultR = Eigen::Matrix<double, 3, 3, Eigen::RowMajor>::Identity();
 
@@ -518,34 +591,35 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 
 Eigen::MatrixXd RGBDOdometry::getCovariance() { return lastA.cast<double>().lu().inverse(); }
 
-void setKeypoints(const Eigen::MatrixX2f &kp_coordinates, const Eigen::MatrixXf &kp_descriptors, DeviceArray2D<float> &keypoints) {
-    // storage order in DeviceArray2D is row-major
-    Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> kp(kp_coordinates.rows(), kp_coordinates.cols()+kp_descriptors.cols());
-    kp.leftCols(kp_coordinates.cols()) = kp_coordinates;
-    kp.rightCols(kp_descriptors.cols()) = kp_descriptors;
+void RGBDOdometry::setNextKeypoints(const Eigen::MatrixX2f &kp_coordinates, const Eigen::MatrixXf &kp_descriptors) {
+  // storage order in DeviceArray2D is row-major
+  Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> kp(kp_coordinates.rows(), kp_coordinates.cols()+kp_descriptors.cols());
+  kp.leftCols(kp_coordinates.cols()) = kp_coordinates;
+  kp.rightCols(kp_descriptors.cols()) = kp_descriptors;
 //    std::cout << "EIG kp: " << std::endl << kp.leftCols(2).topRows(10) << std::endl;
 //    std::cout << "EIG feat: " << std::endl << kp.middleCols(2,5).topRows(10) << std::endl;
-    keypoints.upload(kp.data(), kp.cols() * sizeof(float), kp.rows(), kp.cols());
-}
-
-void RGBDOdometry::setNextKeypoints(const Eigen::MatrixX2f &kp_coordinates, const Eigen::MatrixXf &kp_descriptors) {
-    setKeypoints(kp_coordinates, kp_descriptors, nextKeypoints);
+  nextKeypoints.upload(kp.data(), kp.cols() * sizeof(float), kp.rows(), kp.cols());
+  next_keypoints = kp;
 }
 
 void RGBDOdometry::setLastKeypointsFromPrevious() {
     lastKeypoints = nextKeypoints;
+    last_keypoints = next_keypoints;
 }
 
 void RGBDOdometry::setNextFeatureMap(const cv::Mat &feat) {
     assert(sizeof(float)*feat.channels()*feat.cols==feat.step);
     nextFeatureMaps.upload(feat.data, feat.step, feat.rows, feat.cols);
+    next_features = feat;
 }
 
 void RGBDOdometry::setLastFeatureMapFromPrevious() {
     lastFeatureMaps = nextFeatureMaps;
+    last_features = next_features;
 }
 
 void RGBDOdometry::setLastSegmentation(const cv::Mat &segm) {
     assert(sizeof(unsigned char)*segm.cols==segm.step);
     lastMask[0].upload(segm.data, segm.step, segm.rows, segm.cols);
+    last_segmentation = segm;
 }
