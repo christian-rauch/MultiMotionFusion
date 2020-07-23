@@ -674,6 +674,17 @@ __inline__  __device__ int2 warpReduceSum(int2 val)
     return val;
 }
 
+__inline__  __device__ float2 warpReduceSumF2(float2 val)
+{
+    for(int offset = warpSize / 2; offset > 0; offset /= 2)
+    {
+        val.x += __shfl_down(val.x, offset);
+        val.y += __shfl_down(val.y, offset);
+    }
+
+    return val;
+}
+
 __inline__  __device__ int2 blockReduceSum(int2 val)
 {
     static __shared__ int2 shared[32];
@@ -704,6 +715,36 @@ __inline__  __device__ int2 blockReduceSum(int2 val)
     return val;
 }
 
+__inline__  __device__ float2 blockReduceSumF2(float2 val)
+{
+    static __shared__ float2 shared[32];
+
+    int lane = threadIdx.x % warpSize;
+
+    int wid = threadIdx.x / warpSize;
+
+    val = warpReduceSumF2(val);
+
+    //write reduced value to shared memory
+    if(lane == 0)
+    {
+        shared[wid] = val;
+    }
+    __syncthreads();
+
+    const float2 zero = {0, 0};
+
+    //ensure we only grab a value from shared memory if that warp existed
+    val = (threadIdx.x < blockDim.x / warpSize) ? shared[lane] : zero;
+
+    if(wid == 0)
+    {
+        val = warpReduceSumF2(val);
+    }
+
+    return val;
+}
+
 __global__ void reduceSum(int2 * in, int2 * out, int N)
 {
     int2 sum = {0, 0};
@@ -715,6 +756,24 @@ __global__ void reduceSum(int2 * in, int2 * out, int N)
     }
 
     sum = blockReduceSum(sum);
+
+    if(threadIdx.x == 0)
+    {
+        out[blockIdx.x] = sum;
+    }
+}
+
+__global__ void reduceSumF2(float2 * in, float2 * out, int N)
+{
+    float2 sum = {0, 0};
+
+    for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < N; i += blockDim.x * gridDim.x)
+    {
+        sum.x += in[i].x;
+        sum.y += in[i].y;
+    }
+
+    sum = blockReduceSumF2(sum);
 
     if(threadIdx.x == 0)
     {
@@ -756,16 +815,16 @@ struct RGBResidual
     int pitch;
     int imgPitch;
 
-    int2 * out;
+    float2 * out;
     cudaSurfaceObject_t outErrorSurface;
 
-    __device__ __forceinline__ int2
+    __device__ __forceinline__ float2
     getProducts(int k) const
     {
         int i = k / cols;
         int j0 = k - (i * cols);
 
-        int2 value = {0, 0};
+        float2 value = {0, 0};
 
         DataTerm corres;
 
@@ -844,16 +903,16 @@ struct RGBResidual
     __device__ __forceinline__ void
     operator () () const
     {
-        int2 sum = {0, 0};
+        float2 sum = {0, 0};
 
         for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < N; i += blockDim.x * gridDim.x)
         {
-            int2 val = getProducts(i);
+            float2 val = getProducts(i);
             sum.x += val.x;
             sum.y += val.y;
         }
 
-        sum = blockReduceSum(sum);
+        sum = blockReduceSumF2(sum);
 
         if(threadIdx.x == 0)
         {
@@ -877,11 +936,11 @@ void computeRgbResidual(const float & minScale,
                         const DeviceArray2D<unsigned char> & lastMask,
                         const DeviceArray2D<unsigned char> & nextMask,
                         DeviceArray2D<DataTerm> & corresImg,
-                        DeviceArray<int2> & sumResidual,
+                        DeviceArray<float2> & sumResidual,
                         const float maxDepthDelta,
                         const float3 & kt,
                         const mat33 & krkinv,
-                        int & sigmaSum,
+                        float & sigmaSum,
                         int & count,
                         int threads,
                         int blocks,
@@ -929,13 +988,13 @@ void computeRgbResidual(const float & minScale,
 
     residualKernel<<<blocks, threads>>>(rgb);
 
-    int2 out_host = {0, 0};
-    int2 * out;
+    float2 out_host = {0, 0};
+    float2 * out;
 
     cudaMalloc(&out, sizeof(int2));
     cudaMemcpy(out, &out_host, sizeof(int2), cudaMemcpyHostToDevice);
 
-    reduceSum<<<1, MAX_THREADS>>>(sumResidual, out, blocks);
+    reduceSumF2<<<1, MAX_THREADS>>>(sumResidual, out, blocks);
 
     cudaSafeCall(cudaGetLastError());
     cudaSafeCall(cudaDeviceSynchronize());
@@ -949,42 +1008,33 @@ void computeRgbResidual(const float & minScale,
 
 struct KPResidual
 {
-    float minScale;
-
-    PtrStepSz<short> dIdx;
-    PtrStepSz<short> dIdy;
-
-    PtrStepSz<float> lastDepth;
-    PtrStepSz<float> nextDepth;
-
     PtrStepSz<float> lastKeypoints;
     PtrStepSz<float> nextKeypoints;
 
     PtrStepSz<float> lastFeatureMaps;
     PtrStepSz<float> nextFeatureMaps;
 
+    PtrStepSz<int> matchID;
+    PtrStepSz<float> matchScore;
+
     PtrStepSz<unsigned char> lastMask;
 //    PtrStepSz<unsigned char> nextMask;
 
     mutable PtrStepSz<DataTerm> corresImg;
 
-    float maxDepthDelta;
-
-    float3 kt;
-    mat33 krkinv;
-
     int cols;
     int rows;
     int Nlast;
     int Nnext;
+    int Nmatches;
     int feat_dim;
 
     unsigned char maskID;
 
-    int pitch;
+//    int pitch;
 //    int imgPitch;
 
-    int2 * out;
+    float2 * out;
     cudaSurfaceObject_t outErrorSurface;
 
     mutable PtrStepSz<float> outAdjMat;
@@ -1021,7 +1071,7 @@ struct KPResidual
     __device__ __forceinline__ int2
     findMatches(const int ikl) const
     {
-        const short2 kl = {int(lastKeypoints.ptr(ikl)[0] * cols), int(lastKeypoints.ptr(ikl)[1] * rows)};
+        const short2 kl = {short(lastKeypoints.ptr(ikl)[0] * cols), short(lastKeypoints.ptr(ikl)[1] * rows)};
 
         int2 value = {0, 0};
 
@@ -1043,7 +1093,7 @@ struct KPResidual
         }
 
         if (!isinf(min_val)) {
-            const short2 min_kn = {int(nextKeypoints.ptr(min_id)[0] * cols), int(nextKeypoints.ptr(min_id)[1] * rows)};
+            const short2 min_kn = {short(nextKeypoints.ptr(min_id)[0] * cols), short(nextKeypoints.ptr(min_id)[1] * rows)};
             DataTerm corres;
             corres.valid = true;
             corres.zero = min_kn;
@@ -1060,26 +1110,29 @@ struct KPResidual
         return value;
     }
 
-    __device__ __forceinline__ int2
+    __device__ __forceinline__ float2
     getProducts(int k) const
     {
-        int i = k / cols;
-        int j0 = k - (i * cols);
+//        int i = k / cols;
+//        int j0 = k - (i * cols);
 
 //        int y = i;
 //        int x = j0;
 
         // next and last keypoint ID for indices of row and column of adjacency matrix
-        const int ikn = k / Nlast;          // next, row
-        const int ikl = k - (ikn * Nlast);  // last, column
+//        const int ikn = k / Nlast;          // next, row
+//        const int ikl = k - (ikn * Nlast);  // last, column
 
 //        outAdjMat.ptr(ikn)[ikl] = 0;
 
-        int2 value = {0, 0};
+        float2 value = {0, 0};
 
         DataTerm corres;
 
-        corres.valid = false;
+//        corres.valid = false;
+
+        const int ikl = matchID.ptr(k)[0];
+        const int ikn = matchID.ptr(k)[1];
 
 //        float kx = lastKeypoints.ptr(k)[0];
 //        float ky = lastKeypoints.ptr(k)[1];
@@ -1088,35 +1141,50 @@ struct KPResidual
 //        const int klx = lastKeypoints.ptr(kl)[0] * cols;
 //        const int kly = lastKeypoints.ptr(kl)[1] * rows;
 
-        const int2 kl = {int(lastKeypoints.ptr(ikl)[0] * cols), int(lastKeypoints.ptr(ikl)[1] * rows)};
-        const int2 kn = {int(nextKeypoints.ptr(ikn)[0] * cols), int(nextKeypoints.ptr(ikn)[1] * rows)};
+        const short2 kl = {short(lastKeypoints.ptr(ikl)[0] * cols), short(lastKeypoints.ptr(ikl)[1] * rows)};
+        const short2 kn = {short(nextKeypoints.ptr(ikn)[0] * cols), short(nextKeypoints.ptr(ikn)[1] * rows)};
 
 //        const int knx = lastKeypoints.ptr(kn)[0] * cols;
 //        const int kny = lastKeypoints.ptr(kn)[1] * rows;
 
-        // ignore keypoints outside of masked area
-        if(lastMask.ptr(kl.y)[kl.x] != maskID) {
-            outAdjMat.ptr(ikn)[ikl] = CUDART_INF_F;
-            return value;
-        }
+//        // ignore keypoints outside of masked area
+//        if(lastMask.ptr(kl.y)[kl.x] != maskID) {
+//            outAdjMat.ptr(ikn)[ikl] = CUDART_INF_F;
+//            return value;
+//        }
 
-        printf("last kp %i (%i, %i)\n", ikl, kl.x, kl.y);
+//        printf("last kp %i (%i, %i)\n", ikl, kl.x, kl.y);
 
-        printf("last kp %i (%f, %f, %f, %f, %f)\n", ikl, lastKeypoints.ptr(ikl)[2+0],
-                                                         lastKeypoints.ptr(ikl)[2+1],
-                                                         lastKeypoints.ptr(ikl)[2+2],
-                                                         lastKeypoints.ptr(ikl)[2+3],
-                                                         lastKeypoints.ptr(ikl)[2+4]);
+//        printf("last kp %i (%f, %f, %f, %f, %f)\n", ikl, lastKeypoints.ptr(ikl)[2+0],
+//                                                         lastKeypoints.ptr(ikl)[2+1],
+//                                                         lastKeypoints.ptr(ikl)[2+2],
+//                                                         lastKeypoints.ptr(ikl)[2+3],
+//                                                         lastKeypoints.ptr(ikl)[2+4]);
 
-        outAdjMat.ptr(ikn)[ikl] = 0;
-        for(int i=0; i<feat_dim; i++) {
-            outAdjMat.ptr(ikn)[ikl] = lastKeypoints.ptr(ikl)[2+i] * nextKeypoints.ptr(ikl)[2+i];
-        }
-        outAdjMat.ptr(ikn)[ikl] = sqrt(outAdjMat.ptr(ikn)[ikl]);
+//        outAdjMat.ptr(ikn)[ikl] = 0;
+//        for(int i=0; i<feat_dim; i++) {
+//            outAdjMat.ptr(ikn)[ikl] = lastKeypoints.ptr(ikl)[2+i] * nextKeypoints.ptr(ikl)[2+i];
+//        }
+//        outAdjMat.ptr(ikn)[ikl] = sqrt(outAdjMat.ptr(ikn)[ikl]);
 
 //        float nkx = nextKeypoints.ptr(0)[0];
 //        float nky = nextKeypoints.ptr(0)[1];
 //        printf("next kp %i (%f, %f)\n", 0, nkx, nky);
+
+//        printf("score r,c %i,%i\n", matchScore.rows, matchScore.cols);
+//        printf("score %i %f\n", k, matchScore.ptr(0)[k]);
+
+        corres.valid = true;
+        corres.zero = kn;
+        corres.one = kl;
+        corres.diff = matchScore.ptr(0)[k]; // L2 feature distance
+
+        value.x = 1;
+        value.y = corres.diff*corres.diff;
+
+        if(outErrorSurface) surf2Dwrite(corres.diff*150.0f, outErrorSurface, kn.x*sizeof(float), kn.y);
+
+        corresImg.ptr(kn.y)[kn.x] = corres;
 
 //        if(i >= 0 && i < rows && j0 >= 0 && j0 < cols)
 //        {
@@ -1139,8 +1207,8 @@ struct KPResidual
 
 ////                printf("Hello from block %d, thread %d\n", blockIdx.x, threadIdx.x);
 
-//                if(outErrorSurface) surf2Dwrite((lastMask.ptr(i)[j0] == maskID)*200.0f, outErrorSurface, j0*sizeof(float), i);
-////                if(outErrorSurface) surf2Dwrite(200.0f, outErrorSurface, j0*sizeof(float), i);
+////                if(outErrorSurface) surf2Dwrite((lastMask.ptr(i)[j0] == maskID)*200.0f, outErrorSurface, j0*sizeof(float), i);
+//                if(outErrorSurface) surf2Dwrite(200.0f, outErrorSurface, j0*sizeof(float), i);
 
 //                valid = (lastMask.ptr(i)[j0] == maskID);
 
@@ -1196,7 +1264,7 @@ struct KPResidual
 //        }
 
 //        if(!corres.valid && outErrorSurface) surf2Dwrite(0.0f, outErrorSurface, j0*sizeof(float), i);
-        corresImg.data[k] = corres;
+//        corresImg.data[k] = corres;
 
         return value;
     }
@@ -1220,7 +1288,7 @@ struct KPResidual
 //          printf("\n");
 //      }
 
-      int2 sum = {0, 0};
+      float2 sum = {0, 0};
 
       for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < Nlast; i += blockDim.x * gridDim.x)
       {
@@ -1231,26 +1299,40 @@ struct KPResidual
       }
 //      printf("sum (%i,%i) %f\n", sum.x, sum.y, sum);
 
-      sum = blockReduceSum(sum);
-//      sum.x = 22;
+      sum = blockReduceSumF2(sum);
 
       if(threadIdx.x == 0)
       {
           out[blockIdx.x] = sum;
-//          out[blockIdx.x].x = 22;
       }
     }
 
-//    __device__ __forceinline__ void
-//    operator () () const
-//    {
-//        int2 sum = {0, 0};
+    __device__ __forceinline__ void
+    reset() const
+    {
+      for(int k = blockIdx.x * blockDim.x + threadIdx.x; k < rows*cols; k += blockDim.x * gridDim.x)
+      {
+          int i = k / cols;
+          int j0 = k - (i * cols);
 
-////        for(int i = 0; i < 10; i++) {
-////            float nkx = nextKeypoints.ptr(i)[0];
-////            float nky = nextKeypoints.ptr(i)[1];
-////            printf("next kp %i (%f, %f)\n", i, nkx, nky);
-////        }
+          DataTerm corres;
+          corres.valid = false;
+
+          if(outErrorSurface) surf2Dwrite(0.0f, outErrorSurface, j0*sizeof(float), i);
+          corresImg.data[k] = corres;
+      }
+    }
+
+    __device__ __forceinline__ void
+    operator () () const
+    {
+        float2 sum = {0, 0};
+
+//        for(int i = 0; i < 10; i++) {
+//            float nkx = nextKeypoints.ptr(i)[0];
+//            float nky = nextKeypoints.ptr(i)[1];
+//            printf("next kp %i (%f, %f)\n", i, nkx, nky);
+//        }
 
 //        // keypoint distances
 //        for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < Nlast*Nnext; i += blockDim.x * gridDim.x)
@@ -1258,27 +1340,31 @@ struct KPResidual
 //            getDistances(i);
 //        }
 
-////        for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < Nlast*Nnext; i += blockDim.x * gridDim.x)
-////        {
-////            int2 val = getProducts(i);
-////            sum.x += val.x;
-////            sum.y += val.y;
-////        }
+        for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < Nmatches; i += blockDim.x * gridDim.x)
+        {
+            float2 val = getProducts(i);
+            sum.x += val.x;
+            sum.y += val.y;
+        }
 
-//        sum = blockReduceSum(sum);
+        sum = blockReduceSumF2(sum);
 
-//        if(threadIdx.x == 0)
-//        {
-//            out[blockIdx.x] = sum;
-//        }
-//    }
+        if(threadIdx.x == 0)
+        {
+            out[blockIdx.x] = sum;
+        }
+    }
 };
 
-//__global__ void residualKernel (const KPResidual kp)
-//{
-////    kp();
-//  kp.getAdjMat();
-//}
+__global__ void residualKernel (const KPResidual kp)
+{
+    kp();
+}
+
+__global__ void kernl_kp_reset (const KPResidual kp)
+{
+    kp.reset();
+}
 
 __global__ void kern_kp_dist (const KPResidual kp)
 {
@@ -1290,22 +1376,18 @@ __global__ void kern_kp_match_dist (const KPResidual kp)
   kp.getMatchDist();
 }
 
-void computeKPResidual(const float & minScale,
-                        const DeviceArray2D<short> & dIdx,
-                        const DeviceArray2D<short> & dIdy,
-                        const DeviceArray2D<float> & lastDepth,
+void computeKPResidual(const DeviceArray2D<float> & lastDepth,
                         const DeviceArray2D<float> & nextDepth,
                         const DeviceArray2D<float> & lastKeypoints,
                         const DeviceArray2D<float> & nextKeypoints,
                         const DeviceArray2D<float> & lastFeatureMaps,
                         const DeviceArray2D<float> & nextFeatureMaps,
+                        const DeviceArray2D<int> & matchID,
+                        const DeviceArray2D<float> & matchScore,
                         const DeviceArray2D<unsigned char> & lastMask,
                         DeviceArray2D<DataTerm> & corresImg,
-                        DeviceArray<int2> & sumResidual,
-                        const float maxDepthDelta,
-                        const float3 & kt,
-                        const mat33 & krkinv,
-                        int & sigmaSum,
+                        DeviceArray<float2> & sumResidual,
+                        float & sigmaSum,
                         int & count,
                         int threads,
                         int blocks,
@@ -1317,54 +1399,47 @@ void computeKPResidual(const float & minScale,
 
     KPResidual rgb;
 
-//    rgb.minScale = minScale;
-
-//    rgb.dIdx = dIdx;
-//    rgb.dIdy = dIdy;
-
-    rgb.lastDepth = lastDepth;
-    rgb.nextDepth = nextDepth;
-
     rgb.lastKeypoints = lastKeypoints;
     rgb.nextKeypoints = nextKeypoints;
 
     rgb.lastFeatureMaps = lastFeatureMaps;
     rgb.nextFeatureMaps = nextFeatureMaps;
 
+    rgb.matchID = matchID;
+    rgb.matchScore = matchScore;
+
     rgb.lastMask = lastMask;
 
     rgb.corresImg = corresImg;
 
-//    rgb.maxDepthDelta = maxDepthDelta;
-
-//    rgb.kt = kt;
-//    rgb.krkinv = krkinv;
-
     rgb.cols = cols;
     rgb.rows = rows;
-//    rgb.pitch = dIdx.step();
 
     // keypoint rows: 2 coordinates + D features
     rgb.feat_dim = nextKeypoints.cols()-2;
 
     rgb.Nlast = lastKeypoints.rows();
     rgb.Nnext = nextKeypoints.rows();
+    rgb.Nmatches = matchID.rows();
 
     rgb.out = sumResidual;
     rgb.outErrorSurface = rgbErrorSurface;
 
-    DeviceArray2D<float> adj_mat(nextKeypoints.rows(), lastKeypoints.rows());
-    rgb.outAdjMat = adj_mat;
+//    DeviceArray2D<float> adj_mat(nextKeypoints.rows(), lastKeypoints.rows());
+//    rgb.outAdjMat = adj_mat;
 
     rgb.maskID = maskID;
 
-//    residualKernel<<<blocks, threads>>>(rgb);
+    // reset the correspondence and residual image
+    kernl_kp_reset<<<blocks, threads>>>(rgb);
+
+    residualKernel<<<blocks, threads>>>(rgb);
 
     // construct adjacency matrix
-    kern_kp_dist<<<blocks, threads>>>(rgb);
+//    kern_kp_dist<<<blocks, threads>>>(rgb);
 
     // find pairwise matches in adjacency matrix
-    kern_kp_match_dist<<<blocks, threads>>>(rgb);
+//    kern_kp_match_dist<<<blocks, threads>>>(rgb);
 
 //    Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> am(nextKeypoints.rows(), lastKeypoints.rows());
 //    adj_mat.download(am.data(), am.cols()*sizeof(float));
@@ -1377,15 +1452,15 @@ void computeKPResidual(const float & minScale,
 //        std::cout << std::endl;
 //    }
 
-    int2 out_host = {0, 0};
-    int2 * out;
+    float2 out_host = {0, 0};
+    float2 * out;
 
     cudaMalloc(&out, sizeof(int2));
     cudaMemcpy(out, &out_host, sizeof(int2), cudaMemcpyHostToDevice);
 
-    reduceSum<<<1, MAX_THREADS>>>(sumResidual, out, blocks);
+    reduceSumF2<<<1, MAX_THREADS>>>(sumResidual, out, blocks);
 
-    std::cout << out_host.x << ", " << out_host.y << std::endl;
+//    std::cout << out_host.x << ", " << out_host.y << std::endl;
 
     cudaSafeCall(cudaGetLastError());
     cudaSafeCall(cudaDeviceSynchronize());
@@ -1393,7 +1468,7 @@ void computeKPResidual(const float & minScale,
     cudaMemcpy(&out_host, out, sizeof(int2), cudaMemcpyDeviceToHost);
     cudaFree(out);
 
-    count = out_host.x;
+    count = int(out_host.x);
     sigmaSum = out_host.y;
 }
 

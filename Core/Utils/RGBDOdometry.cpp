@@ -31,6 +31,14 @@ cv::Mat_<T> download(const DeviceArray2D<T> &array)
   return img;
 }
 
+// upload row-major Eigen matrix to device array
+template <typename T, int R, int C>
+void upload_eigen(const Eigen::Matrix<T, R, C, Eigen::RowMajor> &matrix,
+                  DeviceArray2D<T> &array)
+{
+  array.upload(matrix.data(), matrix.cols() * sizeof(T), matrix.rows(), matrix.cols());
+}
+
 RGBDOdometry::RGBDOdometry(int width, int height, float cx, float cy, float fx, float fy, unsigned char mask, float distThresh,
                            float angleThresh)
     : lastICPError(0),
@@ -323,10 +331,23 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
   }
 
   // keypoint correspondences
-  const auto matches = pairwise_matches(last_keypoints, next_keypoints, last_segmentation==maskID);
-  const cv::Mat img_matches = draw_matches(last_keypoints, next_keypoints, matches, last_segmentation==maskID);
-//  cv::imshow("matches", img_matches);
-//  cv::waitKey(1);
+  if (next_keypoints.rows()>0) {
+    const auto matches = pairwise_matches(last_keypoints, next_keypoints, last_segmentation==maskID);
+    const cv::Mat img_matches = draw_matches(last_keypoints, next_keypoints, matches, last_segmentation==maskID);
+    cv::imshow("matches", img_matches);
+    cv::waitKey(1);
+
+    // upload indices
+    Eigen::Matrix<int, Eigen::Dynamic, 2, Eigen::RowMajor> matches_norm(matches.size(), 2);
+    for(int i=0; i<int(matches.size()); i++)
+        matches_norm.row(i) = Eigen::Vector2i{std::get<0>(matches[i]), std::get<1>(matches[i])};
+    upload_eigen(matches_norm, matchID);
+    Eigen::RowVectorXf scores(matches.size());
+    for(size_t i=0; i<matches.size(); i++)
+      scores[int(i)] = std::get<2>(matches[i]);
+//    std::cout << scores << std::endl;
+    upload_eigen(scores, matchScores);
+  }
 
   Eigen::Matrix<double, 3, 3, Eigen::RowMajor> resultR = Eigen::Matrix<double, 3, 3, Eigen::RowMajor>::Identity();
 
@@ -451,7 +472,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       Kt = K * Kt;
       float3 kt = {(float)Kt(0), (float)Kt(1), (float)Kt(2)};
 
-      int sigma = 0;
+      float sigma = 0;
       int rgbSize = 0;
 
       if (rgb && nextKeypoints.rows()==0) {
@@ -465,26 +486,26 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       }
       else if (nextKeypoints.rows()>0) {
         TICK("computeKPResidual");
-        std::cout << "next kp: " << nextKeypoints.rows() << std::endl;
-        std::cout << "last kp: " << lastKeypoints.rows() << std::endl;
+//        std::cout << "next kp: " << nextKeypoints.rows() << std::endl;
+//        std::cout << "last kp: " << lastKeypoints.rows() << std::endl;
+        std::cout << "matches: " << matchID.rows() << std::endl;
 //        std::cout << "kp 0 " << (*lastKeypoints.ptr(0)) << ", " << lastKeypoints.ptr(0)[1] << std::endl;
-        // TODO: get motion mask for last image
-        // TODO: create correspondences within same masks
-        // TODO; only apply keypoint search on single pyramid level and iteration
-        computeKPResidual(pow(minimumGradientMagnitudes[i], 2.0) / pow(sobelScale, 2.0), nextdIdx[i], nextdIdy[i],
-                          lastDepth[i], nextDepth[i],
+        // TODO: only apply keypoint search on single pyramid level and iteration
+        // TODO: clear corresImg and rgbErrorSurface
+        computeKPResidual(lastDepth[i], nextDepth[i],
                           lastKeypoints, nextKeypoints,
                           lastFeatureMaps, nextFeatureMaps,
-                          lastMask[0], corresImg[i], sumResidualRGB,
-                           maxDepthDeltaRGB, kt, krkInv, sigma, rgbSize, GPUConfig::getInstance().rgbResThreads,
-                           GPUConfig::getInstance().rgbResBlocks,
-                           (i == 0 && j == iterations[i]-1) ? rgbErrorSurface : 0, maskID);
+                          matchID, matchScores, lastMask[0],
+                          corresImg[i], sumResidualRGB,
+                          sigma, rgbSize, GPUConfig::getInstance().rgbResThreads,
+                          GPUConfig::getInstance().rgbResBlocks,
+                          (i == 0 && j == iterations[i]-1) ? rgbErrorSurface : 0, maskID);
         TOCK("computeKPResidual");
-//        exit(EXIT_FAILURE);
+        std::cout << "kp " << sigma << " / " << rgbSize << std::endl;
       }
 
       float tmpError = sqrt(sigma) / rgbSize;
-      float sigmaVal = (tmpError == 0) ? 1 : rgbSize;
+      float sigmaVal = (tmpError < float(1e-6)) ? 1 : rgbSize;
 
       if (rgbOnly && tmpError > lastRGBError) {
         break;
@@ -598,7 +619,7 @@ void RGBDOdometry::setNextKeypoints(const Eigen::MatrixX2f &kp_coordinates, cons
   kp.rightCols(kp_descriptors.cols()) = kp_descriptors;
 //    std::cout << "EIG kp: " << std::endl << kp.leftCols(2).topRows(10) << std::endl;
 //    std::cout << "EIG feat: " << std::endl << kp.middleCols(2,5).topRows(10) << std::endl;
-  nextKeypoints.upload(kp.data(), kp.cols() * sizeof(float), kp.rows(), kp.cols());
+  upload_eigen(kp, nextKeypoints);
   next_keypoints = kp;
 }
 

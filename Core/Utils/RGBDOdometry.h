@@ -100,7 +100,7 @@ class RGBDOdometry {
 
   DeviceArray<JtJJtrSE3> sumDataSE3;
   DeviceArray<JtJJtrSE3> outDataSE3;
-  DeviceArray<int2> sumResidualRGB;
+  DeviceArray<float2> sumResidualRGB;
 
   DeviceArray<JtJJtrSO3> sumDataSO3;
   DeviceArray<JtJJtrSO3> outDataSO3;
@@ -149,6 +149,8 @@ class RGBDOdometry {
   // with 2 normalised [0,1] coordinates (x,y) and a D feature vector
   DeviceArray2D<float> nextKeypoints;
   DeviceArray2D<float> lastKeypoints;
+  DeviceArray2D<int> matchID; // N x 2: {(last, next)}
+  DeviceArray2D<float> matchScores;
 
   // W x H x D tensor
   DeviceArray2D<float> nextFeatureMaps;
