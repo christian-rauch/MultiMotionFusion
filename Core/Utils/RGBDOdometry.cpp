@@ -531,14 +531,13 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 
       float residual[2];
 
-      if (icp) {
-        TICK("icpStep");
-        icpStep(device_Rcurr, device_tcurr, vmap_curr, nmap_curr, device_Rprev_inv, device_tprev, intr(i), vmap_g_prev, nmap_g_prev,
-                distThres_, angleThres_, sumDataSE3, outDataSE3, A_icp.data(), b_icp.data(), &residual[0],
-                GPUConfig::getInstance().icpStepThreads, GPUConfig::getInstance().icpStepBlocks,
-                (i == 0 && j == iterations[i] - 1) ? icpErrorSurface : 0);
-        TOCK("icpStep");
-      }
+      // note: we always need to run the ICP step to access the reprojection error in 'icpErrorSurface'
+      TICK("icpStep");
+      icpStep(device_Rcurr, device_tcurr, vmap_curr, nmap_curr, device_Rprev_inv, device_tprev, intr(i), vmap_g_prev, nmap_g_prev,
+              distThres_, angleThres_, sumDataSE3, outDataSE3, A_icp.data(), b_icp.data(), &residual[0],
+              GPUConfig::getInstance().icpStepThreads, GPUConfig::getInstance().icpStepBlocks,
+              (i == 0 && j == iterations[i] - 1) ? icpErrorSurface : 0);
+      TOCK("icpStep");
 
       lastICPError = sqrt(residual[0]) / residual[1];
       lastICPCount = residual[1];
