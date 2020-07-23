@@ -251,7 +251,7 @@ pairwise_matches(const Eigen::MatrixXf &last_keypoints,
                  const cv::Mat_<bool> &last_mask)
 {
   // remove 'last' keypoint coordinates outside of mask
-  Eigen::MatrixXf last_keypoints_match = Eigen::MatrixXf::Constant(last_keypoints.rows(), last_keypoints.cols(), std::numeric_limits<float>::signaling_NaN());
+  Eigen::MatrixXf last_keypoints_mask = Eigen::MatrixXf::Constant(last_keypoints.rows(), last_keypoints.cols(), std::numeric_limits<float>::signaling_NaN());
   int kp_matches = 0;
   std::vector<int> last_mask_id;
   for(int i=0; i<last_keypoints.rows(); i++) {
@@ -259,26 +259,29 @@ pairwise_matches(const Eigen::MatrixXf &last_keypoints,
       const cv::Point2i xy(xy_norm.x()*last_mask.cols, xy_norm.y()*last_mask.rows);
       if (last_mask.at<bool>(xy)) {
         // copy match over
-        last_keypoints_match.row(kp_matches) = last_keypoints.row(i);
+        last_keypoints_mask.row(kp_matches) = last_keypoints.row(i);
         kp_matches++;
         // store original ID of last keypoint within valid segment
         last_mask_id.push_back(i);
       }
   }
-  last_keypoints_match = last_keypoints_match.topRows(kp_matches);
-
-  cv::Mat last_descr;
-  cv::eigen2cv(Eigen::MatrixXf(last_keypoints_match.rightCols(last_keypoints_match.cols()-2)), last_descr);
-  cv::Mat next_descr;
-  cv::eigen2cv(Eigen::MatrixXf(next_keypoints.rightCols(next_keypoints.cols()-2)), next_descr);
-
-  std::vector<cv::DMatch> matches;
-  cv::BFMatcher(cv::NORM_L2, true).match(next_descr, last_descr, matches);
+  last_keypoints_mask = last_keypoints_mask.topRows(kp_matches);
 
   // store correspondences (last_id, next_id)
   std::vector<std::tuple<int, int, float>> match_ids;
-  for(const cv::DMatch &match : matches)
-    match_ids.push_back(std::make_tuple(last_mask_id[match.trainIdx], match.queryIdx, match.distance));
+
+  if (last_keypoints_mask.rows()>0) {
+    cv::Mat last_descr;
+    cv::eigen2cv(Eigen::MatrixXf(last_keypoints_mask.rightCols(last_keypoints_mask.cols()-2)), last_descr);
+    cv::Mat next_descr;
+    cv::eigen2cv(Eigen::MatrixXf(next_keypoints.rightCols(next_keypoints.cols()-2)), next_descr);
+
+    std::vector<cv::DMatch> matches;
+    cv::BFMatcher(cv::NORM_L2, true).match(next_descr, last_descr, matches);
+
+    for(const cv::DMatch &match : matches)
+      match_ids.push_back(std::make_tuple(last_mask_id[match.trainIdx], match.queryIdx, match.distance));
+  }
 
   return match_ids;
 }
@@ -293,9 +296,6 @@ draw_matches(const Eigen::MatrixXf &last_keypoints,
   for(const auto &match : correspondences)
     matches.emplace_back(std::get<1>(match), std::get<0>(match), std::get<2>(match));
 
-//  for(const auto &match : correspondences)
-//    std::cout << last_keypoints.row(std::get<0>(match)).leftCols(2) << " -> " << next_keypoints.row(std::get<1>(match)).leftCols(2) << std::endl;
-
   std::vector<cv::KeyPoint> last_kp(last_keypoints.rows());
   for(size_t i=0; i<last_kp.size(); i++)
       last_kp[i].pt = cv::Point(last_keypoints.row(i)[0]*mask.cols, last_keypoints.row(i)[1]*mask.rows);
@@ -305,7 +305,7 @@ draw_matches(const Eigen::MatrixXf &last_keypoints,
       next_kp[i].pt = cv::Point(next_keypoints.row(i)[0]*mask.cols, next_keypoints.row(i)[1]*mask.rows);
 
   cv::Mat img_matches;
-  const cv::Mat empty(mask.size(), CV_8UC1, cv::Scalar(0)); // empty image
+  const cv::Mat empty(mask.size(), CV_8UC1, cv::Scalar(255)); // empty image
   cv::drawMatches(empty, next_kp, mask, last_kp, matches, img_matches);
   return img_matches;
 }
@@ -334,7 +334,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
   if (next_keypoints.rows()>0) {
     const auto matches = pairwise_matches(last_keypoints, next_keypoints, last_segmentation==maskID);
     const cv::Mat img_matches = draw_matches(last_keypoints, next_keypoints, matches, last_segmentation==maskID);
-    cv::imshow("matches", img_matches);
+    cv::imshow("matches "+std::to_string(maskID), img_matches);
     cv::waitKey(1);
 
     // upload indices
@@ -345,7 +345,6 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
     Eigen::RowVectorXf scores(matches.size());
     for(size_t i=0; i<matches.size(); i++)
       scores[int(i)] = std::get<2>(matches[i]);
-//    std::cout << scores << std::endl;
     upload_eigen(scores, matchScores);
   }
 
@@ -488,10 +487,8 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
         TICK("computeKPResidual");
 //        std::cout << "next kp: " << nextKeypoints.rows() << std::endl;
 //        std::cout << "last kp: " << lastKeypoints.rows() << std::endl;
-        std::cout << "matches: " << matchID.rows() << std::endl;
-//        std::cout << "kp 0 " << (*lastKeypoints.ptr(0)) << ", " << lastKeypoints.ptr(0)[1] << std::endl;
+//        std::cout << "matches: " << matchID.rows() << std::endl;
         // TODO: only apply keypoint search on single pyramid level and iteration
-        // TODO: clear corresImg and rgbErrorSurface
         computeKPResidual(lastDepth[i], nextDepth[i],
                           lastKeypoints, nextKeypoints,
                           lastFeatureMaps, nextFeatureMaps,
@@ -501,7 +498,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
                           GPUConfig::getInstance().rgbResBlocks,
                           (i == 0 && j == iterations[i]-1) ? rgbErrorSurface : 0, maskID);
         TOCK("computeKPResidual");
-        std::cout << "kp " << sigma << " / " << rgbSize << std::endl;
+//        std::cout << "kp " << sigma << " / " << rgbSize << std::endl;
       }
 
       float tmpError = sqrt(sigma) / rgbSize;
@@ -555,6 +552,9 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
                 outDataSE3, A_rgbd.data(), b_rgbd.data(), GPUConfig::getInstance().rgbStepThreads, GPUConfig::getInstance().rgbStepBlocks);
         TOCK("rgbStep");
       }
+
+//      std::cout << "A" << std::endl << A_rgbd << std::endl;
+//      std::cout << "b" << std::endl << b_rgbd << std::endl;
 
       Eigen::Matrix<double, 6, 1> result;
       Eigen::Matrix<double, 6, 6, Eigen::RowMajor> dA_rgbd = A_rgbd.cast<double>();
@@ -617,8 +617,6 @@ void RGBDOdometry::setNextKeypoints(const Eigen::MatrixX2f &kp_coordinates, cons
   Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> kp(kp_coordinates.rows(), kp_coordinates.cols()+kp_descriptors.cols());
   kp.leftCols(kp_coordinates.cols()) = kp_coordinates;
   kp.rightCols(kp_descriptors.cols()) = kp_descriptors;
-//    std::cout << "EIG kp: " << std::endl << kp.leftCols(2).topRows(10) << std::endl;
-//    std::cout << "EIG feat: " << std::endl << kp.middleCols(2,5).topRows(10) << std::endl;
   upload_eigen(kp, nextKeypoints);
   next_keypoints = kp;
 }
