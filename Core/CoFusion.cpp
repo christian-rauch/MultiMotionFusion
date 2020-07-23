@@ -248,14 +248,12 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
     computeFeedbackBuffers();
     globalModel->initialise(*feedbackBuffers[FeedbackBuffer::RAW], *feedbackBuffers[FeedbackBuffer::FILTERED]);
     globalModel->getFrameOdometry().initFirstRGB(textures[GPUTexture::RGB]);
-    if (frameToFrameRGB) {
-        // set the initial keypoint such that in the next iteration, when next becoems last,
-        // we will compare identical features and keypoints
-        for (auto model : models) {
-            model->getFrameOdometry().setNextKeypoints(coordinates.cast<float>(), descriptors.cast<float>());
-            model->getFrameOdometry().setNextFeatureMap(features);
-        }
-      }
+    // set the initial keypoint such that in the next iteration, when next becomes last,
+    // we will compare identical features and keypoints
+    for (auto model : models) {
+        model->getFrameOdometry().setNextKeypoints(coordinates.cast<float>(), descriptors.cast<float>());
+        model->getFrameOdometry().setNextFeatureMap(features);
+    }
   } else {
     bool trackingOk = true;
 

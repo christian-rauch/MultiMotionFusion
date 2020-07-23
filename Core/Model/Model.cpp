@@ -371,11 +371,8 @@ void Model::initICP(bool doFillIn, bool frameToFrameRGB, float depthCutoff, GPUT
   if (frameToFrameRGB) {
       // shift raw RGB-D observation to 'last' position
       frameToModel.initRGBDFromPrveious();
-      frameToModel.setLastKeypointsFromPrevious();
-      frameToModel.setLastFeatureMapFromPrevious();
   }
   else {
-      // TODO: we do not consider keypoints for projected models, if required extract keypoints from 'lastImage[0]'
       // WARNING initICP* must be called before initRGB*
       if (doFillIn) {
         frameToModel.initICPModel(getFillInVertexTexture(), getFillInNormalTexture(), depthCutoff, getPose());
@@ -389,6 +386,11 @@ void Model::initICP(bool doFillIn, bool frameToFrameRGB, float depthCutoff, GPUT
   // frameToModel.initICP(filteredDepth, depthCutoff, mask);
   frameToModel.initICP(gpu.depth_tmp, gpu.mask_tmp, depthCutoff);
   frameToModel.initRGB(rgb);
+
+  // assume keypoints from original (non-projected) observation
+  // we do not consider keypoints for projected models
+  frameToModel.setLastKeypointsFromPrevious();
+  frameToModel.setLastFeatureMapFromPrevious();
 
   TOCK("odomInit - Model: " + std::to_string(id));
 }
