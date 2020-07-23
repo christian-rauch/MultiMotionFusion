@@ -500,7 +500,7 @@ struct RGBReduction
     {
         const DataTerm & corresp = corresImg.data[i];
 
-        bool found_coresp = corresp.valid;
+        bool found_coresp = corresp.valid && !isnan(cloud.ptr(corresp.zero.y)[corresp.zero.x].z);
 
         float row[7];
 
