@@ -338,14 +338,21 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
     cv::waitKey(1);
 
     // upload indices
-    Eigen::Matrix<int, Eigen::Dynamic, 2, Eigen::RowMajor> matches_norm(matches.size(), 2);
-    for(int i=0; i<int(matches.size()); i++)
-        matches_norm.row(i) = Eigen::Vector2i{std::get<0>(matches[i]), std::get<1>(matches[i])};
-    upload_eigen(matches_norm, matchID);
-    Eigen::RowVectorXf scores(matches.size());
-    for(size_t i=0; i<matches.size(); i++)
-      scores[int(i)] = std::get<2>(matches[i]);
-    upload_eigen(scores, matchScores);
+    if (!matches.empty()) {
+      Eigen::Matrix<int, Eigen::Dynamic, 2, Eigen::RowMajor> matches_norm(matches.size(), 2);
+      for(int i=0; i<int(matches.size()); i++)
+          matches_norm.row(i) = Eigen::Vector2i{std::get<0>(matches[i]), std::get<1>(matches[i])};
+      upload_eigen(matches_norm, matchID);
+      Eigen::RowVectorXf scores(matches.size());
+      for(size_t i=0; i<matches.size(); i++)
+        scores[int(i)] = std::get<2>(matches[i]);
+      upload_eigen(scores, matchScores);
+    }
+    else {
+      // reset old buffers
+      matchID.create(0,0);
+      matchScores.create(0,0);
+    }
   }
 
   Eigen::Matrix<double, 3, 3, Eigen::RowMajor> resultR = Eigen::Matrix<double, 3, 3, Eigen::RowMajor>::Identity();
