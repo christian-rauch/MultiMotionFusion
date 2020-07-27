@@ -50,7 +50,7 @@ class RGBDOdometry {
 
   void initRGBModel(GPUTexture* rgb);
 
-  void initRGBDFromPrveious();
+  void initRGBDFromPrevious();
 
   void initFirstRGB(GPUTexture* rgb);
 
@@ -130,6 +130,7 @@ class RGBDOdometry {
   DeviceArray2D<DataTerm> corresImg[NUM_PYRS];
 
   DeviceArray2D<float3> pointClouds[NUM_PYRS];
+  DeviceArray2D<float3> nextPointClouds[NUM_PYRS];
 
   std::vector<int> iterations;
   std::vector<float> minimumGradientMagnitudes;

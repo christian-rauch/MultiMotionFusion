@@ -89,6 +89,7 @@ RGBDOdometry::RGBDOdometry(int width, int height, float cx, float cy, float fx, 
     nextdIdy[i].create(pyrDims.at(i).x, pyrDims.at(i).y);
 
     pointClouds[i].create(pyrDims.at(i).x, pyrDims.at(i).y);
+    nextPointClouds[i].create(pyrDims.at(i).x, pyrDims.at(i).y);
 
     corresImg[i].create(pyrDims.at(i).x, pyrDims.at(i).y);
   }
@@ -219,14 +220,15 @@ void RGBDOdometry::initRGBModel(GPUTexture* rgb) {
   populateRGBDData(rgb, &lastDepth[0], &lastImage[0], &lastMask[0]);
 }
 
-void RGBDOdometry::initRGBDFromPrveious() {
+void RGBDOdometry::initRGBDFromPrevious() {
   // NOTE: This depends on vmaps_tmp containing the corresponding depth from initICPModel
   for (int i = 0; i < RGBDOdometry::NUM_PYRS; ++i) {
-    lastImage[i] = nextImage[i];
-    lastDepth[i] = nextDepth[i];
-    vmaps_g_prev_[i] = vmaps_curr_[i];
-    nmaps_g_prev_[i] = nmaps_curr_[i];
+    nextImage[i].copyTo(lastImage[i]);
+    nextDepth[i].copyTo(lastDepth[i]);
+    vmaps_curr_[i].copyTo(vmaps_g_prev_[i]);
+    nmaps_curr_[i].copyTo(nmaps_g_prev_[i]);
   }
+  copyMaps2(vmaps_curr_[0], vmaps_tmp);
 }
 
 void RGBDOdometry::initRGB(GPUTexture* rgb) {
@@ -452,6 +454,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
   for (int i = NUM_PYRS - 1; i >= 0; i--) {
     if (rgb) {
       projectToPointCloud(lastDepth[i], pointClouds[i], intr, i);
+      projectToPointCloud(nextDepth[i], nextPointClouds[i], intr, i);
     }
 
     Eigen::Matrix<double, 3, 3, Eigen::RowMajor> K = Eigen::Matrix<double, 3, 3, Eigen::RowMajor>::Zero();
@@ -546,21 +549,39 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
               (i == 0 && j == iterations[i] - 1) ? icpErrorSurface : 0);
       TOCK("icpStep");
 
+//      std::cout << "icp A" << std::endl << A_icp << std::endl;
+//      std::cout << "icp b" << std::endl << b_icp << std::endl;
+
       lastICPError = sqrt(residual[0]) / residual[1];
       lastICPCount = residual[1];
 
       Eigen::Matrix<float, 6, 6, Eigen::RowMajor> A_rgbd;
       Eigen::Matrix<float, 6, 1> b_rgbd;
 
-      if (rgb) {
+      if (rgb && nextKeypoints.rows()==0) {
         TICK("rgbStep");
         rgbStep(corresImg[i], sigmaVal, pointClouds[i], intr(i).fx, intr(i).fy, nextdIdx[i], nextdIdy[i], sobelScale, sumDataSE3,
                 outDataSE3, A_rgbd.data(), b_rgbd.data(), GPUConfig::getInstance().rgbStepThreads, GPUConfig::getInstance().rgbStepBlocks);
         TOCK("rgbStep");
       }
+      else if (nextKeypoints.rows()>0) {
+        // weighted orthogonal procrustes on keypoint correspondences
+        cv::Mat pc0(nextPointClouds[i].rows(), nextPointClouds[i].cols(), CV_32FC3);
+        cv::Mat pc1(pointClouds[i].rows(), pointClouds[i].cols(), CV_32FC3);
+        pointClouds[i].download(pc1.data, pointClouds[i].cols() * 3 * sizeof(float));
+        nextPointClouds[i].download(pc0.data, nextPointClouds[i].cols() * 3 * sizeof(float));
+        // dbg
+        std::array<cv::Mat,3> xyz0;
+        cv::split(pc0, xyz0);
+        cv::imshow("z0 - "+std::to_string(i), xyz0[2]);
+        std::array<cv::Mat,3> xyz1;
+        cv::split(pc1, xyz1);
+        cv::imshow("z1 - "+std::to_string(i), xyz1[2]);
+        cv::waitKey(1);
+      }
 
-//      std::cout << "A" << std::endl << A_rgbd << std::endl;
-//      std::cout << "b" << std::endl << b_rgbd << std::endl;
+//      std::cout << "rgb A" << std::endl << A_rgbd << std::endl;
+//      std::cout << "rgb b" << std::endl << b_rgbd << std::endl;
 
       Eigen::Matrix<double, 6, 1> result;
       Eigen::Matrix<double, 6, 6, Eigen::RowMajor> dA_rgbd = A_rgbd.cast<double>();
@@ -584,6 +605,8 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       } else {
         assert(false && "Control shouldn't reach here");
       }
+
+//      std::cout << "result " << std::endl << result << std::endl;
 
       Eigen::Isometry3f rgbOdom;
 

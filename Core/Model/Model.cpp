@@ -370,7 +370,7 @@ void Model::initICP(bool doFillIn, bool frameToFrameRGB, float depthCutoff, GPUT
 
   if (frameToFrameRGB) {
       // shift raw RGB-D observation to 'last' position
-      frameToModel.initRGBDFromPrveious();
+      frameToModel.initRGBDFromPrevious();
   }
   else {
       // WARNING initICP* must be called before initRGB*
