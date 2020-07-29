@@ -161,6 +161,7 @@ class RGBDOdometry {
   typedef Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> mXXf;
   mXXf next_keypoints;
   mXXf last_keypoints;
+  std::vector<std::tuple<int, int, float>> matches; // {(last, next, score)}
   cv::Mat next_features;
   cv::Mat last_features;
   cv::Mat next_segmentation;

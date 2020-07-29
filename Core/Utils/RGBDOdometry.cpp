@@ -267,7 +267,7 @@ pairwise_matches(const Eigen::MatrixXf &last_keypoints,
         last_mask_id.push_back(i);
       }
   }
-  last_keypoints_mask = last_keypoints_mask.topRows(kp_matches);
+  last_keypoints_mask.conservativeResize(kp_matches, Eigen::NoChange);
 
   // store correspondences (last_id, next_id)
   std::vector<std::tuple<int, int, float>> match_ids;
@@ -334,7 +334,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 
   // keypoint correspondences
   if (next_keypoints.rows()>0) {
-    const auto matches = pairwise_matches(last_keypoints, next_keypoints, last_segmentation==maskID);
+    matches = pairwise_matches(last_keypoints, next_keypoints, last_segmentation==maskID);
     const cv::Mat img_matches = draw_matches(last_keypoints, next_keypoints, matches, last_segmentation==maskID);
     cv::imshow("matches "+std::to_string(maskID), img_matches);
     cv::waitKey(1);
@@ -345,7 +345,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       for(int i=0; i<int(matches.size()); i++)
           matches_norm.row(i) = Eigen::Vector2i{std::get<0>(matches[i]), std::get<1>(matches[i])};
       upload_eigen(matches_norm, matchID);
-      Eigen::RowVectorXf scores(matches.size());
+      Eigen::RowVectorXf scores = Eigen::RowVectorXf::Zero(matches.size());
       for(size_t i=0; i<matches.size(); i++)
         scores[int(i)] = std::get<2>(matches[i]);
       upload_eigen(scores, matchScores);
@@ -558,26 +558,88 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       Eigen::Matrix<float, 6, 6, Eigen::RowMajor> A_rgbd;
       Eigen::Matrix<float, 6, 1> b_rgbd;
 
-      if (rgb && nextKeypoints.rows()==0) {
+      Eigen::Isometry3f kpT = Eigen::Isometry3f::Identity();
+
+      if (rgb && matches.empty()) {
         TICK("rgbStep");
         rgbStep(corresImg[i], sigmaVal, pointClouds[i], intr(i).fx, intr(i).fy, nextdIdx[i], nextdIdy[i], sobelScale, sumDataSE3,
                 outDataSE3, A_rgbd.data(), b_rgbd.data(), GPUConfig::getInstance().rgbStepThreads, GPUConfig::getInstance().rgbStepBlocks);
         TOCK("rgbStep");
       }
-      else if (nextKeypoints.rows()>0) {
+      else if (!matches.empty()) {
         // weighted orthogonal procrustes on keypoint correspondences
         cv::Mat pc0(nextPointClouds[i].rows(), nextPointClouds[i].cols(), CV_32FC3);
         cv::Mat pc1(pointClouds[i].rows(), pointClouds[i].cols(), CV_32FC3);
         pointClouds[i].download(pc1.data, pointClouds[i].cols() * 3 * sizeof(float));
         nextPointClouds[i].download(pc0.data, nextPointClouds[i].cols() * 3 * sizeof(float));
-        // dbg
-        std::array<cv::Mat,3> xyz0;
-        cv::split(pc0, xyz0);
-        cv::imshow("z0 - "+std::to_string(i), xyz0[2]);
-        std::array<cv::Mat,3> xyz1;
-        cv::split(pc1, xyz1);
-        cv::imshow("z1 - "+std::to_string(i), xyz1[2]);
-        cv::waitKey(1);
+//        // dbg
+//        const float max_depth_vis = 3;
+//        std::array<cv::Mat,3> xyz0;
+//        cv::split(pc0, xyz0);
+//        cv::imshow("z0 - "+std::to_string(i), xyz0[2]/max_depth_vis);
+//        std::array<cv::Mat,3> xyz1;
+//        cv::split(pc1, xyz1);
+//        cv::imshow("z1 - "+std::to_string(i), xyz1[2]/max_depth_vis);
+//        cv::waitKey(1);
+
+        // maximum number of correspondences
+        // some correspondences will have invalid depth and have to be removed
+        const int N = matches.size();
+        int k = 0; // number of matches with valid depth
+        Eigen::MatrixX3f p0 = Eigen::MatrixX3f::Zero(N, 3);
+        Eigen::MatrixX3f p1 = Eigen::MatrixX3f::Zero(N, 3);
+        Eigen::VectorXf d = Eigen::VectorXf::Zero(N);
+        for(int i=0; i<N; i++){
+          int ik;
+          int x,y;
+          Eigen::Vector3f v0, v1;
+          // next
+          ik = std::get<1>(matches[i]);
+          x = next_keypoints.row(ik)[0] * pc0.size().width;
+          y = next_keypoints.row(ik)[1] * pc0.size().height;
+          cv::cv2eigen(pc0.at<cv::Vec3f>(y,x), v0);
+          // last
+          ik = std::get<0>(matches[i]);
+          x = last_keypoints.row(ik)[0] * pc1.size().width;
+          y = last_keypoints.row(ik)[1] * pc1.size().height;
+          cv::cv2eigen(pc1.at<cv::Vec3f>(y,x), v1);
+
+          if( !(std::isnan(v0.z()) || std::isnan(v1.z()))) {
+            p0.row(k) = v0;
+            p1.row(k) = v1;
+            d[k] = std::get<2>(matches[i]);
+            k++;
+          }
+        }
+
+        if (k>=3) {
+          // remove tail with empty correspondences
+          p0.conservativeResize(k, Eigen::NoChange);
+          p1.conservativeResize(k, Eigen::NoChange);
+          d.conservativeResize(k);
+
+          // convert L2 distances to weights with sum(w) = trace(W) = k
+          const auto we = (-d).array().exp();
+          const Eigen::VectorXf w = (we / we.sum()) * we.size();
+          const auto W = w.asDiagonal();
+
+          const Eigen::RowVector3f p0m = p0.colwise().mean();
+          const Eigen::RowVector3f p1m = p1.colwise().mean();
+
+          // weighted least-squares optimisation of rigid transformation
+          const auto A = (p0.rowwise()-p0m).transpose() * (p1.rowwise()-p1m);
+//          const auto A = (p0.rowwise()-p0m).transpose() * W * (p1.rowwise()-p1m);
+          Eigen::JacobiSVD<Eigen::MatrixXf> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV);
+
+          auto U = svd.matrixU();
+          auto V = svd.matrixV();
+          auto S = Eigen::Vector3f(1, 1, U.determinant() * V.determinant()).asDiagonal();
+
+          const Eigen::Matrix3f R = U * S * V.transpose();
+          const Eigen::Vector3f t = p0m - (R * p1m.transpose()).transpose();
+          kpT.translate(t).rotate(R);
+        } // at least k>=3 correspondences
+
       }
 
 //      std::cout << "rgb A" << std::endl << A_rgbd << std::endl;
@@ -610,7 +672,14 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 
       Eigen::Isometry3f rgbOdom;
 
-      OdometryProvider::computeUpdateSE3(resultRt, result, rgbOdom);
+      if (matches.empty()) {
+        OdometryProvider::computeUpdateSE3(resultRt, result, rgbOdom);
+      }
+      else {
+        rgbOdom = kpT;
+      }
+
+      std::cout << "odom update " << std::endl << rgbOdom.matrix() << std::endl;
 
       Eigen::Isometry3f currentT;
       currentT.setIdentity();
