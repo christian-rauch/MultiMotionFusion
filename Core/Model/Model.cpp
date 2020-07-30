@@ -397,7 +397,7 @@ void Model::initICP(bool doFillIn, bool frameToFrameRGB, float depthCutoff, GPUT
 
 void Model::performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight, bool pyramid, bool fastOdom, bool so3,
                             float maxDepthProcessed, GPUTexture* rgb, GPUTexture* last_segmentation, int64_t logTimestamp, bool doFillIn,
-                            const cv::Mat &features, const Eigen::MatrixX2f &kp_coordinates, const Eigen::MatrixXf &kp_descriptors) {
+                            const std::vector<cv::Mat> &features, const std::vector<Eigen::MatrixX2d> &kp_coordinates, const std::vector<Eigen::MatrixXd> &kp_descriptors) {
   assert(fillIn || !doFillIn);
   lastPose = pose;
 

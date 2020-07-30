@@ -326,7 +326,7 @@ class CoFusion {
 
   RGBDOdometry modelToModel;
 
-  const SuperPoint sp;
+  const std::shared_ptr<FeatureMatchesInterface> kp_predictor;
 
   // TODO move to model?
   Ferns ferns;

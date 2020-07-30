@@ -61,10 +61,10 @@ class RGBDOdometry {
 
   Eigen::MatrixXd getCovariance();
 
-  void setNextKeypoints(const Eigen::MatrixX2f &kp_coordinates, const Eigen::MatrixXf &kp_descriptors);
+  void setNextKeypoints(const std::vector<Eigen::MatrixX2d> &kp_coordinates, const std::vector<Eigen::MatrixXd> &kp_descriptors);
   void setLastKeypointsFromPrevious();
 
-  void setNextFeatureMap(const cv::Mat &feat);
+  void setNextFeatureMap(const std::vector<cv::Mat> &feat);
   void setLastFeatureMapFromPrevious();
 
   void setLastSegmentation(const cv::Mat &segm);
@@ -148,22 +148,22 @@ class RGBDOdometry {
 
   // N x (2+D) matrix that stores N keypoints row-wise
   // with 2 normalised [0,1] coordinates (x,y) and a D feature vector
-  DeviceArray2D<float> nextKeypoints;
-  DeviceArray2D<float> lastKeypoints;
-  DeviceArray2D<int> matchID; // N x 2: {(last, next)}
-  DeviceArray2D<float> matchScores;
+  DeviceArray2D<float> nextKeypoints[NUM_PYRS];
+  DeviceArray2D<float> lastKeypoints[NUM_PYRS];
+  DeviceArray2D<int> matchID[NUM_PYRS]; // N x 2: {(last, next)}
+  DeviceArray2D<float> matchScores[NUM_PYRS];
 
   // W x H x D tensor
-  DeviceArray2D<float> nextFeatureMaps;
-  DeviceArray2D<float> lastFeatureMaps;
+  DeviceArray2D<float> nextFeatureMaps[NUM_PYRS];
+  DeviceArray2D<float> lastFeatureMaps[NUM_PYRS];
 
   // local host copies
   typedef Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> mXXf;
-  mXXf next_keypoints;
-  mXXf last_keypoints;
-  std::vector<std::tuple<int, int, float>> matches; // {(last, next, score)}
-  cv::Mat next_features;
-  cv::Mat last_features;
+  std::vector<mXXf> next_keypoints;
+  std::vector<mXXf> last_keypoints;
+  std::vector<std::vector<std::tuple<int, int, float>>> matches; // {(last, next, score)}
+  std::vector<cv::Mat> next_features;
+  std::vector<cv::Mat> last_features;
   cv::Mat next_segmentation;
   cv::Mat last_segmentation;
 };

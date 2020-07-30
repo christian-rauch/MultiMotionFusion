@@ -29,7 +29,7 @@ CoFusion::CoFusion(const int timeDelta, const int countThresh, const float errTh
       inactiveModelListeners(0),
       modelToModel(Resolution::getInstance().width(), Resolution::getInstance().height(), Intrinsics::getInstance().cx(),
                    Intrinsics::getInstance().cy(), Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy()),
-      sp(keypoint_predictor_path),
+      kp_predictor(new SuperPoint(keypoint_predictor_path)),
       ferns(500, depthCut * 1000, photoThresh),
       tick(1),
       timeDelta(timeDelta),
@@ -187,10 +187,14 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
 
   TICK("Keypoints");
   // get normalised keypoints and feature maps
-  Eigen::MatrixX2d coordinates;
-  Eigen::MatrixXd descriptors;
-  cv::Mat features;
-  std::tie(features, coordinates, descriptors) = sp.getFeatures(frame.rgb);
+  std::vector<Eigen::MatrixX2d> coordinates(RGBDOdometry::NUM_PYRS);
+  std::vector<Eigen::MatrixXd> descriptors(RGBDOdometry::NUM_PYRS);
+  std::vector<cv::Mat> features(RGBDOdometry::NUM_PYRS);
+  for(int i=0; i<RGBDOdometry::NUM_PYRS; i++) {
+    cv::Mat img;
+    cv::resize(frame.rgb, img, cv::Size(frame.rgb.cols >> i, frame.rgb.rows >> i));
+    std::tie(features[i], coordinates[i], descriptors[i]) = kp_predictor->getFeatures(img);
+  }
 //  cv::Mat img;
 //  cv::cvtColor(frame.rgb, img, cv::COLOR_RGB2GRAY);
 //  for(int i=0; i<coordinates.rows(); i++) {
@@ -251,7 +255,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
     // set the initial keypoint such that in the next iteration, when next becomes last,
     // we will compare identical features and keypoints
     for (auto model : models) {
-        model->getFrameOdometry().setNextKeypoints(coordinates.cast<float>(), descriptors.cast<float>());
+        model->getFrameOdometry().setNextKeypoints(coordinates, descriptors);
         model->getFrameOdometry().setNextFeatureMap(features);
     }
   } else {
@@ -266,7 +270,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       // TODO: use one global store for the feature maps and keypoints for the current and last observed frame
       for (auto model : models) {
         model->performTracking(frameToFrameRGB, rgbOnly, icpWeight, pyramid, fastOdom, so3, maxDepthProcessed, textures[GPUTexture::RGB],
-                               textures[GPUTexture::MASK], frame.timestamp, requiresFillIn(model), features, coordinates.cast<float>(), descriptors.cast<float>());
+                               textures[GPUTexture::MASK], frame.timestamp, requiresFillIn(model), features, coordinates, descriptors);
       }
       TOCK("odom");
 
