@@ -335,7 +335,8 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
   // keypoint correspondences
   if (next_keypoints.rows()>0) {
     matches = pairwise_matches(last_keypoints, next_keypoints, last_segmentation==maskID);
-    const cv::Mat img_matches = draw_matches(last_keypoints, next_keypoints, matches, last_segmentation==maskID);
+    cv::Mat img_matches = draw_matches(last_keypoints, next_keypoints, matches, last_segmentation==maskID);
+    cv::resize(img_matches, img_matches, cv::Size(0,0), 0.5, 0.5);
     cv::imshow("matches "+std::to_string(maskID), img_matches);
     cv::waitKey(1);
 
