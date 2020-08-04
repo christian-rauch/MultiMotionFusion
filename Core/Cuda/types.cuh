@@ -72,6 +72,25 @@ struct mat33
     float3 data[3];
 };
 
+struct mat44
+{
+    mat44() {}
+
+#if !defined(__CUDACC__)
+    mat44(Eigen::Matrix<float, 4, 4, Eigen::RowMajor> & e)
+    {
+        memcpy(data, e.data(), sizeof(mat44));
+    }
+
+    mat44(Eigen::Matrix<float, 4, 4, Eigen::RowMajor> e)
+    {
+        memcpy(data, e.data(), sizeof(mat44));
+    }
+#endif
+
+    float4 data[4];
+};
+
 struct DataTerm
 {
     short2 zero;

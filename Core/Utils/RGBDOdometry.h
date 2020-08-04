@@ -37,6 +37,8 @@ class RGBDOdometry {
 
   virtual ~RGBDOdometry();
 
+  const int2 &getPyramidDim(const int level);
+
   // Prepare current frame data for CUDA ICP execution
   // void initICP(GPUTexture * filteredDepth, const float depthCutoff, GPUTexture * mask); // frame to model
   void initICP(const std::vector<DeviceArray2D<float> >& depthPyramid, const std::vector<DeviceArray2D<unsigned char> >& maskPyramid,
@@ -57,7 +59,8 @@ class RGBDOdometry {
   // Get relative transformation, executes optimisation
   void getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::Matrix<float, 3, 3, Eigen::RowMajor>& rot, const bool& rgbOnly,
                                     const float& icpWeight, const bool& pyramid, const bool& fastOdom, const bool& so3,
-                                    const cudaSurfaceObject_t& icpErrorSurface, const cudaSurfaceObject_t& rgbErrorSurface);
+                                    const cudaSurfaceObject_t& icpErrorSurface, const cudaSurfaceObject_t& rgbErrorSurface,
+                                    const std::vector<std::unique_ptr<GPUTexture>> &projError);
 
   Eigen::MatrixXd getCovariance();
 

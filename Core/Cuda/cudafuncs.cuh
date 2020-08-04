@@ -81,6 +81,15 @@ void icpStep(const mat33& Rcurr,
              int blocks,
              const cudaSurfaceObject_t& icpErrorSurface);
 
+void projectionError(const mat44& Tcurr,
+                     const DeviceArray2D<float>& vmap_curr,
+                     const CameraModel& intr,
+                     const DeviceArray2D<float>& vmap_g_prev,
+                     float distThres,
+                     int threads,
+                     int blocks,
+                     const cudaSurfaceObject_t& rpeSurface);
+
 void rgbStep(const DeviceArray2D<DataTerm> & corresImg,
              const float & sigma,
              const DeviceArray2D<float3> & cloud,

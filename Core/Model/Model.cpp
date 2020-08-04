@@ -147,6 +147,13 @@ Model::Model(unsigned char id, float confidenceThresh, bool enableFillIn, bool e
       break;
   }
 
+  projError.resize(RGBDOdometry::NUM_PYRS);
+  for(int l=0; l<RGBDOdometry::NUM_PYRS; l++) {
+    // note: int2 dims are stores as {.x = height, .y = width}
+    const int2 dim = frameToModel.getPyramidDim(l);
+    projError[l] = std::make_unique<GPUTexture>(dim.y, dim.x, GL_R32F, GL_RED, GL_FLOAT, true, true, cudaGraphicsRegisterFlagsSurfaceLoadStore, "RPE"+std::to_string(l));
+  }
+
   if (enablePoseLogging) poseLog.reserve(1000);
 
   float* vertices = new float[bufferSize];
@@ -423,7 +430,7 @@ void Model::performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight,
   Eigen::Matrix<float, 3, 3, Eigen::RowMajor> rotObject = pose.topLeftCorner(3, 3);
 
   getFrameOdometry().getIncrementalTransformation(transObject, rotObject, rgbOnly, icpWeight, pyramid, fastOdom, so3,
-                                                  icpError->getCudaSurface(), rgbError->getCudaSurface());
+                                                  icpError->getCudaSurface(), rgbError->getCudaSurface(), projError);
 
   pose.topRightCorner(3, 1) = transObject;
   pose.topLeftCorner(3, 3) = rotObject;

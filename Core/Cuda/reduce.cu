@@ -475,6 +475,115 @@ void icpStep(const mat33& Rcurr,
     residual_host[1] = host_data[28];
 }
 
+struct ProjectionError
+{
+    // transformation from last to current frame
+    mat44 Tcurr;
+
+    PtrStep<float> vmap_curr;
+
+    CameraModel intr;
+
+    PtrStep<float> vmap_g_prev;
+
+    float distThres;
+
+    int cols;
+    int rows;
+
+    cudaSurfaceObject_t outErrorSurface;
+
+    __device__ __forceinline__ bool
+    distance(const int &x, const int &y) const
+    {
+        // 3D coordinate at (x,y)
+        const float3 vcurr {
+          .x = vmap_curr.ptr (y       )[x],
+          .y = vmap_curr.ptr (y + rows)[x],
+          .z = vmap_curr.ptr (y + 2 * rows)[x],
+        };
+
+        // transform to previous camera frame
+        const float4 a = Tcurr * hom34(vcurr);
+        const float3 vcurr_cp = {a.x, a.y, a.z};
+
+        // project to previous image plane
+        int2 ukr;
+        ukr.x = __float2int_rn (vcurr_cp.x * intr.fx / vcurr_cp.z + intr.cx);
+        ukr.y = __float2int_rn (vcurr_cp.y * intr.fy / vcurr_cp.z + intr.cy);
+
+        if(ukr.x < 0 || ukr.y < 0 || ukr.x >= cols || ukr.y >= rows || vcurr_cp.z < 0){
+            // This magic number is picked to be small, so that during super-pixel downsampling it gets
+            // either overwritten by larger values, or allows to check ICP<0 => has outlier (ICP==0.0001 => only outlier)
+            if(outErrorSurface) surf2Dwrite(0.0f, outErrorSurface, x*sizeof(float), y);
+            return false;
+        }
+
+        // point at projected coordinate in previous camera
+        float3 vprev_g;
+        vprev_g.x = __ldg(&vmap_g_prev.ptr (ukr.y       )[ukr.x]);
+        vprev_g.y = __ldg(&vmap_g_prev.ptr (ukr.y + rows)[ukr.x]);
+        vprev_g.z = __ldg(&vmap_g_prev.ptr (ukr.y + 2 * rows)[ukr.x]);
+
+        const float dist = norm(vprev_g - vcurr_cp);
+
+        if(outErrorSurface) surf2Dwrite(isfinite(dist) ? dist : 0.0f, outErrorSurface, x*sizeof(float), y);
+
+        return dist <= distThres;
+    }
+
+    __device__ __forceinline__ void
+    operator () () const
+    {
+        for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < rows * cols; i += blockDim.x * gridDim.x)
+        {
+            const int y = i / cols;
+            const int x = i - (y * cols);
+            distance(x, y);
+        }
+    }
+};
+
+__global__ void rpeKernel(const ProjectionError rp)
+{
+    rp();
+}
+
+void projectionError(const mat44& Tcurr,
+                     const DeviceArray2D<float>& vmap_curr,
+                     const CameraModel& intr,
+                     const DeviceArray2D<float>& vmap_g_prev,
+                     float distThres,
+                     int threads,
+                     int blocks,
+                     const cudaSurfaceObject_t& rpeSurface)
+{
+    int cols = vmap_curr.cols ();
+    int rows = vmap_curr.rows () / 3;
+
+    ProjectionError rpe;
+
+    rpe.Tcurr = Tcurr;
+
+    rpe.vmap_curr = vmap_curr;
+
+    rpe.intr = intr;
+
+    rpe.vmap_g_prev = vmap_g_prev;
+
+    rpe.distThres = distThres;
+
+    rpe.cols = cols;
+    rpe.rows = rows;
+
+    rpe.outErrorSurface = rpeSurface;
+
+    rpeKernel<<<blocks, threads>>>(rpe);
+
+    cudaSafeCall(cudaGetLastError());
+    cudaSafeCall(cudaDeviceSynchronize());
+}
+
 #define FLT_EPSILON ((float)1.19209290E-07F)
 
 struct RGBReduction

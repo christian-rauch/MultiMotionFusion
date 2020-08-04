@@ -270,6 +270,7 @@ class Model {
 
   std::unique_ptr<GPUTexture> icpError;
   std::unique_ptr<GPUTexture> rgbError;
+  std::vector<std::unique_ptr<GPUTexture>> projError;
 
   const GPUSetup& gpu;
 

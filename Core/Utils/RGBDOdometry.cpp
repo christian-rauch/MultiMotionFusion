@@ -135,6 +135,10 @@ RGBDOdometry::RGBDOdometry(int width, int height, float cx, float cy, float fx, 
 
 RGBDOdometry::~RGBDOdometry() {}
 
+const int2 &RGBDOdometry::getPyramidDim(const int level) {
+  return pyrDims[level];
+}
+
 void RGBDOdometry::initICP(const std::vector<DeviceArray2D<float> >& depthPyramid,
                            const std::vector<DeviceArray2D<unsigned char> >& maskPyramid, const float depthCutoff) {
   for (int i = 0; i < RGBDOdometry::NUM_PYRS; ++i) {
@@ -320,8 +324,8 @@ draw_matches(const Eigen::MatrixXf &last_keypoints,
 
 void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::Matrix<float, 3, 3, Eigen::RowMajor>& rot,
                                                 const bool& rgbOnly, const float& icpWeight, const bool& pyramid, const bool& fastOdom,
-                                                const bool& so3, const cudaSurfaceObject_t& icpErrorSurface,
-                                                const cudaSurfaceObject_t& rgbErrorSurface) {
+                                                const bool& so3, const cudaSurfaceObject_t& icpErrorSurface, const cudaSurfaceObject_t& rgbErrorSurface,
+                                                const std::vector<std::unique_ptr<GPUTexture>> &projError) {
   bool icp = !rgbOnly && icpWeight > 0;
   bool rgb = rgbOnly || icpWeight < 100;
 
@@ -567,6 +571,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       Eigen::Matrix<float, 6, 6, Eigen::RowMajor> A_rgbd;
       Eigen::Matrix<float, 6, 1> b_rgbd;
 
+      // transformation from previous to current frame
       Eigen::Isometry3f kpT = Eigen::Isometry3f::Identity();
 
       if (rgb && matches[i].empty()) {
@@ -577,10 +582,10 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       }
       else if (!matches[i].empty()) {
         // weighted orthogonal procrustes on keypoint correspondences
-        cv::Mat pc0(nextPointClouds[i].rows(), nextPointClouds[i].cols(), CV_32FC3);
-        cv::Mat pc1(pointClouds[i].rows(), pointClouds[i].cols(), CV_32FC3);
-        pointClouds[i].download(pc1.data, pointClouds[i].cols() * 3 * sizeof(float));
-        nextPointClouds[i].download(pc0.data, nextPointClouds[i].cols() * 3 * sizeof(float));
+        cv::Mat pc0(pointClouds[i].rows(), pointClouds[i].cols(), CV_32FC3);
+        cv::Mat pc1(nextPointClouds[i].rows(), nextPointClouds[i].cols(), CV_32FC3);
+        pointClouds[i].download(pc0.data, pointClouds[i].cols() * 3 * sizeof(float));
+        nextPointClouds[i].download(pc1.data, nextPointClouds[i].cols() * 3 * sizeof(float));
 //        // dbg
 //        const float max_depth_vis = 3;
 //        std::array<cv::Mat,3> xyz0;
@@ -595,23 +600,24 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
         // some correspondences will have invalid depth and have to be removed
         const int N = matches[i].size();
         int k = 0; // number of matches with valid depth
-        Eigen::MatrixX3f p0 = Eigen::MatrixX3f::Zero(N, 3);
-        Eigen::MatrixX3f p1 = Eigen::MatrixX3f::Zero(N, 3);
+        Eigen::MatrixX3f p0 = Eigen::MatrixX3f::Zero(N, 3); // last (previous)
+        Eigen::MatrixX3f p1 = Eigen::MatrixX3f::Zero(N, 3); // next (current)
         Eigen::VectorXf d = Eigen::VectorXf::Zero(N);
         for(int m=0; m<N; m++){
           int ik;
           int x,y;
-          Eigen::Vector3f v0, v1;
           // next
+          Eigen::Vector3f v1;
           ik = std::get<1>(matches[i][m]);
-          x = next_keypoints[i].row(ik)[0] * pc0.size().width;
-          y = next_keypoints[i].row(ik)[1] * pc0.size().height;
-          cv::cv2eigen(pc0.at<cv::Vec3f>(y,x), v0);
-          // last
-          ik = std::get<0>(matches[i][m]);
-          x = last_keypoints[i].row(ik)[0] * pc1.size().width;
-          y = last_keypoints[i].row(ik)[1] * pc1.size().height;
+          x = next_keypoints[i].row(ik)[0] * pc1.size().width;
+          y = next_keypoints[i].row(ik)[1] * pc1.size().height;
           cv::cv2eigen(pc1.at<cv::Vec3f>(y,x), v1);
+          // last
+          Eigen::Vector3f v0;
+          ik = std::get<0>(matches[i][m]);
+          x = last_keypoints[i].row(ik)[0] * pc0.size().width;
+          y = last_keypoints[i].row(ik)[1] * pc0.size().height;
+          cv::cv2eigen(pc0.at<cv::Vec3f>(y,x), v0);
 
           if( !(std::isnan(v0.z()) || std::isnan(v1.z()))) {
             p0.row(k) = v0;
@@ -636,8 +642,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
           const Eigen::RowVector3f p1m = p1.colwise().mean();
 
           // weighted least-squares optimisation of rigid transformation
-//          const auto A = (p0.rowwise()-p0m).transpose() * (p1.rowwise()-p1m);
-          const auto A = (p0.rowwise()-p0m).transpose() * W * (p1.rowwise()-p1m);
+          const auto A = (p1.rowwise()-p1m).transpose() * W * (p0.rowwise()-p0m);
           Eigen::JacobiSVD<Eigen::MatrixXf> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV);
 
           auto U = svd.matrixU();
@@ -645,14 +650,25 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
           auto S = Eigen::Vector3f(1, 1, U.determinant() * V.determinant()).asDiagonal();
 
           const Eigen::Matrix3f R = U * S * V.transpose();
-          const Eigen::Vector3f t = p0m - (R * p1m.transpose()).transpose();
+          const Eigen::Vector3f t = p1m - (R * p0m.transpose()).transpose();
           kpT.translate(t).rotate(R);
+
+//          const Eigen::VectorXf dist = (p0 - (kpT * p1.transpose()).transpose()).rowwise().norm();
+//          std::cout << "kp reproj err L" << i << " (" << dist.size() << "): " << dist.mean() << std::endl;
         } // at least k>=3 correspondences
 
       }
 
 //      std::cout << "rgb A" << std::endl << A_rgbd << std::endl;
 //      std::cout << "rgb b" << std::endl << b_rgbd << std::endl;
+
+      // reprojection error for motion segmentation
+      const mat44 devT = Eigen::Matrix<float, 4, 4, Eigen::RowMajor>(kpT.matrix());
+      projectionError(devT, vmap_curr, intr(i), vmap_g_prev, distThres_,
+                      GPUConfig::getInstance().icpStepThreads, GPUConfig::getInstance().icpStepBlocks,
+                      (j == iterations[i] - 1) ? projError[i]->getCudaSurface() : 0);
+//      cv::imshow("RPE/L"+std::to_string(i)+"/it"+std::to_string(j), projError[i]->downloadTexture());
+//      cv::waitKey(1);
 
       Eigen::Matrix<double, 6, 1> result;
       Eigen::Matrix<double, 6, 6, Eigen::RowMajor> dA_rgbd = A_rgbd.cast<double>();
