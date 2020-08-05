@@ -1127,7 +1127,6 @@ struct KPResidual
     PtrStepSz<float> matchScore;
 
     PtrStepSz<unsigned char> lastMask;
-//    PtrStepSz<unsigned char> nextMask;
 
     mutable PtrStepSz<DataTerm> corresImg;
 
@@ -1140,84 +1139,81 @@ struct KPResidual
 
     unsigned char maskID;
 
-//    int pitch;
-//    int imgPitch;
-
     float2 * out;
     cudaSurfaceObject_t outErrorSurface;
 
-    mutable PtrStepSz<float> outAdjMat;
+//    mutable PtrStepSz<float> outAdjMat;
 
-    __device__ __forceinline__ void
-    getDistances(const int k) const
-    {
-        // next and last keypoint ID for indices of row and column of adjacency matrix
-        const int ikn = k / Nlast;          // next, row
-        const int ikl = k - (ikn * Nlast);  // last, column
+//    __device__ __forceinline__ void
+//    getDistances(const int k) const
+//    {
+//        // next and last keypoint ID for indices of row and column of adjacency matrix
+//        const int ikn = k / Nlast;          // next, row
+//        const int ikl = k - (ikn * Nlast);  // last, column
 
-        const int2 kl = {int(lastKeypoints.ptr(ikl)[0] * cols), int(lastKeypoints.ptr(ikl)[1] * rows)};
-        const int2 kn = {int(nextKeypoints.ptr(ikn)[0] * cols), int(nextKeypoints.ptr(ikn)[1] * rows)};
+//        const int2 kl = {int(lastKeypoints.ptr(ikl)[0] * cols), int(lastKeypoints.ptr(ikl)[1] * rows)};
+//        const int2 kn = {int(nextKeypoints.ptr(ikn)[0] * cols), int(nextKeypoints.ptr(ikn)[1] * rows)};
 
-//        if(outErrorSurface) surf2Dwrite(200.0f, outErrorSurface, kl.x*sizeof(float), kl.y);
-//        if(outErrorSurface) surf2Dwrite(200.0f, outErrorSurface, kn.x*sizeof(float), kl.y);
+////        if(outErrorSurface) surf2Dwrite(200.0f, outErrorSurface, kl.x*sizeof(float), kl.y);
+////        if(outErrorSurface) surf2Dwrite(200.0f, outErrorSurface, kn.x*sizeof(float), kl.y);
 
-        // ignore keypoints outside of masked area
-        if(lastMask.ptr(kl.y)[kl.x] != maskID) {
-            outAdjMat.ptr(ikn)[ikl] = CUDART_INF_F;
-        }
-        else {
-            // L2-norm distance between keypoint descriptors
-            outAdjMat.ptr(ikn)[ikl] = 0;
-            for(int i=0; i<feat_dim; i++) {
-                const float d = lastKeypoints.ptr(ikl)[2+i] - nextKeypoints.ptr(ikl)[2+i];
-                outAdjMat.ptr(ikn)[ikl] += d*d;
-            }
-            outAdjMat.ptr(ikn)[ikl] = sqrt(outAdjMat.ptr(ikn)[ikl]);
-        }
-//        printf("(%i,%i) %f\n", ikn, ikl, outAdjMat.ptr(ikn)[ikl]);
-    }
+//        // ignore keypoints outside of masked area
+//        if(lastMask.ptr(kl.y)[kl.x] != maskID) {
+//            outAdjMat.ptr(ikn)[ikl] = CUDART_INF_F;
+//        }
+//        else {
+//            // L2-norm distance between keypoint descriptors
+//            outAdjMat.ptr(ikn)[ikl] = 0;
+//            for(int i=0; i<feat_dim; i++) {
+//                const float d = lastKeypoints.ptr(ikl)[2+i] - nextKeypoints.ptr(ikl)[2+i];
+//                outAdjMat.ptr(ikn)[ikl] += d*d;
+//            }
+//            outAdjMat.ptr(ikn)[ikl] = sqrt(outAdjMat.ptr(ikn)[ikl]);
+//        }
+////        printf("(%i,%i) %f\n", ikn, ikl, outAdjMat.ptr(ikn)[ikl]);
+//    }
 
-    __device__ __forceinline__ int2
-    findMatches(const int ikl) const
-    {
-        const short2 kl = {short(lastKeypoints.ptr(ikl)[0] * cols), short(lastKeypoints.ptr(ikl)[1] * rows)};
+//    __device__ __forceinline__ int2
+//    findMatches(const int ikl) const
+//    {
+//        const short2 kl = {short(lastKeypoints.ptr(ikl)[0] * cols), short(lastKeypoints.ptr(ikl)[1] * rows)};
 
-        int2 value = {0, 0};
+//        int2 value = {0, 0};
 
-//        if(outErrorSurface) surf2Dwrite(200.0f, outErrorSurface, kl.x*sizeof(float), kl.y);
+////        if(outErrorSurface) surf2Dwrite(200.0f, outErrorSurface, kl.x*sizeof(float), kl.y);
 
-        if(lastMask.ptr(kl.y)[kl.x] != maskID) {
-            return value;
-        }
+//        if(lastMask.ptr(kl.y)[kl.x] != maskID) {
+//            return value;
+//        }
 
-        // check for best match in list->next direction
-        float min_val = CUDART_INF_F;
-        int min_id;
-        for(int ikn=0; ikn<Nnext; ikn++) {
-            const float dist_ln = outAdjMat.ptr(ikn)[ikl];
-            if(!isinf(dist_ln) && dist_ln < min_val) {
-                min_val = dist_ln;
-                min_id = ikn;
-            }
-        }
+//        // check for best match in list->next direction
+//        float min_val = CUDART_INF_F;
+//        int min_id;
+//        for(int ikn=0; ikn<Nnext; ikn++) {
+//            const float dist_ln = outAdjMat.ptr(ikn)[ikl];
+//            if(!isinf(dist_ln) && dist_ln < min_val) {
+//                min_val = dist_ln;
+//                min_id = ikn;
+//            }
+//        }
 
-        if (!isinf(min_val)) {
-            const short2 min_kn = {short(nextKeypoints.ptr(min_id)[0] * cols), short(nextKeypoints.ptr(min_id)[1] * rows)};
-            DataTerm corres;
-            corres.valid = true;
-            corres.zero = min_kn;
-            corres.one = kl;
-            corres.diff = min_val;
-            corresImg.ptr(min_kn.y)[min_kn.x] = corres;
-            value.x = 1;
-            value.y = min_val*min_val;
-//            printf("(%i,%i) %f\n", min_kn.x, min_kn.y, min_val);
-//            if(outErrorSurface) surf2Dwrite(200.0f, outErrorSurface, min_kn.x*sizeof(float), min_kn.y);
-        }
-//        printf("(%i,%i) %f\n", value.x, value.y, min_val);
+//        if (!isinf(min_val)) {
+//            const short2 min_kn = {short(nextKeypoints.ptr(min_id)[0] * cols), short(nextKeypoints.ptr(min_id)[1] * rows)};
+//            DataTerm corres;
+//            corres.valid = true;
+//            corres.zero = min_kn;
+//            corres.one = kl;
+//            corres.diff = min_val;
+//            corresImg.ptr(min_kn.y)[min_kn.x] = corres;
+//            value.x = 1;
+//            value.y = min_val*min_val;
+////            printf("(%i,%i) %f\n", min_kn.x, min_kn.y, min_val);
+////            if(outErrorSurface) surf2Dwrite(200.0f, outErrorSurface, min_kn.x*sizeof(float), min_kn.y);
+//        }
+////        printf("(%i,%i) %f\n", value.x, value.y, min_val);
 
-        return value;
-    }
+//        return value;
+//    }
 
     __device__ __forceinline__ float2
     getProducts(int k) const
@@ -1295,126 +1291,39 @@ struct KPResidual
 
         corresImg.ptr(kn.y)[kn.x] = corres;
 
-//        if(i >= 0 && i < rows && j0 >= 0 && j0 < cols)
-//        {
-//            if(j0 < cols - 5 && i < rows - 1)
-//            {
-//                bool valid = true;
-
-////                for(int u = max(i - 2, 0); u < min(i + 2, rows); u++)
-////                {
-////                    for(int v = max(j0 - 2, 0); v < min(j0 + 2, cols); v++)
-////                    {
-
-////                        valid = valid && (nextImage.ptr(u)[v] > 0)
-////#ifdef MASK_RGB_RESIDUAL
-////                                && (nextMask.ptr(u)[v] == maskID)
-////#endif
-////                                ;
-////                    }
-////                }
-
-////                printf("Hello from block %d, thread %d\n", blockIdx.x, threadIdx.x);
-
-////                if(outErrorSurface) surf2Dwrite((lastMask.ptr(i)[j0] == maskID)*200.0f, outErrorSurface, j0*sizeof(float), i);
-//                if(outErrorSurface) surf2Dwrite(200.0f, outErrorSurface, j0*sizeof(float), i);
-
-//                valid = (lastMask.ptr(i)[j0] == maskID);
-
-//                if(valid)
-//                {
-//                    int y = i;
-//                    int x = j0;
-
-////                    printf("test (%d, %d)\n", x, y);
-
-//                    // original feature maps [80 x 60] x D=256
-////                    printf("test (%d, %d) %f\n", x, y, lastFeatureMaps.ptr(y)[x]);
-////                    printf("test (%d, %d) %f\n", x, y, nextFeatureMaps.ptr(y)[x]);
-
-//                    float d1 = nextDepth.ptr(y)[x];
-
-////                        if(!isnan(d1))
-//                    if(true)
-//                    {
-//                        float transformed_d1 = (float)(d1 * (krkinv.data[2].x * x + krkinv.data[2].y * y + krkinv.data[2].z) + kt.z);
-//                        int u0 = __float2int_rn((d1 * (krkinv.data[0].x * x + krkinv.data[0].y * y + krkinv.data[0].z) + kt.x) / transformed_d1);
-//                        int v0 = __float2int_rn((d1 * (krkinv.data[1].x * x + krkinv.data[1].y * y + krkinv.data[1].z) + kt.y) / transformed_d1);
-
-//                        if(u0 >= 0 && v0 >= 0 && u0 < lastDepth.cols && v0 < lastDepth.rows)
-//                        {
-//                            float d0 = lastDepth.ptr(v0)[u0];
-
-//                            if(d0 > 0 && std::abs(transformed_d1 - d0) <= maxDepthDelta /*&& lastImage.ptr(v0)[u0] != 0*/)
-//                            {
-//                                corres.zero.x = u0;
-//                                corres.zero.y = v0;
-//                                corres.one.x = x;
-//                                corres.one.y = y;
-////                                    corres.diff = static_cast<float>(nextImage.ptr(y)[x]) - static_cast<float>(lastImage.ptr(v0)[u0]);
-//                                // TODO: bilinear interpolatation of 1/8 feature maps
-//                                // normalise coordinates in [0,1]
-//                                // (x,y) coordinate in current (next) image frame
-//                                float xn = x/cols;
-//                                float yn = y/rows;
-//                                float un = u0/cols;
-//                                float vn = v0/rows;
-//                                corres.valid = true;
-//                                value.x = 1;
-////                                    value.y = corres.diff * corres.diff;
-////                                    if(outErrorSurface) surf2Dwrite(0.00001f * value.y, outErrorSurface, x*sizeof(float), y);
-////                                    if(outErrorSurface) surf2Dwrite(0.001f * value.y, outErrorSurface, x*sizeof(float), y);
-////                                    if(outErrorSurface) surf2Dwrite((lastMask.ptr(y)[x] == maskID)*200, outErrorSurface, x*sizeof(float), y);
-//                            }
-//                        }
-//                    }
-//                }
-//            }
-//        }
-
-//        if(!corres.valid && outErrorSurface) surf2Dwrite(0.0f, outErrorSurface, j0*sizeof(float), i);
-//        corresImg.data[k] = corres;
-
         return value;
     }
 
-    __device__ __forceinline__ void
-    getAdjMat() const
-    {
-      for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < Nlast*Nnext; i += blockDim.x * gridDim.x)
-      {
-          getDistances(i);
-      }
-    }
-
-    __device__ __forceinline__ void
-    getMatchDist() const
-    {
-//      for(int i=0; i<outAdjMat.rows; i++) {
-//          for(int j=0; j<outAdjMat.cols; j++) {
-//              printf("%f ", outAdjMat.ptr(i)[j]);
-//          }
-//          printf("\n");
+//    __device__ __forceinline__ void
+//    getAdjMat() const
+//    {
+//      for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < Nlast*Nnext; i += blockDim.x * gridDim.x)
+//      {
+//          getDistances(i);
 //      }
+//    }
 
-      float2 sum = {0, 0};
+//    __device__ __forceinline__ void
+//    getMatchDist() const
+//    {
+//      float2 sum = {0, 0};
 
-      for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < Nlast; i += blockDim.x * gridDim.x)
-      {
-          int2 val = findMatches(i);
-          sum.x += val.x;
-          sum.y += val.y;
-//          printf("sum (%i,%i) %f\n", sum.x, sum.y, sum);
-      }
-//      printf("sum (%i,%i) %f\n", sum.x, sum.y, sum);
+//      for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < Nlast; i += blockDim.x * gridDim.x)
+//      {
+//          int2 val = findMatches(i);
+//          sum.x += val.x;
+//          sum.y += val.y;
+////          printf("sum (%i,%i) %f\n", sum.x, sum.y, sum);
+//      }
+////      printf("sum (%i,%i) %f\n", sum.x, sum.y, sum);
 
-      sum = blockReduceSumF2(sum);
+//      sum = blockReduceSumF2(sum);
 
-      if(threadIdx.x == 0)
-      {
-          out[blockIdx.x] = sum;
-      }
-    }
+//      if(threadIdx.x == 0)
+//      {
+//          out[blockIdx.x] = sum;
+//      }
+//    }
 
     __device__ __forceinline__ void
     reset() const
@@ -1475,15 +1384,15 @@ __global__ void kernl_kp_reset (const KPResidual kp)
     kp.reset();
 }
 
-__global__ void kern_kp_dist (const KPResidual kp)
-{
-  kp.getAdjMat();
-}
+//__global__ void kern_kp_dist (const KPResidual kp)
+//{
+//  kp.getAdjMat();
+//}
 
-__global__ void kern_kp_match_dist (const KPResidual kp)
-{
-  kp.getMatchDist();
-}
+//__global__ void kern_kp_match_dist (const KPResidual kp)
+//{
+//  kp.getMatchDist();
+//}
 
 void computeKPResidual(const DeviceArray2D<float> & lastDepth,
                         const DeviceArray2D<float> & nextDepth,
@@ -1506,43 +1415,43 @@ void computeKPResidual(const DeviceArray2D<float> & lastDepth,
     int cols = nextDepth.cols ();
     int rows = nextDepth.rows ();
 
-    KPResidual rgb;
+    KPResidual kpr;
 
-    rgb.lastKeypoints = lastKeypoints;
-    rgb.nextKeypoints = nextKeypoints;
+    kpr.lastKeypoints = lastKeypoints;
+    kpr.nextKeypoints = nextKeypoints;
 
-    rgb.lastFeatureMaps = lastFeatureMaps;
-    rgb.nextFeatureMaps = nextFeatureMaps;
+    kpr.lastFeatureMaps = lastFeatureMaps;
+    kpr.nextFeatureMaps = nextFeatureMaps;
 
-    rgb.matchID = matchID;
-    rgb.matchScore = matchScore;
+    kpr.matchID = matchID;
+    kpr.matchScore = matchScore;
 
-    rgb.lastMask = lastMask;
+    kpr.lastMask = lastMask;
 
-    rgb.corresImg = corresImg;
+    kpr.corresImg = corresImg;
 
-    rgb.cols = cols;
-    rgb.rows = rows;
+    kpr.cols = cols;
+    kpr.rows = rows;
 
     // keypoint rows: 2 coordinates + D features
-    rgb.feat_dim = nextKeypoints.cols()-2;
+    kpr.feat_dim = nextKeypoints.cols()-2;
 
-    rgb.Nlast = lastKeypoints.rows();
-    rgb.Nnext = nextKeypoints.rows();
-    rgb.Nmatches = matchID.rows();
+    kpr.Nlast = lastKeypoints.rows();
+    kpr.Nnext = nextKeypoints.rows();
+    kpr.Nmatches = matchID.rows();
 
-    rgb.out = sumResidual;
-    rgb.outErrorSurface = rgbErrorSurface;
+    kpr.out = sumResidual;
+    kpr.outErrorSurface = rgbErrorSurface;
 
 //    DeviceArray2D<float> adj_mat(nextKeypoints.rows(), lastKeypoints.rows());
-//    rgb.outAdjMat = adj_mat;
+//    kpr.outAdjMat = adj_mat;
 
-    rgb.maskID = maskID;
+    kpr.maskID = maskID;
 
     // reset the correspondence and residual image
-    kernl_kp_reset<<<blocks, threads>>>(rgb);
+    kernl_kp_reset<<<blocks, threads>>>(kpr);
 
-    residualKernel<<<blocks, threads>>>(rgb);
+    residualKernel<<<blocks, threads>>>(kpr);
 
     // construct adjacency matrix
 //    kern_kp_dist<<<blocks, threads>>>(rgb);
@@ -1554,9 +1463,9 @@ void computeKPResidual(const DeviceArray2D<float> & lastDepth,
 //    adj_mat.download(am.data(), am.cols()*sizeof(float));
 //    std::cout << am << std::endl;
 
-//    for(int i=0; i<rgb.outAdjMat.rows; i++) {
-//        for(int j=0; j<rgb.outAdjMat.cols; j++) {
-//          std::cout << rgb.outAdjMat.ptr(i)[j] << " ";
+//    for(int i=0; i<kpr.outAdjMat.rows; i++) {
+//        for(int j=0; j<kpr.outAdjMat.cols; j++) {
+//          std::cout << kpr.outAdjMat.ptr(i)[j] << " ";
 //        }
 //        std::cout << std::endl;
 //    }
