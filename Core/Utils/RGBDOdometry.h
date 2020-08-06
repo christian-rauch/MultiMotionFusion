@@ -52,7 +52,7 @@ class RGBDOdometry {
 
   void initRGBModel(GPUTexture* rgb);
 
-  void initRGBDFromPrevious();
+  void initRGBDFromPrevious(const Eigen::Matrix4f &pose);
 
   void initFirstRGB(GPUTexture* rgb);
 

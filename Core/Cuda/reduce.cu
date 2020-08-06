@@ -1490,6 +1490,262 @@ void computeKPResidual(const DeviceArray2D<float> & lastDepth,
     sigmaSum = out_host.y;
 }
 
+struct KPReduction
+{
+    mat33 Rcurr;
+    float3 tcurr;
+
+    PtrStep<float> vmap_curr;
+    PtrStep<float> nmap_curr;
+
+    mat33 Rprev_inv;
+    float3 tprev;
+
+    CameraModel intr;
+
+    PtrStep<float> vmap_g_prev;
+    PtrStep<float> nmap_g_prev;
+
+    float distThres;
+    float angleThres;
+
+    PtrStep<DataTerm> corresImg;
+
+    int cols;
+    int rows;
+    int N;
+
+    JtJJtrSE3 * out;
+    cudaSurfaceObject_t outErrorSurface;
+
+    __device__ __forceinline__ bool
+    search (int & x, int & y, float3& n, float3& d, float3& s) const
+    {
+        const DataTerm xc = corresImg.ptr(y)[x];
+
+        if (!xc.valid) {
+          return false;
+        }
+
+        // corresponding keypoints
+//        const short2 kn = xc.zero; // next, corresponds to this loop's (x,y)
+        const short2 kl = xc.one;  // last, within masked area
+
+        float3 vcurr;
+        vcurr.x = vmap_curr.ptr (y       )[x];
+        vcurr.y = vmap_curr.ptr (y + rows)[x];
+        vcurr.z = vmap_curr.ptr (y + 2 * rows)[x];
+
+        float3 vcurr_g = Rcurr * vcurr + tcurr;
+
+        const int2 ukr = {kl.x, kl.y};
+
+        if(ukr.x < 0 || ukr.y < 0 || ukr.x >= cols || ukr.y >= rows/* || vcurr_cp.z < 0*/){
+            // This magic number is picked to be small, so that during super-pixel downsampling it gets
+            // either overwritten by larger values, or allows to check ICP<0 => has outlier (ICP==0.0001 => only outlier)
+            if(outErrorSurface) surf2Dwrite(0.0f, outErrorSurface, x*sizeof(float), y);
+            return false;
+        }
+
+        float3 vprev_g;
+        vprev_g.x = __ldg(&vmap_g_prev.ptr (ukr.y       )[ukr.x]);
+        vprev_g.y = __ldg(&vmap_g_prev.ptr (ukr.y + rows)[ukr.x]);
+        vprev_g.z = __ldg(&vmap_g_prev.ptr (ukr.y + 2 * rows)[ukr.x]);
+
+        float3 ncurr;
+        ncurr.x = nmap_curr.ptr (y)[x];
+        ncurr.y = nmap_curr.ptr (y + rows)[x];
+        ncurr.z = nmap_curr.ptr (y + 2 * rows)[x];
+
+        float3 ncurr_g = Rcurr * ncurr;
+
+        float3 nprev_g;
+        nprev_g.x =  __ldg(&nmap_g_prev.ptr (ukr.y)[ukr.x]);
+        nprev_g.y = __ldg(&nmap_g_prev.ptr (ukr.y + rows)[ukr.x]);
+        nprev_g.z = __ldg(&nmap_g_prev.ptr (ukr.y + 2 * rows)[ukr.x]);
+
+        float dist = norm (vprev_g - vcurr_g);
+        float sine = norm (cross (ncurr_g, nprev_g));
+
+        if(outErrorSurface) surf2Dwrite(isfinite(dist) ? dist : 0.0f, outErrorSurface, x*sizeof(float), y);
+
+        n = nprev_g;
+        d = vprev_g;
+        s = vcurr_g;
+
+        return (sine < angleThres && dist <= distThres && !isnan (ncurr.x) && !isnan (nprev_g.x));
+    }
+
+    __device__ __forceinline__ JtJJtrSE3
+    getProducts(int & i) const
+    {
+        int y = i / cols;
+        int x = i - (y * cols);
+
+        float3 n_cp, d_cp, s_cp;
+
+        bool found_coresp = search (x, y, n_cp, d_cp, s_cp);
+
+        float row[7] = {0, 0, 0, 0, 0, 0, 0};
+
+        if(found_coresp)
+        {
+            s_cp = Rprev_inv * (s_cp - tprev);
+            d_cp = Rprev_inv * (d_cp - tprev);
+            n_cp = Rprev_inv * (n_cp);
+
+            *(float3*)&row[0] = n_cp;
+            *(float3*)&row[3] = cross (s_cp, n_cp);
+            row[6] = dot (n_cp, s_cp - d_cp);
+        }
+
+        JtJJtrSE3 values = {row[0] * row[0],
+                            row[0] * row[1],
+                            row[0] * row[2],
+                            row[0] * row[3],
+                            row[0] * row[4],
+                            row[0] * row[5],
+                            row[0] * row[6],
+
+                            row[1] * row[1],
+                            row[1] * row[2],
+                            row[1] * row[3],
+                            row[1] * row[4],
+                            row[1] * row[5],
+                            row[1] * row[6],
+
+                            row[2] * row[2],
+                            row[2] * row[3],
+                            row[2] * row[4],
+                            row[2] * row[5],
+                            row[2] * row[6],
+
+                            row[3] * row[3],
+                            row[3] * row[4],
+                            row[3] * row[5],
+                            row[3] * row[6],
+
+                            row[4] * row[4],
+                            row[4] * row[5],
+                            row[4] * row[6],
+
+                            row[5] * row[5],
+                            row[5] * row[6],
+
+                            row[6] * row[6],
+                            float(found_coresp)};
+
+        return values;
+    }
+
+    __device__ __forceinline__ void
+    operator () () const
+    {
+        JtJJtrSE3 sum = {0, 0, 0, 0, 0, 0, 0, 0,
+                         0, 0, 0, 0, 0, 0, 0, 0,
+                         0, 0, 0, 0, 0, 0, 0, 0,
+                         0, 0, 0, 0, 0};
+
+        for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < N; i += blockDim.x * gridDim.x)
+        {
+            JtJJtrSE3 val = getProducts(i);
+
+            sum.add(val);
+        }
+
+        sum = blockReduceSum(sum);
+
+        if(threadIdx.x == 0)
+        {
+            out[blockIdx.x] = sum;
+        }
+    }
+};
+
+__global__ void kpKernel(const KPReduction kpc)
+{
+    kpc();
+}
+
+void kpcStep(const mat33& Rcurr,
+             const float3& tcurr,
+             const DeviceArray2D<float>& vmap_curr,
+             const DeviceArray2D<float>& nmap_curr,
+             const mat33& Rprev_inv,
+             const float3& tprev,
+             const CameraModel& intr,
+             const DeviceArray2D<float>& vmap_g_prev,
+             const DeviceArray2D<float>& nmap_g_prev,
+             float distThres,
+             float angleThres,
+             DeviceArray2D<DataTerm> & corresImg,
+             DeviceArray<JtJJtrSE3> & sum,
+             DeviceArray<JtJJtrSE3> & out,
+             float * matrixA_host,
+             float * vectorB_host,
+             float * residual_host,
+             int threads,
+             int blocks,
+             const cudaSurfaceObject_t& icpErrorSurface)
+{
+    int cols = vmap_curr.cols ();
+    int rows = vmap_curr.rows () / 3;
+
+    KPReduction kpc;
+
+    kpc.Rcurr = Rcurr;
+    kpc.tcurr = tcurr;
+
+    kpc.vmap_curr = vmap_curr;
+    kpc.nmap_curr = nmap_curr;
+
+    kpc.Rprev_inv = Rprev_inv;
+    kpc.tprev = tprev;
+
+    kpc.intr = intr;
+
+    kpc.vmap_g_prev = vmap_g_prev;
+    kpc.nmap_g_prev = nmap_g_prev;
+
+    kpc.distThres = distThres;
+    kpc.angleThres = angleThres;
+
+    kpc.corresImg = corresImg;
+
+    kpc.cols = cols;
+    kpc.rows = rows;
+
+    kpc.N = cols * rows;
+    kpc.out = sum;
+    kpc.outErrorSurface = icpErrorSurface;
+
+    kpKernel<<<blocks, threads>>>(kpc);
+
+    reduceSum<<<1, MAX_THREADS>>>(sum, out, blocks);
+
+    cudaSafeCall(cudaGetLastError());
+    cudaSafeCall(cudaDeviceSynchronize());
+
+    float host_data[32];
+    out.download((JtJJtrSE3 *)&host_data[0]);
+
+    int shift = 0;
+    for (int i = 0; i < 6; ++i)
+    {
+        for (int j = i; j < 7; ++j)
+        {
+            float value = host_data[shift++];
+            if (j == 6)
+                vectorB_host[i] = value;
+            else
+                matrixA_host[j * 6 + i] = matrixA_host[i * 6 + j] = value;
+        }
+    }
+
+    residual_host[0] = host_data[27];
+    residual_host[1] = host_data[28];
+}
+
 struct SO3Reduction
 {
     PtrStepSz<unsigned char> lastImage;

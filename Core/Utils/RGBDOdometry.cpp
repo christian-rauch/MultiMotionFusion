@@ -230,7 +230,7 @@ void RGBDOdometry::initRGBModel(GPUTexture* rgb) {
   populateRGBDData(rgb, &lastDepth[0], &lastImage[0], &lastMask[0]);
 }
 
-void RGBDOdometry::initRGBDFromPrevious() {
+void RGBDOdometry::initRGBDFromPrevious(const Eigen::Matrix4f& pose) {
   // NOTE: This depends on vmaps_tmp containing the corresponding depth from initICPModel
   for (int i = 0; i < RGBDOdometry::NUM_PYRS; ++i) {
     nextImage[i].copyTo(lastImage[i]);
@@ -239,6 +239,14 @@ void RGBDOdometry::initRGBDFromPrevious() {
     nmaps_curr_[i].copyTo(nmaps_g_prev_[i]);
   }
   copyMaps2(vmaps_curr_[0], vmaps_tmp);
+  copyMaps2(nmaps_curr_[0], nmaps_tmp);
+
+  // transform
+  const mat33 device_Rcam = Eigen::Matrix<float, 3, 3, Eigen::RowMajor>(pose.topLeftCorner(3, 3));
+  const float3 device_tcam = *reinterpret_cast<const float3*>(pose.topRightCorner(3, 1).data());
+  for (int i = 0; i < NUM_PYRS; ++i) {
+    tranformMaps(vmaps_g_prev_[i], nmaps_g_prev_[i], device_Rcam, device_tcam, vmaps_g_prev_[i], nmaps_g_prev_[i]);
+  }
 }
 
 void RGBDOdometry::initRGB(GPUTexture* rgb) {
@@ -329,11 +337,13 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
   bool icp = !rgbOnly && icpWeight > 0;
   bool rgb = rgbOnly || icpWeight < 100;
 
-  Eigen::Matrix<float, 3, 3, Eigen::RowMajor> Rprev = rot;
-  Eigen::Vector3f tprev = trans;
+  const Eigen::Matrix<float, 3, 3, Eigen::RowMajor> Rprev = rot;
+  const Eigen::Vector3f tprev = trans;
 
   Eigen::Matrix<float, 3, 3, Eigen::RowMajor> Rcurr = Rprev;
   Eigen::Vector3f tcurr = tprev;
+
+//  std::cout << "tprev: " << std::endl << tprev.transpose() << " -> |" << tprev.norm() << "|" << std::endl;
 
   if (rgb) {
     for (int i = 0; i < NUM_PYRS; i++) {
@@ -341,6 +351,13 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       computeDerivativeImages(nextImage[i], nextdIdx[i], nextdIdy[i]);
     }
   }
+
+  // dbg: show current and previous image
+//  cv::imshow("next depth", download(nextDepth[0])/5);
+//  cv::imshow("last depth", download(lastDepth[0])/5);
+//  cv::imshow("next colour", download(nextImage[0]));
+//  cv::imshow("last colour", download(lastImage[0]));
+//  cv::waitKey(1);
 
   // keypoint correspondences
   for (int l = 0; l < NUM_PYRS; l++) {
@@ -452,11 +469,12 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
   iterations[1] = pyramid ? 5 : 0;
   iterations[2] = pyramid ? 4 : 0;
 
-  Eigen::Matrix<float, 3, 3, Eigen::RowMajor> Rprev_inv = Rprev.inverse();
-  mat33 device_Rprev_inv = Rprev_inv;
-  float3 device_tprev = *reinterpret_cast<float3*>(tprev.data());
+  const Eigen::Matrix<float, 3, 3, Eigen::RowMajor> Rprev_inv = Rprev.inverse();
+  const mat33 device_Rprev_inv = Rprev_inv;
+  const float3 device_tprev = *reinterpret_cast<const float3*>(tprev.data());
 
   Eigen::Matrix<double, 4, 4, Eigen::RowMajor> resultRt = Eigen::Matrix<double, 4, 4, Eigen::RowMajor>::Identity();
+
 
   if (so3) {
     for (int x = 0; x < 3; x++) {
@@ -502,7 +520,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       float sigma = 0;
       int rgbSize = 0;
 
-      if (rgb && nextKeypoints[i].rows()==0) {
+      if (rgb && matchID[i].rows()==0) {
         TICK("computeRgbResidual");
         computeRgbResidual(pow(minimumGradientMagnitudes[i], 2.0) / pow(sobelScale, 2.0), nextdIdx[i], nextdIdy[i], lastDepth[i],
                            nextDepth[i], lastImage[i], nextImage[i], lastMask[i], nextMask[i], corresImg[i], sumResidualRGB,
@@ -511,7 +529,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
                            (i == 0 && j == iterations[i]-1) ? rgbErrorSurface : 0, maskID);
         TOCK("computeRgbResidual");
       }
-      else if (nextKeypoints[i].rows()>0) {
+      else if (matchID[i].rows()>0) {
         TICK("computeKPResidual");
         computeKPResidual(lastDepth[i], nextDepth[i],
                           lastKeypoints[i], nextKeypoints[i],
@@ -541,8 +559,8 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       Eigen::Matrix<float, 6, 6, Eigen::RowMajor> A_icp;
       Eigen::Matrix<float, 6, 1> b_icp;
 
-      mat33 device_Rcurr = Rcurr;
-      float3 device_tcurr = *reinterpret_cast<float3*>(tcurr.data());
+      const mat33 device_Rcurr = Rcurr;
+      const float3 device_tcurr = *reinterpret_cast<float3*>(tcurr.data());
 
       // current frame data
       DeviceArray2D<float>& vmap_curr = vmaps_curr_[i];
@@ -555,21 +573,33 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       float residual[2];
 
       // note: we always need to run the ICP step to access the reprojection error in 'icpErrorSurface'
-      TICK("icpStep");
-      icpStep(device_Rcurr, device_tcurr, vmap_curr, nmap_curr, device_Rprev_inv, device_tprev, intr(i), vmap_g_prev, nmap_g_prev,
-              distThres_, angleThres_, sumDataSE3, outDataSE3, A_icp.data(), b_icp.data(), &residual[0],
-              GPUConfig::getInstance().icpStepThreads, GPUConfig::getInstance().icpStepBlocks,
-              (i == 0 && j == iterations[i] - 1) ? icpErrorSurface : 0);
-      TOCK("icpStep");
+      if (icp && matchID[i].rows()==0) {
+        TICK("icpStep");
+        icpStep(device_Rcurr, device_tcurr, vmap_curr, nmap_curr, device_Rprev_inv, device_tprev, intr(i), vmap_g_prev, nmap_g_prev,
+                distThres_, angleThres_, sumDataSE3, outDataSE3, A_icp.data(), b_icp.data(), &residual[0],
+                GPUConfig::getInstance().icpStepThreads, GPUConfig::getInstance().icpStepBlocks,
+                (i == 0 && j == iterations[i] - 1) ? icpErrorSurface : 0);
+        TOCK("icpStep");
+      }
+      else if (matchID[i].rows()>0) {
+        kpcStep(device_Rcurr, device_tcurr, vmap_curr, nmap_curr, device_Rprev_inv, device_tprev, intr(i), vmap_g_prev, nmap_g_prev,
+                distThres_, angleThres_, corresImg[i], sumDataSE3, outDataSE3, A_icp.data(), b_icp.data(), &residual[0],
+                GPUConfig::getInstance().icpStepThreads, GPUConfig::getInstance().icpStepBlocks,
+                (i == 0 && j == iterations[i] - 1) ? icpErrorSurface : 0);
+      }
 
-//      std::cout << "icp A" << std::endl << A_icp << std::endl;
-//      std::cout << "icp b" << std::endl << b_icp << std::endl;
+//      if (icp) {
+//        std::cout << "icp A" << std::endl << A_icp << std::endl;
+//        std::cout << "icp b" << std::endl << b_icp << std::endl;
+//      }
 
       lastICPError = sqrt(residual[0]) / residual[1];
       lastICPCount = residual[1];
 
       Eigen::Matrix<float, 6, 6, Eigen::RowMajor> A_rgbd;
       Eigen::Matrix<float, 6, 1> b_rgbd;
+      A_rgbd.setZero();
+      b_rgbd.setZero();
 
       // transformation from previous to current frame
       Eigen::Isometry3f kpT = Eigen::Isometry3f::Identity();
@@ -659,8 +689,10 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 
       }
 
-//      std::cout << "rgb A" << std::endl << A_rgbd << std::endl;
-//      std::cout << "rgb b" << std::endl << b_rgbd << std::endl;
+//      if (rgb) {
+//        std::cout << "rgb A" << std::endl << A_rgbd << std::endl;
+//        std::cout << "rgb b" << std::endl << b_rgbd << std::endl;
+//      }
 
       // reprojection error for motion segmentation
       const mat44 devT = Eigen::Matrix<float, 4, 4, Eigen::RowMajor>(kpT.matrix());
@@ -697,13 +729,13 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 
       Eigen::Isometry3f rgbOdom;
 
-      if (matches[i].empty()) {
+//      if (matches[i].empty()) {
         OdometryProvider::computeUpdateSE3(resultRt, result, rgbOdom);
         assert(resultRt.cast<float>() == rgbOdom.matrix());
-      }
-      else {
-        rgbOdom = kpT;
-      }
+//      }
+//      else {
+//        rgbOdom = kpT;
+//      }
 
 //      std::cout << "odom update L" << i << std::endl << rgbOdom.matrix() << std::endl;
 
@@ -717,8 +749,12 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 
       currentT = currentT * rgbOdom.inverse();
 
+//      std::cout << "currentT L" << i << std::endl << currentT.matrix() << std::endl;
+
       tcurr = currentT.translation();
       Rcurr = currentT.rotation();
+
+//      std::cout << "tcurr: " << std::endl << tcurr.transpose() << " -> |" << tcurr.norm() << "|" << std::endl;
     } // iterations
   } // pyramid levels
 

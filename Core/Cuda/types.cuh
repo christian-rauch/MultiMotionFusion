@@ -63,7 +63,7 @@ struct mat33
     mat33() {}
 
 #if !defined(__CUDACC__)
-    mat33(Eigen::Matrix<float, 3, 3, Eigen::RowMajor> & e)
+    mat33(const Eigen::Matrix<float, 3, 3, Eigen::RowMajor> & e)
     {
         memcpy(data, e.data(), sizeof(mat33));
     }
