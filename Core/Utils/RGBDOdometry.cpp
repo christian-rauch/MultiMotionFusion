@@ -677,6 +677,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 
           auto U = svd.matrixU();
           auto V = svd.matrixV();
+          // guarantee that determinant of R is 1
           auto S = Eigen::Vector3f(1, 1, U.determinant() * V.determinant()).asDiagonal();
 
           const Eigen::Matrix3f R = U * S * V.transpose();
@@ -696,9 +697,11 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 
       // reprojection error for motion segmentation
       const mat44 devT = Eigen::Matrix<float, 4, 4, Eigen::RowMajor>(kpT.matrix());
+//      const cudaSurfaceObject_t &rpesrf = (j == iterations[i] - 1) ? projError[i]->getCudaSurface() : 0;
+      const cudaSurfaceObject_t &rpesrf = (i == 0 && j == iterations[i] - 1) ? icpErrorSurface : 0;
       projectionError(devT, vmap_curr, intr(i), vmap_g_prev, distThres_,
                       GPUConfig::getInstance().icpStepThreads, GPUConfig::getInstance().icpStepBlocks,
-                      (j == iterations[i] - 1) ? projError[i]->getCudaSurface() : 0);
+                      rpesrf);
 //      cv::imshow("RPE/L"+std::to_string(i)+"/it"+std::to_string(j), projError[i]->downloadTexture());
 //      cv::waitKey(1);
 
