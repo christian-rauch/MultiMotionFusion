@@ -17,6 +17,7 @@
  */
 
 #include "RGBDOdometry.h"
+#include "RigidRANSAC.h"
 
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/eigen.hpp>
@@ -503,6 +504,93 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 
     lastRGBError = std::numeric_limits<float>::max();
 
+    // transformation from previous to current frame
+    Eigen::Isometry3f kpT = Eigen::Isometry3f::Identity();
+
+    if (!matches[i].empty()) {
+      // weighted orthogonal procrustes on keypoint correspondences
+      cv::Mat pc0(pointClouds[i].rows(), pointClouds[i].cols(), CV_32FC3);
+      cv::Mat pc1(nextPointClouds[i].rows(), nextPointClouds[i].cols(), CV_32FC3);
+      pointClouds[i].download(pc0.data, pointClouds[i].cols() * 3 * sizeof(float));
+      nextPointClouds[i].download(pc1.data, nextPointClouds[i].cols() * 3 * sizeof(float));
+//        // dbg
+//        const float max_depth_vis = 3;
+//        std::array<cv::Mat,3> xyz0;
+//        cv::split(pc0, xyz0);
+//        cv::imshow("z0 - "+std::to_string(i), xyz0[2]/max_depth_vis);
+//        std::array<cv::Mat,3> xyz1;
+//        cv::split(pc1, xyz1);
+//        cv::imshow("z1 - "+std::to_string(i), xyz1[2]/max_depth_vis);
+//        cv::waitKey(1);
+
+      // maximum number of correspondences
+      // some correspondences will have invalid depth and have to be removed
+      const int N = matches[i].size();
+      int k = 0; // number of matches with valid depth
+      Eigen::MatrixX3f p0 = Eigen::MatrixX3f::Zero(N, 3); // last (previous)
+      Eigen::MatrixX3f p1 = Eigen::MatrixX3f::Zero(N, 3); // next (current)
+      Eigen::VectorXf d = Eigen::VectorXf::Zero(N);
+      for(int m=0; m<N; m++){
+        int ik;
+        int x,y;
+        // next
+        Eigen::Vector3f v1;
+        ik = std::get<1>(matches[i][m]);
+        x = next_keypoints[i].row(ik)[0] * pc1.size().width;
+        y = next_keypoints[i].row(ik)[1] * pc1.size().height;
+        cv::cv2eigen(pc1.at<cv::Vec3f>(y,x), v1);
+        // last
+        Eigen::Vector3f v0;
+        ik = std::get<0>(matches[i][m]);
+        x = last_keypoints[i].row(ik)[0] * pc0.size().width;
+        y = last_keypoints[i].row(ik)[1] * pc0.size().height;
+        cv::cv2eigen(pc0.at<cv::Vec3f>(y,x), v0);
+
+        if( !(std::isnan(v0.z()) || std::isnan(v1.z()))) {
+          p0.row(k) = v0;
+          p1.row(k) = v1;
+          d[k] = std::get<2>(matches[i][m]);
+          k++;
+        }
+      }
+
+      if (k>=3) {
+        // remove tail with empty correspondences
+        p0.conservativeResize(k, Eigen::NoChange);
+        p1.conservativeResize(k, Eigen::NoChange);
+        d.conservativeResize(k);
+
+        // model must have 10% of samples within 3cm error
+        RigidRANSAC rrs(20, 0.03f, 0.1f);
+        kpT = rrs.estimate(p0,p1);
+
+//          // convert L2 distances to weights with sum(w) = trace(W) = k
+//          const auto we = (-d).array().exp();
+//          const Eigen::VectorXf w = (we / we.sum()) * we.size();
+//          const auto W = w.asDiagonal();
+
+//          const Eigen::RowVector3f p0m = p0.colwise().mean();
+//          const Eigen::RowVector3f p1m = p1.colwise().mean();
+
+//          // weighted least-squares optimisation of rigid transformation
+//          const auto A = (p1.rowwise()-p1m).transpose() * W * (p0.rowwise()-p0m);
+//          Eigen::JacobiSVD<Eigen::MatrixXf> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV);
+
+//          auto U = svd.matrixU();
+//          auto V = svd.matrixV();
+//          // guarantee that determinant of R is 1
+//          auto S = Eigen::Vector3f(1, 1, U.determinant() * V.determinant()).asDiagonal();
+
+//          const Eigen::Matrix3f R = U * S * V.transpose();
+//          const Eigen::Vector3f t = p1m - (R * p0m.transpose()).transpose();
+//          kpT.translate(t).rotate(R);
+
+        const Eigen::VectorXf dist = (p0 - (kpT * p1.transpose()).transpose()).rowwise().norm();
+        std::cout << "kp reproj err L" << i << " (" << dist.size() << "): " << dist.mean() << std::endl;
+      } // at least k>=3 correspondences
+
+    }
+
     // Optimization iterations
     for (int j = 0; j < iterations[i]; j++) {
       Eigen::Matrix<double, 4, 4, Eigen::RowMajor> Rt = resultRt.inverse();
@@ -601,93 +689,11 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       A_rgbd.setZero();
       b_rgbd.setZero();
 
-      // transformation from previous to current frame
-      Eigen::Isometry3f kpT = Eigen::Isometry3f::Identity();
-
       if (rgb && matches[i].empty()) {
         TICK("rgbStep");
         rgbStep(corresImg[i], sigmaVal, pointClouds[i], intr(i).fx, intr(i).fy, nextdIdx[i], nextdIdy[i], sobelScale, sumDataSE3,
                 outDataSE3, A_rgbd.data(), b_rgbd.data(), GPUConfig::getInstance().rgbStepThreads, GPUConfig::getInstance().rgbStepBlocks);
         TOCK("rgbStep");
-      }
-      else if (!matches[i].empty()) {
-        // weighted orthogonal procrustes on keypoint correspondences
-        cv::Mat pc0(pointClouds[i].rows(), pointClouds[i].cols(), CV_32FC3);
-        cv::Mat pc1(nextPointClouds[i].rows(), nextPointClouds[i].cols(), CV_32FC3);
-        pointClouds[i].download(pc0.data, pointClouds[i].cols() * 3 * sizeof(float));
-        nextPointClouds[i].download(pc1.data, nextPointClouds[i].cols() * 3 * sizeof(float));
-//        // dbg
-//        const float max_depth_vis = 3;
-//        std::array<cv::Mat,3> xyz0;
-//        cv::split(pc0, xyz0);
-//        cv::imshow("z0 - "+std::to_string(i), xyz0[2]/max_depth_vis);
-//        std::array<cv::Mat,3> xyz1;
-//        cv::split(pc1, xyz1);
-//        cv::imshow("z1 - "+std::to_string(i), xyz1[2]/max_depth_vis);
-//        cv::waitKey(1);
-
-        // maximum number of correspondences
-        // some correspondences will have invalid depth and have to be removed
-        const int N = matches[i].size();
-        int k = 0; // number of matches with valid depth
-        Eigen::MatrixX3f p0 = Eigen::MatrixX3f::Zero(N, 3); // last (previous)
-        Eigen::MatrixX3f p1 = Eigen::MatrixX3f::Zero(N, 3); // next (current)
-        Eigen::VectorXf d = Eigen::VectorXf::Zero(N);
-        for(int m=0; m<N; m++){
-          int ik;
-          int x,y;
-          // next
-          Eigen::Vector3f v1;
-          ik = std::get<1>(matches[i][m]);
-          x = next_keypoints[i].row(ik)[0] * pc1.size().width;
-          y = next_keypoints[i].row(ik)[1] * pc1.size().height;
-          cv::cv2eigen(pc1.at<cv::Vec3f>(y,x), v1);
-          // last
-          Eigen::Vector3f v0;
-          ik = std::get<0>(matches[i][m]);
-          x = last_keypoints[i].row(ik)[0] * pc0.size().width;
-          y = last_keypoints[i].row(ik)[1] * pc0.size().height;
-          cv::cv2eigen(pc0.at<cv::Vec3f>(y,x), v0);
-
-          if( !(std::isnan(v0.z()) || std::isnan(v1.z()))) {
-            p0.row(k) = v0;
-            p1.row(k) = v1;
-            d[k] = std::get<2>(matches[i][m]);
-            k++;
-          }
-        }
-
-        if (k>=3) {
-          // remove tail with empty correspondences
-          p0.conservativeResize(k, Eigen::NoChange);
-          p1.conservativeResize(k, Eigen::NoChange);
-          d.conservativeResize(k);
-
-          // convert L2 distances to weights with sum(w) = trace(W) = k
-          const auto we = (-d).array().exp();
-          const Eigen::VectorXf w = (we / we.sum()) * we.size();
-          const auto W = w.asDiagonal();
-
-          const Eigen::RowVector3f p0m = p0.colwise().mean();
-          const Eigen::RowVector3f p1m = p1.colwise().mean();
-
-          // weighted least-squares optimisation of rigid transformation
-          const auto A = (p1.rowwise()-p1m).transpose() * W * (p0.rowwise()-p0m);
-          Eigen::JacobiSVD<Eigen::MatrixXf> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV);
-
-          auto U = svd.matrixU();
-          auto V = svd.matrixV();
-          // guarantee that determinant of R is 1
-          auto S = Eigen::Vector3f(1, 1, U.determinant() * V.determinant()).asDiagonal();
-
-          const Eigen::Matrix3f R = U * S * V.transpose();
-          const Eigen::Vector3f t = p1m - (R * p0m.transpose()).transpose();
-          kpT.translate(t).rotate(R);
-
-//          const Eigen::VectorXf dist = (p0 - (kpT * p1.transpose()).transpose()).rowwise().norm();
-//          std::cout << "kp reproj err L" << i << " (" << dist.size() << "): " << dist.mean() << std::endl;
-        } // at least k>=3 correspondences
-
       }
 
 //      if (rgb) {
@@ -696,6 +702,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 //      }
 
       // reprojection error for motion segmentation
+      // required for frame-to-frame
       const mat44 devT = Eigen::Matrix<float, 4, 4, Eigen::RowMajor>(kpT.matrix());
 //      const cudaSurfaceObject_t &rpesrf = (j == iterations[i] - 1) ? projError[i]->getCudaSurface() : 0;
       const cudaSurfaceObject_t &rpesrf = (i == 0 && j == iterations[i] - 1) ? icpErrorSurface : 0;
@@ -732,13 +739,13 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 
       Eigen::Isometry3f rgbOdom;
 
-//      if (matches[i].empty()) {
+      if (matches[i].empty()) {
         OdometryProvider::computeUpdateSE3(resultRt, result, rgbOdom);
         assert(resultRt.cast<float>() == rgbOdom.matrix());
-//      }
-//      else {
-//        rgbOdom = kpT;
-//      }
+      }
+      else {
+        rgbOdom = kpT;
+      }
 
 //      std::cout << "odom update L" << i << std::endl << rgbOdom.matrix() << std::endl;
 
