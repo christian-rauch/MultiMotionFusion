@@ -726,14 +726,16 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 
 //      std::cout << "result " << std::endl << result << std::endl;
 
-      Eigen::Isometry3f rgbOdom;
+      Eigen::Isometry3f rgbOdom = Eigen::Isometry3f::Identity();
 
       if (matches[i].empty()) {
         OdometryProvider::computeUpdateSE3(resultRt, result, rgbOdom);
         assert(resultRt.cast<float>() == rgbOdom.matrix());
       }
       else {
-        rgbOdom = kpT;
+        // apply the least-squares optimised transformation only once for the highest level / largest resolution
+        if (i==0 && j==0)
+          rgbOdom = kpT;
       }
 
 //      std::cout << "odom update L" << i << std::endl << rgbOdom.matrix() << std::endl;
