@@ -480,11 +480,11 @@ struct ProjectionError
     // transformation from last to current frame
     mat44 Tcurr;
 
-    PtrStep<float> vmap_curr;
+    PtrStep<float3> vmap_curr;
 
     CameraModel intr;
 
-    PtrStep<float> vmap_g_prev;
+    PtrStep<float3> vmap_prev;
 
     float distThres;
 
@@ -497,11 +497,7 @@ struct ProjectionError
     distance(const int &x, const int &y) const
     {
         // 3D coordinate at (x,y)
-        const float3 vcurr {
-          .x = vmap_curr.ptr (y       )[x],
-          .y = vmap_curr.ptr (y + rows)[x],
-          .z = vmap_curr.ptr (y + 2 * rows)[x],
-        };
+        const float3 vcurr = vmap_curr.ptr(y)[x];
 
         // transform to previous camera frame
         const float4 a = Tcurr * hom34(vcurr);
@@ -520,12 +516,9 @@ struct ProjectionError
         }
 
         // point at projected coordinate in previous camera
-        float3 vprev_g;
-        vprev_g.x = __ldg(&vmap_g_prev.ptr (ukr.y       )[ukr.x]);
-        vprev_g.y = __ldg(&vmap_g_prev.ptr (ukr.y + rows)[ukr.x]);
-        vprev_g.z = __ldg(&vmap_g_prev.ptr (ukr.y + 2 * rows)[ukr.x]);
+        float3 vprev = vmap_prev.ptr(ukr.y)[ukr.x];
 
-        const float dist = norm(vprev_g - vcurr_cp);
+        const float dist = norm(vprev - vcurr_cp);
 
         if(outErrorSurface) surf2Dwrite(isfinite(dist) ? dist : 0.0f, outErrorSurface, x*sizeof(float), y);
 
@@ -550,16 +543,16 @@ __global__ void rpeKernel(const ProjectionError rp)
 }
 
 void projectionError(const mat44& Tcurr,
-                     const DeviceArray2D<float>& vmap_curr,
+                     const DeviceArray2D<float3>& vmap_curr,
                      const CameraModel& intr,
-                     const DeviceArray2D<float>& vmap_g_prev,
+                     const DeviceArray2D<float3>& vmap_prev,
                      float distThres,
                      int threads,
                      int blocks,
                      const cudaSurfaceObject_t& rpeSurface)
 {
-    int cols = vmap_curr.cols ();
-    int rows = vmap_curr.rows () / 3;
+    int cols = vmap_curr.cols();
+    int rows = vmap_curr.rows();
 
     ProjectionError rpe;
 
@@ -569,7 +562,7 @@ void projectionError(const mat44& Tcurr,
 
     rpe.intr = intr;
 
-    rpe.vmap_g_prev = vmap_g_prev;
+    rpe.vmap_prev = vmap_prev;
 
     rpe.distThres = distThres;
 

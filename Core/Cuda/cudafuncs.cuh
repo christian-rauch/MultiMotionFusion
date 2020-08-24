@@ -82,9 +82,9 @@ void icpStep(const mat33& Rcurr,
              const cudaSurfaceObject_t& icpErrorSurface);
 
 void projectionError(const mat44& Tcurr,
-                     const DeviceArray2D<float>& vmap_curr,
+                     const DeviceArray2D<float3> &vmap_curr,
                      const CameraModel& intr,
-                     const DeviceArray2D<float>& vmap_g_prev,
+                     const DeviceArray2D<float3> &vmap_prev,
                      float distThres,
                      int threads,
                      int blocks,

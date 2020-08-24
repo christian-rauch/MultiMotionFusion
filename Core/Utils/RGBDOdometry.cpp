@@ -242,7 +242,7 @@ void RGBDOdometry::initRGBDFromPrevious(const Eigen::Matrix4f& pose) {
   copyMaps2(vmaps_curr_[0], vmaps_tmp);
   copyMaps2(nmaps_curr_[0], nmaps_tmp);
 
-  // transform
+  // transform previous point cloud to initial camera pose at origin
   const mat33 device_Rcam = Eigen::Matrix<float, 3, 3, Eigen::RowMajor>(pose.topLeftCorner(3, 3));
   const float3 device_tcam = *reinterpret_cast<const float3*>(pose.topRightCorner(3, 1).data());
   for (int i = 0; i < NUM_PYRS; ++i) {
@@ -561,7 +561,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
         d.conservativeResize(k);
 
         // model must have 10% of samples within 3cm error
-        RigidRANSAC rrs(20, 0.03f, 0.1f);
+        RigidRANSAC rrs(600, 0.03f, 0.1f);
         kpT = rrs.estimate(p0,p1);
 
 //          // convert L2 distances to weights with sum(w) = trace(W) = k
@@ -701,17 +701,6 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 //        std::cout << "rgb b" << std::endl << b_rgbd << std::endl;
 //      }
 
-      // reprojection error for motion segmentation
-      // required for frame-to-frame
-      const mat44 devT = Eigen::Matrix<float, 4, 4, Eigen::RowMajor>(kpT.matrix());
-//      const cudaSurfaceObject_t &rpesrf = (j == iterations[i] - 1) ? projError[i]->getCudaSurface() : 0;
-      const cudaSurfaceObject_t &rpesrf = (i == 0 && j == iterations[i] - 1) ? icpErrorSurface : 0;
-      projectionError(devT, vmap_curr, intr(i), vmap_g_prev, distThres_,
-                      GPUConfig::getInstance().icpStepThreads, GPUConfig::getInstance().icpStepBlocks,
-                      rpesrf);
-//      cv::imshow("RPE/L"+std::to_string(i)+"/it"+std::to_string(j), projError[i]->downloadTexture());
-//      cv::waitKey(1);
-
       Eigen::Matrix<double, 6, 1> result;
       Eigen::Matrix<double, 6, 6, Eigen::RowMajor> dA_rgbd = A_rgbd.cast<double>();
       Eigen::Matrix<double, 6, 6, Eigen::RowMajor> dA_icp = A_icp.cast<double>();
@@ -751,6 +740,16 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 
 //      std::cout << "resultRt: " << std::endl << resultRt.inverse() << std::endl;
 //      std::cout << "rgbOdom: " << std::endl << rgbOdom.matrix().inverse() << std::endl;
+
+      // reprojection error for motion segmentation, required for frame-to-frame
+//      const cudaSurfaceObject_t &rpesrf = (j == iterations[i] - 1) ? projError[i]->getCudaSurface() : 0;
+      const cudaSurfaceObject_t &rpesrf = (i == 0 && j == iterations[i] - 1) ? icpErrorSurface : 0;
+      if (rpesrf) {
+        const mat44 devT = Eigen::Matrix<float, 4, 4, Eigen::RowMajor>(rgbOdom.matrix());
+        projectionError(devT, nextPointClouds[i], intr(i), pointClouds[i], distThres_,
+                        GPUConfig::getInstance().icpStepThreads, GPUConfig::getInstance().icpStepBlocks,
+                        rpesrf);
+      }
 
       Eigen::Isometry3f currentT;
       currentT.setIdentity();
