@@ -74,6 +74,12 @@
     -segMaxNew     Max size of new object segments (relative to image size)
     -offset        Offset between creating models
     -keep          Keep all models (even bad, deactivated)
+    -model         Path to trained model for keypoint prediction
+    -kp_est        Mode for transformation estimation via keypoints, requires 'model'
+                    1. (default): no estimation via keypoints, use regular icp+rgb interative optimisation
+                    2. "icp": iterative estimation with fixes keypoint correspondences,
+                              same objective and gradients as for the regular ICP optimisation on dense
+                    3. "ls": RANSAC with least-squares procrustes optimisation on highest resolution
 
     -l             Processes a log-file (*.klg/pangolin/rosbag).
     -topic_colour  ROS topic for colour images (sensor_msgs/CompressedImage)
@@ -306,6 +312,10 @@ MainController::MainController(int argc, char* argv[])
   if (Parse::get().arg(argc, argv, "-k", tmpFloat) > -1) gui->unaryErrorK->Ref()->Set(tmpFloat);
 
   Parse::get().arg(argc, argv, "-model", keypoint_model_path);
+  if(Parse::get().arg(argc, argv, "-kp_est", kp_est_mode) == -1) {
+    // fall back to no keypoint transformation estimation, if not provided
+    kp_est_mode = std::string();
+  }
 
   gui->flipColors->Ref()->Set(logReader->flipColors);
   gui->rgbOnly->Ref()->Set(false);
@@ -405,7 +415,7 @@ void MainController::launch() {
       coFusion = new CoFusion(openLoop ? std::numeric_limits<int>::max() / 2 : timeDelta, icpCountThresh, icpErrThresh, covThresh,
                               !openLoop, iclnuim, reloc, photoThresh, confGlobalInit, confObjectInit, gui->depthCutoff->Get(),
                               gui->icpWeight->Get(), fastOdom, fernThresh, so3, frameToFrameRGB, gui->modelSpawnOffset->Get(),
-                              Model::MatchingType::Drost, exportDir, exportSegmentation);
+                              Model::MatchingType::Drost, exportDir, exportSegmentation, keypoint_model_path, kp_est_mode);
 
       coFusion->preallocateModels(preallocatedModelsCount);
 

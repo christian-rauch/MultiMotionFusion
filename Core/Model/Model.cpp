@@ -404,7 +404,8 @@ void Model::initICP(bool doFillIn, bool frameToFrameRGB, float depthCutoff, GPUT
 
 void Model::performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight, bool pyramid, bool fastOdom, bool so3,
                             float maxDepthProcessed, GPUTexture* rgb, GPUTexture* last_segmentation, int64_t logTimestamp, bool doFillIn,
-                            const std::vector<cv::Mat> &features, const std::vector<Eigen::MatrixX2d> &kp_coordinates, const std::vector<Eigen::MatrixXd> &kp_descriptors) {
+                            const std::vector<cv::Mat> &features, const std::vector<Eigen::MatrixX2d> &kp_coordinates, const std::vector<Eigen::MatrixXd> &kp_descriptors,
+                            const std::string &kp_est_mode) {
   assert(fillIn || !doFillIn);
   lastPose = pose;
 
@@ -415,13 +416,6 @@ void Model::performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight,
   // set new features and keypoints detected in current "next" image
   getFrameOdometry().setNextKeypoints(kp_coordinates, kp_descriptors);
   getFrameOdometry().setNextFeatureMap(features);
-  // TODO: skip download/upload to/from OpenCV image
-//  cv::Mat bla = last_segmentation->downloadTexture();
-//  cv::imshow("segm", bla);
-//  cv::waitKey(1);
-//  double min, max;
-//  cv::minMaxLoc(bla, &min, &max);
-//  std::cout << min << ", " << max << std::endl;
   getFrameOdometry().setLastSegmentation(last_segmentation->downloadTexture());
 
   TICK("odom - Model: " + std::to_string(id));
@@ -430,7 +424,7 @@ void Model::performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight,
   Eigen::Matrix<float, 3, 3, Eigen::RowMajor> rotObject = pose.topLeftCorner(3, 3);
 
   getFrameOdometry().getIncrementalTransformation(transObject, rotObject, rgbOnly, icpWeight, pyramid, fastOdom, so3,
-                                                  icpError->getCudaSurface(), rgbError->getCudaSurface(), projError);
+                                                  icpError->getCudaSurface(), rgbError->getCudaSurface(), projError, kp_est_mode);
 
 //  const cv::Mat icp_img = icpError->downloadTexture();
 //  cv::imshow("ICP error", icp_img);

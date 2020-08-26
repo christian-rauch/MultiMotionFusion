@@ -23,13 +23,14 @@ CoFusion::CoFusion(const int timeDelta, const int countThresh, const float errTh
                    const float initConfidenceObject, const float depthCut, const float icpThresh, const bool fastOdom,
                    const float fernThresh, const bool so3, const bool frameToFrameRGB, const unsigned modelSpawnOffset,
                    const Model::MatchingType matchingType, const std::string& exportDirectory, const bool exportSegmentationResults,
-                   const std::string keypoint_predictor_path)
+                   const std::string keypoint_predictor_path, const std::string kp_est_mode)
     : modelMatchingType(matchingType),
       newModelListeners(0),
       inactiveModelListeners(0),
       modelToModel(Resolution::getInstance().width(), Resolution::getInstance().height(), Intrinsics::getInstance().cx(),
                    Intrinsics::getInstance().cy(), Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy()),
       kp_predictor(new SuperPoint(keypoint_predictor_path)),
+      kp_est_mode(kp_est_mode),
       ferns(500, depthCut * 1000, photoThresh),
       tick(1),
       timeDelta(timeDelta),
@@ -270,7 +271,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       // TODO: use one global store for the feature maps and keypoints for the current and last observed frame
       for (auto model : models) {
         model->performTracking(frameToFrameRGB, rgbOnly, icpWeight, pyramid, fastOdom, so3, maxDepthProcessed, textures[GPUTexture::RGB],
-                               textures[GPUTexture::MASK], frame.timestamp, requiresFillIn(model), features, coordinates, descriptors);
+                               textures[GPUTexture::MASK], frame.timestamp, requiresFillIn(model), features, coordinates, descriptors, kp_est_mode);
       }
       TOCK("odom");
 
@@ -459,7 +460,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       Eigen::Vector3f trans = globalModel->getPose().topRightCorner(3, 1);
       Eigen::Matrix<float, 3, 3, Eigen::RowMajor> rot = globalModel->getPose().topLeftCorner(3, 3);
 
-      modelToModel.getIncrementalTransformation(trans, rot, false, 10, pyramid, fastOdom, false, 0, 0, {});
+      modelToModel.getIncrementalTransformation(trans, rot, false, 10, pyramid, fastOdom, false, 0, 0, {}, {});
 
       Eigen::MatrixXd covar = modelToModel.getCovariance();
       bool covOk = true;

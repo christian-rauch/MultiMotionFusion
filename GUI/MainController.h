@@ -70,6 +70,7 @@ class MainController {
   bool resetButton;
 
   std::string keypoint_model_path;
+  std::string kp_est_mode;
 
   GPUResize* resizeStream;
 };

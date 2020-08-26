@@ -334,7 +334,7 @@ draw_matches(const Eigen::MatrixXf &last_keypoints,
 void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::Matrix<float, 3, 3, Eigen::RowMajor>& rot,
                                                 const bool& rgbOnly, const float& icpWeight, const bool& pyramid, const bool& fastOdom,
                                                 const bool& so3, const cudaSurfaceObject_t& icpErrorSurface, const cudaSurfaceObject_t& rgbErrorSurface,
-                                                const std::vector<std::unique_ptr<GPUTexture>> &projError) {
+                                                const std::vector<std::unique_ptr<GPUTexture>> &projError, const std::string &kp_est_mode) {
   bool icp = !rgbOnly && icpWeight > 0;
   bool rgb = rgbOnly || icpWeight < 100;
 
@@ -353,14 +353,8 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
     }
   }
 
-  // dbg: show current and previous image
-//  cv::imshow("next depth", download(nextDepth[0])/5);
-//  cv::imshow("last depth", download(lastDepth[0])/5);
-//  cv::imshow("next colour", download(nextImage[0]));
-//  cv::imshow("last colour", download(lastImage[0]));
-//  cv::waitKey(1);
-
-  // keypoint correspondences
+  // get keypoint correspondences
+  // compute on CPU (matches), upload to GPU (matchID)
   for (int l = 0; l < NUM_PYRS; l++) {
     cv::Mat mask;
     cv::resize(last_segmentation==maskID, mask, cv::Size(lastDepth[l].cols(), lastDepth[l].rows()));
@@ -388,8 +382,8 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
         matchID[l].create(0,0);
         matchScores[l].create(0,0);
       }
-    }
-  }
+    } // next_keypoints
+  } // NUM_PYRS
 
   Eigen::Matrix<double, 3, 3, Eigen::RowMajor> resultR = Eigen::Matrix<double, 3, 3, Eigen::RowMajor>::Identity();
 
@@ -504,10 +498,16 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 
     lastRGBError = std::numeric_limits<float>::max();
 
+    // do least-squares fitting with correspondences on CPU
+    const bool kp_ls = kp_est_mode == "ls" && !matches[i].empty();
+    // do ICP update with correspondences on GPU
+    const bool kp_icp = kp_est_mode == "icp" && matchID[i].rows()>0;
+
     // transformation from previous to current frame
     Eigen::Isometry3f kpT = Eigen::Isometry3f::Identity();
 
-    if (!matches[i].empty()) {
+    // least-squares optimisation of transformation via RANSAC on procrustes model
+    if (kp_ls) {
       // weighted orthogonal procrustes on keypoint correspondences
       cv::Mat pc0(pointClouds[i].rows(), pointClouds[i].cols(), CV_32FC3);
       cv::Mat pc1(nextPointClouds[i].rows(), nextPointClouds[i].cols(), CV_32FC3);
@@ -588,7 +588,6 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
         const Eigen::VectorXf dist = (p0 - (kpT * p1.transpose()).transpose()).rowwise().norm();
         std::cout << "kp reproj err L" << i << " (" << dist.size() << "): " << dist.mean() << std::endl;
       } // at least k>=3 correspondences
-
     }
 
     // Optimization iterations
@@ -608,7 +607,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       float sigma = 0;
       int rgbSize = 0;
 
-      if (rgb && matchID[i].rows()==0) {
+      if (rgb && kp_est_mode.empty()) {
         TICK("computeRgbResidual");
         computeRgbResidual(pow(minimumGradientMagnitudes[i], 2.0) / pow(sobelScale, 2.0), nextdIdx[i], nextdIdy[i], lastDepth[i],
                            nextDepth[i], lastImage[i], nextImage[i], lastMask[i], nextMask[i], corresImg[i], sumResidualRGB,
@@ -617,7 +616,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
                            (i == 0 && j == iterations[i]-1) ? rgbErrorSurface : 0, maskID);
         TOCK("computeRgbResidual");
       }
-      else if (matchID[i].rows()>0) {
+      else if (kp_icp) {
         TICK("computeKPResidual");
         computeKPResidual(lastDepth[i], nextDepth[i],
                           lastKeypoints[i], nextKeypoints[i],
@@ -628,6 +627,12 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
                           GPUConfig::getInstance().rgbResBlocks,
                           (i == 0 && j == iterations[i]-1) ? rgbErrorSurface : 0, maskID);
         TOCK("computeKPResidual");
+      }
+      else if (kp_ls) {
+        // noop
+      }
+      else {
+        assert(false && "no keypoints for ICP transformation estimation");
       }
 
       float tmpError = sqrt(sigma) / rgbSize;
@@ -661,7 +666,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       float residual[2];
 
       // note: we always need to run the ICP step to access the reprojection error in 'icpErrorSurface'
-      if (icp && matchID[i].rows()==0) {
+      if (icp && kp_est_mode.empty()) {
         TICK("icpStep");
         icpStep(device_Rcurr, device_tcurr, vmap_curr, nmap_curr, device_Rprev_inv, device_tprev, intr(i), vmap_g_prev, nmap_g_prev,
                 distThres_, angleThres_, sumDataSE3, outDataSE3, A_icp.data(), b_icp.data(), &residual[0],
@@ -669,11 +674,17 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
                 (i == 0 && j == iterations[i] - 1) ? icpErrorSurface : 0);
         TOCK("icpStep");
       }
-      else if (matchID[i].rows()>0) {
+      else if (kp_icp) {
         kpcStep(device_Rcurr, device_tcurr, vmap_curr, nmap_curr, device_Rprev_inv, device_tprev, intr(i), vmap_g_prev, nmap_g_prev,
                 distThres_, angleThres_, corresImg[i], sumDataSE3, outDataSE3, A_icp.data(), b_icp.data(), &residual[0],
                 GPUConfig::getInstance().icpStepThreads, GPUConfig::getInstance().icpStepBlocks,
                 (i == 0 && j == iterations[i] - 1) ? icpErrorSurface : 0);
+      }
+      else if (kp_ls) {
+        // noop
+      }
+      else {
+        assert(false && "no keypoints for ICP transformation estimation");
       }
 
 //      if (icp) {
@@ -689,7 +700,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       A_rgbd.setZero();
       b_rgbd.setZero();
 
-      if (rgb && matches[i].empty()) {
+      if (rgb && kp_est_mode.empty()) {
         TICK("rgbStep");
         rgbStep(corresImg[i], sigmaVal, pointClouds[i], intr(i).fx, intr(i).fy, nextdIdx[i], nextdIdy[i], sobelScale, sumDataSE3,
                 outDataSE3, A_rgbd.data(), b_rgbd.data(), GPUConfig::getInstance().rgbStepThreads, GPUConfig::getInstance().rgbStepBlocks);
@@ -728,14 +739,17 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 
       Eigen::Isometry3f rgbOdom = Eigen::Isometry3f::Identity();
 
-      if (matches[i].empty()) {
+      if (kp_est_mode.empty() || kp_icp) {
         OdometryProvider::computeUpdateSE3(resultRt, result, rgbOdom);
         assert(resultRt.cast<float>() == rgbOdom.matrix());
       }
-      else {
+      else if(kp_ls) {
         // apply the least-squares optimised transformation only once for the highest level / largest resolution
         if (i==0 && j==0)
           rgbOdom = kpT;
+      }
+      else {
+        assert(false && "no keypoints for transformation update");
       }
 
 //      std::cout << "odom update L" << i << std::endl << rgbOdom.matrix() << std::endl;
@@ -743,14 +757,16 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 //      std::cout << "resultRt: " << std::endl << resultRt.inverse() << std::endl;
 //      std::cout << "rgbOdom: " << std::endl << rgbOdom.matrix().inverse() << std::endl;
 
-      // reprojection error for motion segmentation, required for frame-to-frame
-//      const cudaSurfaceObject_t &rpesrf = (j == iterations[i] - 1) ? projError[i]->getCudaSurface() : 0;
-      const cudaSurfaceObject_t &rpesrf = (i == 0 && j == iterations[i] - 1) ? icpErrorSurface : 0;
-      if (rpesrf) {
-        const mat44 devT = Eigen::Matrix<float, 4, 4, Eigen::RowMajor>(rgbOdom.matrix());
-        projectionError(devT, nextPointClouds[i], intr(i), pointClouds[i], distThres_,
-                        GPUConfig::getInstance().icpStepThreads, GPUConfig::getInstance().icpStepBlocks,
-                        rpesrf);
+      if (!kp_est_mode.empty()) {
+        // reprojection error for motion segmentation, required for frame-to-frame
+//        const cudaSurfaceObject_t &rpesrf = (j == iterations[i] - 1) ? projError[i]->getCudaSurface() : 0;
+        const cudaSurfaceObject_t &rpesrf = (i == 0 && j == iterations[i] - 1) ? icpErrorSurface : 0;
+        if (rpesrf) {
+          const mat44 devT = Eigen::Matrix<float, 4, 4, Eigen::RowMajor>(rgbOdom.matrix());
+          projectionError(devT, nextPointClouds[i], intr(i), pointClouds[i], distThres_,
+                          GPUConfig::getInstance().icpStepThreads, GPUConfig::getInstance().icpStepBlocks,
+                          rpesrf);
+        }
       }
 
       Eigen::Isometry3f currentT;

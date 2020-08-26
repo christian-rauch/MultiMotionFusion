@@ -60,7 +60,7 @@ class RGBDOdometry {
   void getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::Matrix<float, 3, 3, Eigen::RowMajor>& rot, const bool& rgbOnly,
                                     const float& icpWeight, const bool& pyramid, const bool& fastOdom, const bool& so3,
                                     const cudaSurfaceObject_t& icpErrorSurface, const cudaSurfaceObject_t& rgbErrorSurface,
-                                    const std::vector<std::unique_ptr<GPUTexture>> &projError);
+                                    const std::vector<std::unique_ptr<GPUTexture>> &projError, const std::string &kp_est_mode);
 
   Eigen::MatrixXd getCovariance();
 

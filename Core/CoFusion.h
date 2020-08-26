@@ -50,7 +50,8 @@ class CoFusion {
            const float initConfidenceGlobal = 4, const float initConfidenceObject = 2, const float depthCut = 3, const float icpThresh = 10,
            const bool fastOdom = false, const float fernThresh = 0.3095, const bool so3 = true, const bool frameToFrameRGB = false,
            const unsigned modelSpawnOffset = 20, const Model::MatchingType matchingType = Model::MatchingType::Drost,
-           const std::string& exportDirectory = "", const bool exportSegmentationResults = false, const std::string keypoint_predictor_path = {});
+           const std::string& exportDirectory = "", const bool exportSegmentationResults = false, const std::string keypoint_predictor_path = {},
+           const std::string kp_est_mode = {});
 
   virtual ~CoFusion();
 
@@ -327,6 +328,7 @@ class CoFusion {
   RGBDOdometry modelToModel;
 
   const std::shared_ptr<FeatureMatchesInterface> kp_predictor;
+  const std::string kp_est_mode;
 
   // TODO move to model?
   Ferns ferns;

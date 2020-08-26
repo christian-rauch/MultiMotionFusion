@@ -223,7 +223,7 @@ Eigen::Matrix4f Ferns::findFrame(std::vector<SurfaceConstraint>& constraints, co
     Eigen::Matrix<float, 3, 3, Eigen::RowMajor> rot = fernPose.topLeftCorner(3, 3);
 
     TICK("fernOdom");
-    rgbd.getIncrementalTransformation(trans, rot, false, 100, false, false, false, 0, 0, {});
+    rgbd.getIncrementalTransformation(trans, rot, false, 100, false, false, false, 0, 0, {}, {});
     TOCK("fernOdom");
 
     estPose.topRightCorner(3, 1) = trans;
