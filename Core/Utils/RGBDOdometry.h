@@ -27,6 +27,8 @@
 
 #include <vector>
 #include <vector_types.h>
+#include <queue>
+#include <array>
 
 class RGBDOdometry {
  public:
@@ -169,6 +171,14 @@ class RGBDOdometry {
   std::vector<cv::Mat> last_features;
   cv::Mat next_segmentation;
   cv::Mat last_segmentation;
+
+  // store list of previous correspondences and depth
+  static const size_t Nhist = 1 * 30; // 1 sec at 30fps
+  std::queue<std::array<DeviceArray2D<float>, NUM_PYRS>> NlastDepth;
+  std::queue<std::array<mXXf, NUM_PYRS>> Nlast_keypoints;
+  std::queue<Eigen::Isometry3f> Nlast_poses;
+
+  size_t iimg = 0;
 };
 
 #endif /* RGBDODOMETRY_H_ */

@@ -242,6 +242,23 @@ void RGBDOdometry::initRGBDFromPrevious(const Eigen::Matrix4f& pose) {
   copyMaps2(vmaps_curr_[0], vmaps_tmp);
   copyMaps2(nmaps_curr_[0], nmaps_tmp);
 
+  // add new depth image to end of queue
+  // for the very first two images, there will be no valid 'nextDepth' yet
+  if (iimg>1) {
+    NlastDepth.emplace();
+    for (int i = 0; i < RGBDOdometry::NUM_PYRS; ++i) {
+      nextDepth[i].copyTo(NlastDepth.back()[i]);
+    }
+  }
+
+  // delete all but N last depth images
+  while (NlastDepth.size()>Nhist) {
+    for (int i = 0; i < RGBDOdometry::NUM_PYRS; ++i) {
+      NlastDepth.front()[i].release();
+    }
+    NlastDepth.pop();
+  }
+
   // transform previous point cloud to initial camera pose at origin
   const mat33 device_Rcam = Eigen::Matrix<float, 3, 3, Eigen::RowMajor>(pose.topLeftCorner(3, 3));
   const float3 device_tcam = *reinterpret_cast<const float3*>(pose.topRightCorner(3, 1).data());
@@ -757,18 +774,6 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 //      std::cout << "resultRt: " << std::endl << resultRt.inverse() << std::endl;
 //      std::cout << "rgbOdom: " << std::endl << rgbOdom.matrix().inverse() << std::endl;
 
-      if (!kp_est_mode.empty()) {
-        // reprojection error for motion segmentation, required for frame-to-frame
-//        const cudaSurfaceObject_t &rpesrf = (j == iterations[i] - 1) ? projError[i]->getCudaSurface() : 0;
-        const cudaSurfaceObject_t &rpesrf = (i == 0 && j == iterations[i] - 1) ? icpErrorSurface : 0;
-        if (rpesrf) {
-          const mat44 devT = Eigen::Matrix<float, 4, 4, Eigen::RowMajor>(rgbOdom.matrix());
-          projectionError(devT, nextPointClouds[i], intr(i), pointClouds[i], distThres_,
-                          GPUConfig::getInstance().icpStepThreads, GPUConfig::getInstance().icpStepBlocks,
-                          rpesrf);
-        }
-      }
-
       Eigen::Isometry3f currentT;
       currentT.setIdentity();
       currentT.rotate(Rprev);
@@ -801,9 +806,36 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 
 //  std::cout << "trans: " << std::endl << trans.transpose() << " -> |" << trans.norm() << "|" << std::endl;
 
-//  Eigen::Isometry3f T = Eigen::Isometry3f::Identity();
-//  T.translate(trans).rotate(rot);
-//  std::cout << "T: " << std::endl << T.matrix().inverse() << std::endl;
+  if (iimg>1) {
+    // current pose in initial reference frame at t=0
+    Eigen::Isometry3f T_0x = Eigen::Isometry3f::Identity();
+    T_0x.translate(trans).rotate(rot);
+  //  std::cout << "T: " << std::endl << T.matrix().inverse() << std::endl;
+
+    Nlast_poses.push(T_0x);
+    while (Nlast_poses.size()>Nhist) {
+      Nlast_poses.pop();
+    }
+
+    // In frame-to-frame mode, the reprojection error between two consecutive frames is too small
+    // to create high enough errors for segmentation. We therefore have to compare to a reference
+    // image further away in time.
+    if (!NlastDepth.empty()) {
+      const Eigen::Isometry3f T_nx = Nlast_poses.front().inverse() * T_0x;
+      const int i = 0;
+      DeviceArray2D<float3> lastPointCloudsN;
+      lastPointCloudsN.create(pyrDims.at(i).x, pyrDims.at(i).y);
+      projectToPointCloud(NlastDepth.front()[i], lastPointCloudsN, intr, i);
+
+      // reprojection error for motion segmentation, required for frame-to-frame
+      const mat44 devT = Eigen::Matrix<float, 4, 4, Eigen::RowMajor>(T_nx.matrix());
+      projectionError(devT, nextPointClouds[i], intr(i), lastPointCloudsN, distThres_,
+                      GPUConfig::getInstance().icpStepThreads, GPUConfig::getInstance().icpStepBlocks,
+                      icpErrorSurface);
+    }
+  }
+
+  iimg++;
 }
 
 Eigen::MatrixXd RGBDOdometry::getCovariance() { return lastA.cast<double>().lu().inverse(); }
@@ -824,6 +856,19 @@ void RGBDOdometry::setLastKeypointsFromPrevious() {
     nextKeypoints[i].copyTo(lastKeypoints[i]);
   }
   last_keypoints = next_keypoints;
+
+  // add new keypoints to end of queue
+  if (iimg>1) {
+    Nlast_keypoints.emplace();
+    for(int i=0; i<NUM_PYRS; i++) {
+      Nlast_keypoints.back()[i] = next_keypoints[i];
+    }
+  }
+
+  // delete all but N last keypoints
+  while (Nlast_keypoints.size()>Nhist) {
+    Nlast_keypoints.pop();
+  }
 }
 
 void RGBDOdometry::setNextFeatureMap(const std::vector<cv::Mat> &feat) {
