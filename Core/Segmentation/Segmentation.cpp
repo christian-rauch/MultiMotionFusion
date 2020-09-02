@@ -270,7 +270,9 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
       const SegmentationResult::ModelData& modelData = result.modelData[i];
 
       float error = ((float*)modelData.lowICP.data)[k];
-      assert(std::isfinite(error) && error >= 0);
+      // negative errors indicate a de-occlusion case
+      error = std::max<float>(0, error);
+      assert(std::isfinite(error));
       error /= result.depthRange;
       if (error < lowestError) lowestError = error;
 

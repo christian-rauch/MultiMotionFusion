@@ -528,11 +528,15 @@ struct ProjectionError
         // point at projected coordinate in previous camera
         float3 vprev = vmap_prev.ptr(ukr.y)[ukr.x];
 
-        const float dist = norm(vprev - vcurr_cp);
+        // signed L2 distance
+        // <0: de-occlusion
+        // >0: occlusion
+        const float3 dir = vprev - vcurr_cp;
+        const float dist = dir.z/abs(dir.z) * norm(dir);
 
         if(outErrorSurface) surf2Dwrite(isfinite(dist) ? dist : 0.0f, outErrorSurface, x*sizeof(float), y);
 
-        return dist <= distThres;
+        return abs(dist) <= distThres;
     }
 
     __device__ __forceinline__ void
