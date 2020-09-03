@@ -92,6 +92,20 @@ void projectionError(const mat44& Tcurr,
                      int blocks,
                      const cudaSurfaceObject_t& rpeSurface);
 
+
+void projectionFeatureDistance(const mat44& Tcurr,
+                              const DeviceArray2D<float3> &vmap_curr,
+                              const CameraModel& intr,
+                              const DeviceArray2D<float3> &vmap_prev,
+                              const DeviceArray2D<float>& feat_curr,
+                              const DeviceArray2D<float>& feat_prev,
+                              const DeviceArray2D<unsigned char> & lastMask,
+                              unsigned char maskID,
+                              float distThres,
+                              int threads,
+                              int blocks,
+                              const cudaSurfaceObject_t& rpeSurface);
+
 void rgbStep(const DeviceArray2D<DataTerm> & corresImg,
              const float & sigma,
              const DeviceArray2D<float3> & cloud,

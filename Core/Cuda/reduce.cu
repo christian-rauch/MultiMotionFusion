@@ -597,6 +597,140 @@ void projectionError(const mat44& Tcurr,
     cudaSafeCall(cudaDeviceSynchronize());
 }
 
+struct FeatureProjectionError
+{
+    // transformation from last to current frame
+    mat44 Tcurr;
+
+    PtrStep<float3> vmap_curr;
+
+    CameraModel intr;
+
+    PtrStep<float3> vmap_prev;
+
+    PtrStep<float> feat_curr;
+
+    PtrStep<float> feat_prev;
+
+    PtrStepSz<unsigned char> lastMask;
+
+    unsigned char maskID;
+
+    float distThres;
+
+    int cols;
+    int rows;
+    int D; // size of feature vector
+
+    cudaSurfaceObject_t outErrorSurface;
+
+    __device__ __forceinline__ bool
+    distance(const int &x, const int &y) const
+    {
+        // 3D coordinate at (x,y)
+        const float3 vcurr = vmap_curr.ptr(y)[x];
+
+        // transform to previous camera frame
+        const float4 a = Tcurr * hom34(vcurr);
+        const float3 vcurr_cp = {a.x, a.y, a.z};
+
+        // project to previous image plane
+        int2 ukr;
+        ukr.x = __float2int_rn (vcurr_cp.x * intr.fx / vcurr_cp.z + intr.cx);
+        ukr.y = __float2int_rn (vcurr_cp.y * intr.fy / vcurr_cp.z + intr.cy);
+
+        if(ukr.x < 0 || ukr.y < 0 || ukr.x >= cols || ukr.y >= rows || vcurr_cp.z < 0){
+            // This magic number is picked to be small, so that during super-pixel downsampling it gets
+            // either overwritten by larger values, or allows to check ICP<0 => has outlier (ICP==0.0001 => only outlier)
+            if(outErrorSurface) surf2Dwrite(0.0f, outErrorSurface, x*sizeof(float), y);
+            return false;
+        }
+
+        // check masked area, if available
+        if (lastMask.rows*lastMask.cols > 0 && lastMask.ptr(ukr.y)[ukr.x] != maskID) {
+          if(outErrorSurface) surf2Dwrite(0.0f, outErrorSurface, x*sizeof(float), y);
+          return false;
+        }
+
+        // Euclidean distance between descriptors at reference and projected coordinate
+        float dist = 0;
+        for(int i=0; i<D; i++) {
+          float d = feat_curr.ptr(y)[x * D + i] - feat_prev.ptr(ukr.y)[ukr.x * D + i];
+          dist += pow(d, 2);
+        }
+        dist = sqrt(dist);
+
+        if(outErrorSurface) surf2Dwrite(isfinite(dist) ? dist : 0.0f, outErrorSurface, x*sizeof(float), y);
+
+        return abs(dist) <= distThres;
+    }
+
+    __device__ __forceinline__ void
+    operator () () const
+    {
+        for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < rows * cols; i += blockDim.x * gridDim.x)
+        {
+            const int y = i / cols;
+            const int x = i - (y * cols);
+            distance(x, y);
+        }
+    }
+};
+
+__global__ void rpfeKernel(const FeatureProjectionError rp)
+{
+    rp();
+}
+
+void projectionFeatureDistance(const mat44& Tcurr,
+                               const DeviceArray2D<float3>& vmap_curr,
+                               const CameraModel& intr,
+                               const DeviceArray2D<float3>& vmap_prev,
+                               const DeviceArray2D<float>& feat_curr,
+                               const DeviceArray2D<float>& feat_prev,
+                               const DeviceArray2D<unsigned char> & lastMask,
+                               unsigned char maskID,
+                               float distThres,
+                               int threads,
+                               int blocks,
+                               const cudaSurfaceObject_t& rpeSurface)
+{
+    int cols = vmap_curr.cols();
+    int rows = vmap_curr.rows();
+
+    FeatureProjectionError rpe;
+
+    rpe.Tcurr = Tcurr;
+
+    rpe.vmap_curr = vmap_curr;
+
+    rpe.intr = intr;
+
+    rpe.vmap_prev = vmap_prev;
+
+    rpe.feat_curr = feat_curr;
+
+    rpe.feat_prev = feat_prev;
+
+    rpe.lastMask = lastMask;
+
+    rpe.maskID = maskID;
+
+    rpe.distThres = distThres;
+
+    rpe.cols = cols;
+    rpe.rows = rows;
+
+    rpe.D = feat_curr.step() / (sizeof(float) * cols);
+
+    rpe.outErrorSurface = rpeSurface;
+
+    rpfeKernel<<<blocks, threads>>>(rpe);
+
+    cudaSafeCall(cudaGetLastError());
+    cudaSafeCall(cudaDeviceSynchronize());
+}
+
 #define FLT_EPSILON ((float)1.19209290E-07F)
 
 struct RGBReduction
