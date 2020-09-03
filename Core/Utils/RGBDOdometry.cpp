@@ -40,6 +40,143 @@ void upload_eigen(const Eigen::Matrix<T, R, C, Eigen::RowMajor> &matrix,
   array.upload(matrix.data(), matrix.cols() * sizeof(T), matrix.rows(), matrix.cols());
 }
 
+std::vector<std::tuple<int, int, float>>
+pairwise_matches(const Eigen::MatrixXf &last_keypoints,
+                 const Eigen::MatrixXf &next_keypoints,
+                 const cv::Mat_<bool> &last_mask)
+{
+  // remove 'last' keypoint coordinates outside of mask
+  Eigen::MatrixXf last_keypoints_mask = Eigen::MatrixXf::Constant(last_keypoints.rows(), last_keypoints.cols(), std::numeric_limits<float>::signaling_NaN());
+  int kp_matches = 0;
+  std::vector<int> last_mask_id;
+  for(int i=0; i<last_keypoints.rows(); i++) {
+      const Eigen::Array2f xy_norm = last_keypoints.leftCols(2).row(i);
+      const cv::Point2i xy(xy_norm.x()*last_mask.cols, xy_norm.y()*last_mask.rows);
+      if (last_mask.at<bool>(xy)) {
+        // copy match over
+        last_keypoints_mask.row(kp_matches) = last_keypoints.row(i);
+        kp_matches++;
+        // store original ID of last keypoint within valid segment
+        last_mask_id.push_back(i);
+      }
+  }
+  last_keypoints_mask.conservativeResize(kp_matches, Eigen::NoChange);
+
+  // store correspondences (last_id, next_id)
+  std::vector<std::tuple<int, int, float>> match_ids;
+
+  if (last_keypoints_mask.rows()>0) {
+    cv::Mat last_descr;
+    cv::eigen2cv(Eigen::MatrixXf(last_keypoints_mask.rightCols(last_keypoints_mask.cols()-2)), last_descr);
+    cv::Mat next_descr;
+    cv::eigen2cv(Eigen::MatrixXf(next_keypoints.rightCols(next_keypoints.cols()-2)), next_descr);
+
+    std::vector<cv::DMatch> matches;
+    cv::BFMatcher(cv::NORM_L2, true).match(next_descr, last_descr, matches);
+
+    for(const cv::DMatch &match : matches)
+      match_ids.push_back(std::make_tuple(last_mask_id[match.trainIdx], match.queryIdx, match.distance));
+  }
+
+  return match_ids;
+}
+
+cv::Mat
+draw_matches(const Eigen::MatrixXf &last_keypoints,
+             const Eigen::MatrixXf &next_keypoints,
+             const std::vector<std::tuple<int, int, float>> &correspondences,
+             const cv::Mat &mask)
+{
+  std::vector<cv::DMatch> matches;
+  for(const auto &match : correspondences)
+    matches.emplace_back(std::get<1>(match), std::get<0>(match), std::get<2>(match));
+
+  std::vector<cv::KeyPoint> last_kp(last_keypoints.rows());
+  for(size_t i=0; i<last_kp.size(); i++)
+      last_kp[i].pt = cv::Point(last_keypoints.row(i)[0]*mask.cols, last_keypoints.row(i)[1]*mask.rows);
+
+  std::vector<cv::KeyPoint> next_kp(next_keypoints.rows());
+  for(size_t i=0; i<next_kp.size(); i++)
+      next_kp[i].pt = cv::Point(next_keypoints.row(i)[0]*mask.cols, next_keypoints.row(i)[1]*mask.rows);
+
+  cv::Mat img_matches;
+  const cv::Mat empty(mask.size(), CV_8UC1, cv::Scalar(255)); // empty image
+  cv::drawMatches(empty, next_kp, mask, last_kp, matches, img_matches);
+  return img_matches;
+}
+
+std::tuple<Eigen::Isometry3f, std::vector<cv::Point>>
+ransac(const DeviceArray2D<float3> &dpc0, const DeviceArray2D<float3> &dpc1,
+       const Eigen::MatrixXf& kp0, const Eigen::MatrixXf &kp1, const cv::Mat &mask,
+       const float inlier_threshold)
+{
+  Eigen::Isometry3f kpT_nx = Eigen::Isometry3f::Identity();
+
+  // weighted orthogonal procrustes on keypoint correspondences
+  cv::Mat pc0(dpc0.rows(), dpc0.cols(), CV_32FC3);
+  cv::Mat pc1(dpc1.rows(), dpc1.cols(), CV_32FC3);
+  dpc0.download(pc0.data, dpc0.cols() * 3 * sizeof(float));
+  dpc1.download(pc1.data, dpc1.cols() * 3 * sizeof(float));
+
+  const auto matches = pairwise_matches(kp0, kp1, mask);
+
+  std::vector<cv::Point> kp_next_valid;
+  std::vector<cv::Point> kp_next_inlier;
+
+  // maximum number of correspondences
+  // some correspondences will have invalid depth and have to be removed
+  const int N = matches.size();
+  int k = 0; // number of matches with valid depth
+  Eigen::MatrixX3f p0 = Eigen::MatrixX3f::Zero(N, 3); // last (previous)
+  Eigen::MatrixX3f p1 = Eigen::MatrixX3f::Zero(N, 3); // next (current)
+  Eigen::VectorXf d = Eigen::VectorXf::Zero(N);
+  for(int m=0; m<N; m++) {
+    int ik;
+    // next
+    Eigen::Vector3f v1;
+    ik = std::get<1>(matches[m]);
+    const cv::Point p_next(kp1.row(ik)[0] * pc1.size().width, kp1.row(ik)[1] * pc1.size().height);
+    cv::cv2eigen(pc1.at<cv::Vec3f>(p_next), v1);
+    // last
+    Eigen::Vector3f v0;
+    ik = std::get<0>(matches[m]);
+    const cv::Point p_last(kp0.row(ik)[0] * pc0.size().width, kp0.row(ik)[1] * pc0.size().height);
+    cv::cv2eigen(pc0.at<cv::Vec3f>(p_last), v0);
+
+    if( !(std::isnan(v0.z()) || std::isnan(v1.z())) ) {
+      p0.row(k) = v0;
+      p1.row(k) = v1;
+      d[k] = std::get<2>(matches[m]);
+      kp_next_valid.push_back(p_next);
+      k++;
+    }
+  }
+
+  // remove tail with empty correspondences
+  p0.conservativeResize(k, Eigen::NoChange);
+  p1.conservativeResize(k, Eigen::NoChange);
+  d.conservativeResize(k);
+
+  // need at least 3 correspondences
+  if (k>=3) {
+    // model must have 10% of samples within 'inlier_threshold' error
+    RigidRANSAC rrs(600, inlier_threshold, 0.1f);
+    kpT_nx = rrs.estimate(p0,p1);
+  }
+
+  // find final inliers
+  const Eigen::VectorXf dist = (p0 - (kpT_nx * p1.transpose()).transpose()).rowwise().norm();
+
+  // get final inlier keypoints for segmentation seed
+  for (int i=0; i<dist.size(); i++) {
+    if (dist[i] < inlier_threshold) {
+      kp_next_inlier.push_back(kp_next_valid[i]);
+    }
+  }
+
+  return {kpT_nx, kp_next_inlier};
+}
+
 RGBDOdometry::RGBDOdometry(int width, int height, float cx, float cy, float fx, float fy, unsigned char mask, float distThresh,
                            float angleThresh)
     : lastICPError(0),
@@ -283,71 +420,6 @@ void RGBDOdometry::initFirstRGB(GPUTexture* rgb) {
   }
 }
 
-std::vector<std::tuple<int, int, float>>
-pairwise_matches(const Eigen::MatrixXf &last_keypoints,
-                 const Eigen::MatrixXf &next_keypoints,
-                 const cv::Mat_<bool> &last_mask)
-{
-  // remove 'last' keypoint coordinates outside of mask
-  Eigen::MatrixXf last_keypoints_mask = Eigen::MatrixXf::Constant(last_keypoints.rows(), last_keypoints.cols(), std::numeric_limits<float>::signaling_NaN());
-  int kp_matches = 0;
-  std::vector<int> last_mask_id;
-  for(int i=0; i<last_keypoints.rows(); i++) {
-      const Eigen::Array2f xy_norm = last_keypoints.leftCols(2).row(i);
-      const cv::Point2i xy(xy_norm.x()*last_mask.cols, xy_norm.y()*last_mask.rows);
-      if (last_mask.at<bool>(xy)) {
-        // copy match over
-        last_keypoints_mask.row(kp_matches) = last_keypoints.row(i);
-        kp_matches++;
-        // store original ID of last keypoint within valid segment
-        last_mask_id.push_back(i);
-      }
-  }
-  last_keypoints_mask.conservativeResize(kp_matches, Eigen::NoChange);
-
-  // store correspondences (last_id, next_id)
-  std::vector<std::tuple<int, int, float>> match_ids;
-
-  if (last_keypoints_mask.rows()>0) {
-    cv::Mat last_descr;
-    cv::eigen2cv(Eigen::MatrixXf(last_keypoints_mask.rightCols(last_keypoints_mask.cols()-2)), last_descr);
-    cv::Mat next_descr;
-    cv::eigen2cv(Eigen::MatrixXf(next_keypoints.rightCols(next_keypoints.cols()-2)), next_descr);
-
-    std::vector<cv::DMatch> matches;
-    cv::BFMatcher(cv::NORM_L2, true).match(next_descr, last_descr, matches);
-
-    for(const cv::DMatch &match : matches)
-      match_ids.push_back(std::make_tuple(last_mask_id[match.trainIdx], match.queryIdx, match.distance));
-  }
-
-  return match_ids;
-}
-
-cv::Mat
-draw_matches(const Eigen::MatrixXf &last_keypoints,
-             const Eigen::MatrixXf &next_keypoints,
-             const std::vector<std::tuple<int, int, float>> &correspondences,
-             const cv::Mat &mask)
-{
-  std::vector<cv::DMatch> matches;
-  for(const auto &match : correspondences)
-    matches.emplace_back(std::get<1>(match), std::get<0>(match), std::get<2>(match));
-
-  std::vector<cv::KeyPoint> last_kp(last_keypoints.rows());
-  for(size_t i=0; i<last_kp.size(); i++)
-      last_kp[i].pt = cv::Point(last_keypoints.row(i)[0]*mask.cols, last_keypoints.row(i)[1]*mask.rows);
-
-  std::vector<cv::KeyPoint> next_kp(next_keypoints.rows());
-  for(size_t i=0; i<next_kp.size(); i++)
-      next_kp[i].pt = cv::Point(next_keypoints.row(i)[0]*mask.cols, next_keypoints.row(i)[1]*mask.rows);
-
-  cv::Mat img_matches;
-  const cv::Mat empty(mask.size(), CV_8UC1, cv::Scalar(255)); // empty image
-  cv::drawMatches(empty, next_kp, mask, last_kp, matches, img_matches);
-  return img_matches;
-}
-
 void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::Matrix<float, 3, 3, Eigen::RowMajor>& rot,
                                                 const bool& rgbOnly, const float& icpWeight, const bool& pyramid, const bool& fastOdom,
                                                 const bool& so3, const cudaSurfaceObject_t& icpErrorSurface, const cudaSurfaceObject_t& rgbErrorSurface,
@@ -525,86 +597,9 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 
     // least-squares optimisation of transformation via RANSAC on procrustes model
     if (kp_ls) {
-      // weighted orthogonal procrustes on keypoint correspondences
-      cv::Mat pc0(pointClouds[i].rows(), pointClouds[i].cols(), CV_32FC3);
-      cv::Mat pc1(nextPointClouds[i].rows(), nextPointClouds[i].cols(), CV_32FC3);
-      pointClouds[i].download(pc0.data, pointClouds[i].cols() * 3 * sizeof(float));
-      nextPointClouds[i].download(pc1.data, nextPointClouds[i].cols() * 3 * sizeof(float));
-//        // dbg
-//        const float max_depth_vis = 3;
-//        std::array<cv::Mat,3> xyz0;
-//        cv::split(pc0, xyz0);
-//        cv::imshow("z0 - "+std::to_string(i), xyz0[2]/max_depth_vis);
-//        std::array<cv::Mat,3> xyz1;
-//        cv::split(pc1, xyz1);
-//        cv::imshow("z1 - "+std::to_string(i), xyz1[2]/max_depth_vis);
-//        cv::waitKey(1);
-
-      // maximum number of correspondences
-      // some correspondences will have invalid depth and have to be removed
-      const int N = matches[i].size();
-      int k = 0; // number of matches with valid depth
-      Eigen::MatrixX3f p0 = Eigen::MatrixX3f::Zero(N, 3); // last (previous)
-      Eigen::MatrixX3f p1 = Eigen::MatrixX3f::Zero(N, 3); // next (current)
-      Eigen::VectorXf d = Eigen::VectorXf::Zero(N);
-      for(int m=0; m<N; m++){
-        int ik;
-        int x,y;
-        // next
-        Eigen::Vector3f v1;
-        ik = std::get<1>(matches[i][m]);
-        x = next_keypoints[i].row(ik)[0] * pc1.size().width;
-        y = next_keypoints[i].row(ik)[1] * pc1.size().height;
-        cv::cv2eigen(pc1.at<cv::Vec3f>(y,x), v1);
-        // last
-        Eigen::Vector3f v0;
-        ik = std::get<0>(matches[i][m]);
-        x = last_keypoints[i].row(ik)[0] * pc0.size().width;
-        y = last_keypoints[i].row(ik)[1] * pc0.size().height;
-        cv::cv2eigen(pc0.at<cv::Vec3f>(y,x), v0);
-
-        if( !(std::isnan(v0.z()) || std::isnan(v1.z()))) {
-          p0.row(k) = v0;
-          p1.row(k) = v1;
-          d[k] = std::get<2>(matches[i][m]);
-          k++;
-        }
-      }
-
-      if (k>=3) {
-        // remove tail with empty correspondences
-        p0.conservativeResize(k, Eigen::NoChange);
-        p1.conservativeResize(k, Eigen::NoChange);
-        d.conservativeResize(k);
-
-        // model must have 10% of samples within 3cm error
-        RigidRANSAC rrs(600, 0.03f, 0.1f);
-        kpT = rrs.estimate(p0,p1);
-
-//          // convert L2 distances to weights with sum(w) = trace(W) = k
-//          const auto we = (-d).array().exp();
-//          const Eigen::VectorXf w = (we / we.sum()) * we.size();
-//          const auto W = w.asDiagonal();
-
-//          const Eigen::RowVector3f p0m = p0.colwise().mean();
-//          const Eigen::RowVector3f p1m = p1.colwise().mean();
-
-//          // weighted least-squares optimisation of rigid transformation
-//          const auto A = (p1.rowwise()-p1m).transpose() * W * (p0.rowwise()-p0m);
-//          Eigen::JacobiSVD<Eigen::MatrixXf> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV);
-
-//          auto U = svd.matrixU();
-//          auto V = svd.matrixV();
-//          // guarantee that determinant of R is 1
-//          auto S = Eigen::Vector3f(1, 1, U.determinant() * V.determinant()).asDiagonal();
-
-//          const Eigen::Matrix3f R = U * S * V.transpose();
-//          const Eigen::Vector3f t = p1m - (R * p0m.transpose()).transpose();
-//          kpT.translate(t).rotate(R);
-
-        const Eigen::VectorXf dist = (p0 - (kpT * p1.transpose()).transpose()).rowwise().norm();
-        std::cout << "kp reproj err L" << i << " (" << dist.size() << "): " << dist.mean() << std::endl;
-      } // at least k>=3 correspondences
+      std::tie(kpT, std::ignore) = ransac(pointClouds[i], nextPointClouds[i],
+                                          last_keypoints[i], next_keypoints[i],
+                                          last_segmentation==maskID, 0.03f);
     }
 
     // Optimization iterations
