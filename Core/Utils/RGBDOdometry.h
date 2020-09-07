@@ -177,6 +177,7 @@ class RGBDOdometry {
   std::queue<std::array<DeviceArray2D<float>, NUM_PYRS>> NlastDepth;
   std::queue<std::array<mXXf, NUM_PYRS>> Nlast_keypoints;
   std::queue<Eigen::Isometry3f> Nlast_poses;
+  std::queue<std::array<DeviceArray2D<unsigned char>, NUM_PYRS>> NlastMask;
 
   size_t iimg = 0;
 };

@@ -486,6 +486,10 @@ struct ProjectionError
 
     PtrStep<float3> vmap_prev;
 
+    PtrStepSz<unsigned char> lastMask;
+
+    unsigned char maskID;
+
     float distThres;
 
     int cols;
@@ -513,6 +517,12 @@ struct ProjectionError
             // either overwritten by larger values, or allows to check ICP<0 => has outlier (ICP==0.0001 => only outlier)
             if(outErrorSurface) surf2Dwrite(0.0f, outErrorSurface, x*sizeof(float), y);
             return false;
+        }
+
+        // check masked area, if available
+        if (lastMask.rows*lastMask.cols > 0 && lastMask.ptr(ukr.y)[ukr.x] != maskID) {
+          if(outErrorSurface) surf2Dwrite(0.0f, outErrorSurface, x*sizeof(float), y);
+          return false;
         }
 
         // point at projected coordinate in previous camera
@@ -546,6 +556,8 @@ void projectionError(const mat44& Tcurr,
                      const DeviceArray2D<float3>& vmap_curr,
                      const CameraModel& intr,
                      const DeviceArray2D<float3>& vmap_prev,
+                     const DeviceArray2D<unsigned char> & lastMask,
+                     unsigned char maskID,
                      float distThres,
                      int threads,
                      int blocks,
@@ -563,6 +575,10 @@ void projectionError(const mat44& Tcurr,
     rpe.intr = intr;
 
     rpe.vmap_prev = vmap_prev;
+
+    rpe.lastMask = lastMask;
+
+    rpe.maskID = maskID;
 
     rpe.distThres = distThres;
 

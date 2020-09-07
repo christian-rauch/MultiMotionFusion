@@ -829,7 +829,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 
       // reprojection error for motion segmentation, required for frame-to-frame
       const mat44 devT = Eigen::Matrix<float, 4, 4, Eigen::RowMajor>(T_nx.matrix());
-      projectionError(devT, nextPointClouds[i], intr(i), lastPointCloudsN, distThres_,
+      projectionError(devT, nextPointClouds[i], intr(i), lastPointCloudsN, NlastMask.front()[i], maskID, distThres_,
                       GPUConfig::getInstance().icpStepThreads, GPUConfig::getInstance().icpStepBlocks,
                       icpErrorSurface);
     }
@@ -890,4 +890,15 @@ void RGBDOdometry::setLastSegmentation(const cv::Mat &segm) {
     assert(sizeof(unsigned char)*segm.cols==segm.step);
     lastMask[0].upload(segm.data, segm.step, segm.rows, segm.cols);
     last_segmentation = segm;
+
+    if (iimg>1) {
+      NlastMask.emplace();
+      for (int i = 0; i < RGBDOdometry::NUM_PYRS; ++i) {
+        lastMask[i].copyTo(NlastMask.back()[i]);
+      }
+    }
+
+    while (NlastMask.size()>Nhist) {
+      NlastMask.pop();
+    }
 }
