@@ -94,8 +94,13 @@ pairwise_matches(const Eigen::MatrixXf &last_keypoints,
     std::vector<cv::DMatch> matches;
     cv::BFMatcher(cv::NORM_L2, true).match(next_descr, last_descr, matches);
 
-    for(const cv::DMatch &match : matches)
-      match_ids.push_back(std::make_tuple(last_mask_id[match.trainIdx], match.queryIdx, match.distance));
+    for(const cv::DMatch &match : matches) {
+      if (match.distance>0.7)
+        continue;
+      match_ids.push_back(std::make_tuple(last_mask.empty() ? match.trainIdx : last_mask_id[match.trainIdx],
+                                          match.queryIdx,
+                                          match.distance));
+    }
   }
 
   return match_ids;
