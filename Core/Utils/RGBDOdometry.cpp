@@ -32,6 +32,20 @@ cv::Mat_<T> download(const DeviceArray2D<T> &array)
   return img;
 }
 
+template<typename T>
+void download(const DeviceArray2D<T> &array, cv::Mat_<T> &img)
+{
+  img.create(array.rows(), array.cols());
+  array.download(img.data, img.step);
+}
+
+template<typename T>
+void upload(const cv::Mat_<T> &img, DeviceArray2D<T> &array)
+{
+  array.create(img.rows, img.cols);
+  array.upload(img.data, img.step, img.rows, img.cols);
+}
+
 // upload row-major Eigen matrix to device array
 template <typename T, int R, int C>
 void upload_eigen(const Eigen::Matrix<T, R, C, Eigen::RowMajor> &matrix,
