@@ -133,6 +133,60 @@ draw_matches(const Eigen::MatrixXf &last_keypoints,
   return img_matches;
 }
 
+std::tuple<std::vector<cv::Point>, Eigen::VectorXf, Eigen::VectorXf>
+inlier(const Eigen::Isometry3f &T_01,
+       const DeviceArray2D<float3> &dpc0, const DeviceArray2D<float3> &dpc1,
+       const Eigen::MatrixXf& kp0, const Eigen::MatrixXf &kp1, const cv::Mat &mask = {})
+{
+  // point clouds
+  cv::Mat pc0(dpc0.rows(), dpc0.cols(), CV_32FC3);
+  cv::Mat pc1(dpc1.rows(), dpc1.cols(), CV_32FC3);
+  dpc0.download(pc0.data, dpc0.cols() * 3 * sizeof(float));
+  dpc1.download(pc1.data, dpc1.cols() * 3 * sizeof(float));
+
+  // correspondences
+  const auto matches = pairwise_matches(kp0, kp1, mask);
+  const int N = matches.size();
+
+  std::vector<cv::Point> kp_next_valid;
+
+  // some correspondences will have invalid depth and have to be removed
+  int k = 0; // number of matches with valid depth
+  Eigen::MatrixX3f p0 = Eigen::MatrixX3f::Zero(N, 3); // last (previous)
+  Eigen::MatrixX3f p1 = Eigen::MatrixX3f::Zero(N, 3); // next (current)
+  Eigen::VectorXf dist_feat = Eigen::VectorXf::Zero(N); // L2 distance of feature vectors
+  for(int m=0; m<N; m++) {
+    int ik0, ik1;
+    float d;
+    std::tie(ik0, ik1, d) = matches[m];
+    Eigen::Vector3f v0, v1;
+    // next
+    const cv::Point p_next(kp1.row(ik1)[0] * pc1.size().width, kp1.row(ik1)[1] * pc1.size().height);
+    cv::cv2eigen(pc1.at<cv::Vec3f>(p_next), v1);
+    // last
+    const cv::Point p_last(kp0.row(ik0)[0] * pc0.size().width, kp0.row(ik0)[1] * pc0.size().height);
+    cv::cv2eigen(pc0.at<cv::Vec3f>(p_last), v0);
+
+    if( !(std::isnan(v0.z()) || std::isnan(v1.z())) ) {
+      p0.row(k) = v0;
+      p1.row(k) = v1;
+      dist_feat[k] = d;
+      kp_next_valid.push_back(p_next);
+      k++;
+    }
+  }
+
+  // remove tail with empty correspondences
+  p0.conservativeResize(k, Eigen::NoChange);
+  p1.conservativeResize(k, Eigen::NoChange);
+  dist_feat.conservativeResize(k, Eigen::NoChange);
+
+  // distance of matched keypoints
+  const Eigen::VectorXf dist_eucl = (p0 - (T_01 * p1.transpose()).transpose()).rowwise().norm();
+
+  return {kp_next_valid, dist_eucl, dist_feat};
+}
+
 std::tuple<Eigen::Isometry3f, std::vector<cv::Point>>
 ransac(const DeviceArray2D<float3> &dpc0, const DeviceArray2D<float3> &dpc1,
        const Eigen::MatrixXf& kp0, const Eigen::MatrixXf &kp1, const cv::Mat &mask,
