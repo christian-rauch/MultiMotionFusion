@@ -43,24 +43,30 @@ void upload_eigen(const Eigen::Matrix<T, R, C, Eigen::RowMajor> &matrix,
 std::vector<std::tuple<int, int, float>>
 pairwise_matches(const Eigen::MatrixXf &last_keypoints,
                  const Eigen::MatrixXf &next_keypoints,
-                 const cv::Mat_<bool> &last_mask)
+                 const cv::Mat_<bool> &last_mask = {})
 {
   // remove 'last' keypoint coordinates outside of mask
   Eigen::MatrixXf last_keypoints_mask = Eigen::MatrixXf::Constant(last_keypoints.rows(), last_keypoints.cols(), std::numeric_limits<float>::signaling_NaN());
-  int kp_matches = 0;
   std::vector<int> last_mask_id;
-  for(int i=0; i<last_keypoints.rows(); i++) {
-      const Eigen::Array2f xy_norm = last_keypoints.leftCols(2).row(i);
-      const cv::Point2i xy(xy_norm.x()*last_mask.cols, xy_norm.y()*last_mask.rows);
-      if (last_mask.at<bool>(xy)) {
-        // copy match over
-        last_keypoints_mask.row(kp_matches) = last_keypoints.row(i);
-        kp_matches++;
-        // store original ID of last keypoint within valid segment
-        last_mask_id.push_back(i);
-      }
+  if (!last_mask.empty()) {
+    int kp_matches = 0;
+    for(int i=0; i<last_keypoints.rows(); i++) {
+        const Eigen::Array2f xy_norm = last_keypoints.leftCols(2).row(i);
+        const cv::Point2i xy(xy_norm.x()*last_mask.cols, xy_norm.y()*last_mask.rows);
+        if (last_mask.at<bool>(xy)) {
+          // copy match over
+          last_keypoints_mask.row(kp_matches) = last_keypoints.row(i);
+          kp_matches++;
+          // store original ID of last keypoint within valid segment
+          last_mask_id.push_back(i);
+        }
+    }
+    last_keypoints_mask.conservativeResize(kp_matches, Eigen::NoChange);
   }
-  last_keypoints_mask.conservativeResize(kp_matches, Eigen::NoChange);
+  else {
+    // use all keypoints
+    last_keypoints_mask = last_keypoints;
+  }
 
   // store correspondences (last_id, next_id)
   std::vector<std::tuple<int, int, float>> match_ids;
