@@ -173,8 +173,11 @@ class RGBDOdometry {
   cv::Mat last_segmentation;
 
   // store list of previous correspondences and depth
-  static const size_t Nhist = 1 * 30; // 1 sec at 30fps
+//  static const size_t Nhist = 1 * 30; // 1 sec at 30fps
+  static const size_t Nhist = 10;
+  std::queue<std::array<cv::Mat_<uint8_t>, NUM_PYRS>> Nlast_image;
   std::queue<std::array<DeviceArray2D<float>, NUM_PYRS>> NlastDepth;
+//  std::queue<std::array<DeviceArray2D<float>, NUM_PYRS>> NlastFeatureMaps;
   std::queue<std::array<mXXf, NUM_PYRS>> Nlast_keypoints;
   std::queue<Eigen::Isometry3f> Nlast_poses;
   std::queue<std::array<DeviceArray2D<unsigned char>, NUM_PYRS>> NlastMask;

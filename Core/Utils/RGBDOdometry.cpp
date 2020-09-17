@@ -39,11 +39,20 @@ void download(const DeviceArray2D<T> &array, cv::Mat_<T> &img)
   array.download(img.data, img.step);
 }
 
+// upload 1D array to cv mat
 template<typename T>
 void upload(const cv::Mat_<T> &img, DeviceArray2D<T> &array)
 {
   array.create(img.rows, img.cols);
   array.upload(img.data, img.step, img.rows, img.cols);
+}
+
+// upload ND array to cv mat
+template<typename T>
+void uploadND(const cv::Mat &img, DeviceArray2D<T> &array)
+{
+  array.create(img.rows, img.cols);
+  array.upload(img.data, img.step, img.rows, img.cols*img.channels());
 }
 
 // upload row-major Eigen matrix to device array
@@ -464,13 +473,25 @@ void RGBDOdometry::initRGBDFromPrevious(const Eigen::Matrix4f& pose) {
   // add new depth image to end of queue
   // for the very first two images, there will be no valid 'nextDepth' yet
   if (iimg>1) {
+    Nlast_image.emplace();
+    for (int i = 0; i < RGBDOdometry::NUM_PYRS; ++i) {
+      download(nextImage[i], Nlast_image.back()[i]);
+    }
+
     NlastDepth.emplace();
     for (int i = 0; i < RGBDOdometry::NUM_PYRS; ++i) {
       nextDepth[i].copyTo(NlastDepth.back()[i]);
     }
   }
 
-  // delete all but N last depth images
+  // delete all but N last images
+  while (Nlast_image.size()>Nhist) {
+    for (int i = 0; i < RGBDOdometry::NUM_PYRS; ++i) {
+      Nlast_image.front()[i].release();
+    }
+    Nlast_image.pop();
+  }
+
   while (NlastDepth.size()>Nhist) {
     for (int i = 0; i < RGBDOdometry::NUM_PYRS; ++i) {
       NlastDepth.front()[i].release();
@@ -898,17 +919,65 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
     // to create high enough errors for segmentation. We therefore have to compare to a reference
     // image further away in time.
     if (!NlastDepth.empty()) {
-      const Eigen::Isometry3f T_nx = Nlast_poses.front().inverse() * T_0x;
       const int i = 0;
       DeviceArray2D<float3> lastPointCloudsN;
       lastPointCloudsN.create(pyrDims.at(i).x, pyrDims.at(i).y);
       projectToPointCloud(NlastDepth.front()[i], lastPointCloudsN, intr, i);
+
+      Eigen::Isometry3f T_nx;
+      if(next_keypoints[i].rows()>0) {
+        // transformation from keypoints
+        std::tie(T_nx, std::ignore) = ransac(lastPointCloudsN, nextPointClouds[i],
+                                             Nlast_keypoints.front()[i], next_keypoints[i],
+                                             last_segmentation==maskID, 0.03f);
+      }
+      else {
+        // transformation from previous estimation
+        T_nx = Nlast_poses.front().inverse() * T_0x;
+      }
+
+      const cv::Mat_<uint8_t> next_img = download(nextImage[i]);
+      const cv::Mat_<uint8_t> last_img = Nlast_image.front()[i];
+//      {
+//        const auto matches = pairwise_matches(Nlast_keypoints.front()[i], next_keypoints[i]);
+//        cv::Mat img_matches = draw_matches(Nlast_keypoints.front()[i], next_keypoints[i], matches, last_img, next_img);
+//        cv::imshow("matches "+std::to_string(maskID), img_matches);
+//        cv::waitKey(1);
+//      }
+
+      std::vector<cv::Point> kp_valid;
+      Eigen::VectorXf distance;
+      Eigen::VectorXf dist_feat;
+      std::tie(kp_valid, distance, dist_feat) = inlier(T_nx, lastPointCloudsN, nextPointClouds[i],
+                                                       Nlast_keypoints.front()[i], next_keypoints[i]);
 
       // reprojection error for motion segmentation, required for frame-to-frame
       const mat44 devT = Eigen::Matrix<float, 4, 4, Eigen::RowMajor>(T_nx.matrix());
       projectionError(devT, nextPointClouds[i], intr(i), lastPointCloudsN, NlastMask.front()[i], maskID, distThres_,
                       GPUConfig::getInstance().icpStepThreads, GPUConfig::getInstance().icpStepBlocks,
                       icpErrorSurface);
+
+//      projectionFeatureDistance(devT, nextPointClouds[i], intr(i), lastPointCloudsN, nextFeatureMaps[i], NlastFeatureMaps.front()[i],
+//                                NlastMask.front()[i], maskID, distThres_,
+//                                GPUConfig::getInstance().icpStepThreads, GPUConfig::getInstance().icpStepBlocks,
+//                                icpErrorSurface);
+
+      if(!kp_valid.empty())
+      {
+        cv::Mat img_inlier;
+        cv::cvtColor(next_img, img_inlier, cv::COLOR_GRAY2BGR);
+        const float err_max_vis = 0.05f;
+        for (size_t j=0; j<kp_valid.size(); j++) {
+          // interpolate between colours
+          const float dist_norm = std::min(distance[j]/err_max_vis, 1.0f);
+          const auto col = (1-dist_norm)*cv::viz::Color::blue() + dist_norm*cv::viz::Color::red();
+          cv::circle(img_inlier, kp_valid[j], 5, col, -1);
+        }
+        cv::imshow("inlier eucl "+std::to_string(maskID), img_inlier);
+//        cv::imwrite("/tmp/motsegm_m"+std::to_string(maskID)+"_i"+std::to_string(iimg)+".png", img_inlier);
+      }
+
+      cv::waitKey(1);
     }
   }
 
@@ -951,7 +1020,21 @@ void RGBDOdometry::setLastKeypointsFromPrevious() {
 void RGBDOdometry::setNextFeatureMap(const std::vector<cv::Mat> &feat) {
   for(int i=0; i<NUM_PYRS; i++) {
     assert(sizeof(float)*feat[i].channels()*feat[i].cols==feat[i].step);
-    nextFeatureMaps[i].upload(feat[i].data, feat[i].step, feat[i].rows, feat[i].cols);
+    // upload feature map in native resolution of the inference
+    // has to be upscaled on demand
+    uploadND(feat[i], nextFeatureMaps[i]);
+
+//    // scale to pyramid resolution
+//    // upscale: linear interpolation of feature map
+//    // downscale: nearest-neighbour
+//    const cv::Size size_source = feat[i].size();
+//    const cv::Size size_target(pyrDims[i].y, pyrDims[i].x);
+//    const bool up = size_target.width>size_source.width || size_target.height>size_source.height;
+//    const cv::InterpolationFlags scale_mode = up ? cv::INTER_LINEAR : cv::INTER_NEAREST;
+
+//    cv::Mat feat_pyr;
+//    cv::resize(feat[i], feat_pyr, size_target, 0, 0, scale_mode);
+//    nextFeatureMaps[i].upload(feat_pyr.data, feat_pyr.step, feat_pyr.rows, feat_pyr.cols*feat_pyr.channels());
   }
   next_features = feat;
 }
@@ -961,6 +1044,14 @@ void RGBDOdometry::setLastFeatureMapFromPrevious() {
     nextFeatureMaps[i].copyTo(lastFeatureMaps[i]);
   }
   last_features = next_features;
+
+  // TODO: do not store all last N feature maps for now to prevent "out of memory" issues
+//  if (iimg>1) {
+//    NlastFeatureMaps.emplace();
+//    for (int i = 0; i < RGBDOdometry::NUM_PYRS; ++i) {
+//      lastFeatureMaps[i].copyTo(NlastFeatureMaps.back()[i]);
+//    }
+//  }
 }
 
 void RGBDOdometry::setLastSegmentation(const cv::Mat &segm) {
