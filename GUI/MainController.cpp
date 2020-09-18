@@ -22,7 +22,6 @@
 #include "Tools/LiveLogReader.h"
 #include "Tools/ImageLogReader.h"
 
-#include <boost/filesystem.hpp>
 #include <boost/algorithm/string.hpp>
 #include <GUI/Tools/PangolinReader.h>
 
@@ -115,7 +114,7 @@ MainController::MainController(int argc, char* argv[])
 
   Parse::get().arg(argc, argv, "-l", logFile);
   if (logFile.length()) {
-    if (boost::filesystem::exists(logFile) && boost::algorithm::ends_with(logFile, ".klg")) {
+    if (std::filesystem::exists(logFile) && boost::algorithm::ends_with(logFile, ".klg")) {
       logReader = std::make_unique<KlgLogReader>(logFile, Parse::get().arg(argc, argv, "-f", empty) > -1);
     } else {
       logReader = std::make_unique<PangolinReader>(logFile, Parse::get().arg(argc, argv, "-f", empty) > -1);
@@ -246,27 +245,27 @@ MainController::MainController(int argc, char* argv[])
   resizeStream = new GPUResize(Resolution::getInstance().width(), Resolution::getInstance().height(), Resolution::getInstance().width() / 2,
                                Resolution::getInstance().height() / 2);
 
-  if (exportLabels | exportNormals | exportViewport) {
-    if (Parse::get().arg(argc, argv, "-exportdir", exportDir) > 0) {
-      if (exportDir.length() == 0 || exportDir[0] != '/') exportDir = baseDir + exportDir;
-    } else {
-      if (boost::filesystem::exists(logFile)) {
+  if (Parse::get().arg(argc, argv, "-exportdir", exportDir) > 0) {
+    if(std::filesystem::path(exportDir).is_relative()) {
+      // determine path from basedir and lofile
+      if (std::filesystem::exists(logFile)) {
         // TODO: this is bound to fail if logFile is not in the baseDir or the path is not relative
         exportDir = baseDir + logFile + "-export/";
       } else {
-        exportDir = baseDir + "-export/";
+        exportDir = baseDir + exportDir + "-export/";
       }
     }
-    exportDir += "/";
-
-    // Create export dir if it doesn't exist
-    boost::filesystem::path eDir(exportDir);
-    boost::filesystem::create_directory(eDir);
-  }
-
-  if (exportDir.empty()) {
+    else {
+      // use absolute path
+      exportDir = exportDir + "/";
+    }
+  } else {
+    // no 'exportDir' parameter provided, export to tmp
     exportDir = std::filesystem::temp_directory_path() / "";
   }
+
+  // Create export dir if it doesn't exist
+  std::filesystem::create_directories(exportDir);
 
   std::cout << "Initialised MainController. Frame resolution is set to: " << Resolution::getInstance().width() << "x"
             << Resolution::getInstance().height() << std::endl << "Exporting results to: " << exportDir << std::endl;
@@ -498,7 +497,7 @@ void MainController::run() {
       std::string viewPath;
       do {
         viewPath = exportDir + "/view" + std::to_string(index++);
-      } while (boost::filesystem::exists(viewPath + ".png"));
+      } while (std::filesystem::exists(viewPath + ".png"));
       gui->saveColorImage(viewPath);
     }
 
