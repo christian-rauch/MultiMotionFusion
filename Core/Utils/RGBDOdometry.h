@@ -32,15 +32,29 @@
 
 struct OdometryConfig {
   // estimation mode:
+  // - (empty): use default ICP, no keypoint transformation estimation
   // - "icp": ICP with keypoint correspondences
   // - "ls": RANSAC least-squares optimisation
   std::string mode_est;
+
+  // motion source:
+  // "est": use previous estimated transform
+  // "ransac": independently use RANSAC on keypoints
+  std::string segm_source;
+
+  // segmentation mode:
+  // "dense": reprojection of dense  depth (default)
+  // "sparse": reprojection of sparse keypoints
+  std::string segm_mode;
+
+  size_t history;
 };
 
 class RGBDOdometry {
  public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-  RGBDOdometry(int width, int height, float cx, float cy, float fx, float fy, unsigned char maskID = 0,
+  RGBDOdometry(int width, int height, float cx, float cy, float fx, float fy, unsigned char maskID,
+               const OdometryConfig &cfg,
                float distThresh = 0.10f,  // TODO Check, hardcoded scale?
                float angleThresh = sin(20.f * 3.14159254f / 180.f));
 
@@ -69,7 +83,7 @@ class RGBDOdometry {
   void getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::Matrix<float, 3, 3, Eigen::RowMajor>& rot, const bool& rgbOnly,
                                     const float& icpWeight, const bool& pyramid, const bool& fastOdom, const bool& so3,
                                     const cudaSurfaceObject_t& icpErrorSurface, const cudaSurfaceObject_t& rgbErrorSurface,
-                                    const std::vector<std::unique_ptr<GPUTexture>> &projError, const OdometryConfig &odom_cfg);
+                                    const std::vector<std::unique_ptr<GPUTexture>> &projError);
 
   Eigen::MatrixXd getCovariance();
 
@@ -158,6 +172,8 @@ class RGBDOdometry {
 
   unsigned char maskID;
 
+  const OdometryConfig cfg;
+
   // N x (2+D) matrix that stores N keypoints row-wise
   // with 2 normalised [0,1] coordinates (x,y) and a D feature vector
   DeviceArray2D<float> nextKeypoints[NUM_PYRS];
@@ -180,8 +196,6 @@ class RGBDOdometry {
   cv::Mat last_segmentation;
 
   // store list of previous correspondences and depth
-//  static const size_t Nhist = 1 * 30; // 1 sec at 30fps
-  static const size_t Nhist = 10;
   std::queue<std::array<cv::Mat_<uint8_t>, NUM_PYRS>> Nlast_image;
   std::queue<std::array<DeviceArray2D<float>, NUM_PYRS>> NlastDepth;
 //  std::queue<std::array<DeviceArray2D<float>, NUM_PYRS>> NlastFeatureMaps;

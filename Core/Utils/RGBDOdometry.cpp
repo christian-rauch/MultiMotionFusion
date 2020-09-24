@@ -268,7 +268,7 @@ ransac(const DeviceArray2D<float3> &dpc0, const DeviceArray2D<float3> &dpc1,
   return {kpT_nx, kp_next_inlier};
 }
 
-RGBDOdometry::RGBDOdometry(int width, int height, float cx, float cy, float fx, float fy, unsigned char mask, float distThresh,
+RGBDOdometry::RGBDOdometry(int width, int height, float cx, float cy, float fx, float fy, unsigned char mask, const OdometryConfig &cfg, float distThresh,
                            float angleThresh)
     : lastICPError(0),
       lastICPCount(width * height),
@@ -290,7 +290,8 @@ RGBDOdometry::RGBDOdometry(int width, int height, float cx, float cy, float fx, 
       cy(cy),
       fx(fx),
       fy(fy),
-      maskID(mask) {
+      maskID(mask),
+      cfg(cfg) {
   sumDataSE3.create(MAX_THREADS);
   outDataSE3.create(1);
   sumResidualRGB.create(MAX_THREADS);
@@ -485,14 +486,14 @@ void RGBDOdometry::initRGBDFromPrevious(const Eigen::Matrix4f& pose) {
   }
 
   // delete all but N last images
-  while (Nlast_image.size()>Nhist) {
+  while (Nlast_image.size()>cfg.history) {
     for (int i = 0; i < RGBDOdometry::NUM_PYRS; ++i) {
       Nlast_image.front()[i].release();
     }
     Nlast_image.pop();
   }
 
-  while (NlastDepth.size()>Nhist) {
+  while (NlastDepth.size()>cfg.history) {
     for (int i = 0; i < RGBDOdometry::NUM_PYRS; ++i) {
       NlastDepth.front()[i].release();
     }
@@ -526,7 +527,7 @@ void RGBDOdometry::initFirstRGB(GPUTexture* rgb) {
 void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::Matrix<float, 3, 3, Eigen::RowMajor>& rot,
                                                 const bool& rgbOnly, const float& icpWeight, const bool& pyramid, const bool& fastOdom,
                                                 const bool& so3, const cudaSurfaceObject_t& icpErrorSurface, const cudaSurfaceObject_t& rgbErrorSurface,
-                                                const std::vector<std::unique_ptr<GPUTexture>> &projError, const OdometryConfig &odom_cfg) {
+                                                const std::vector<std::unique_ptr<GPUTexture>> &projError) {
   bool icp = !rgbOnly && icpWeight > 0;
   bool rgb = rgbOnly || icpWeight < 100;
 
@@ -691,9 +692,9 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
     lastRGBError = std::numeric_limits<float>::max();
 
     // do least-squares fitting with correspondences on CPU
-    const bool kp_ls = odom_cfg.mode_est == "ls" && !matches[i].empty();
+    const bool kp_ls = cfg.mode_est == "ls" && !matches[i].empty();
     // do ICP update with correspondences on GPU
-    const bool kp_icp = odom_cfg.mode_est == "icp" && matchID[i].rows()>0;
+    const bool kp_icp = cfg.mode_est == "icp" && matchID[i].rows()>0;
 
     // transformation from previous to current frame
     Eigen::Isometry3f kpT = Eigen::Isometry3f::Identity();
@@ -722,7 +723,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       float sigma = 0;
       int rgbSize = 0;
 
-      if (rgb && odom_cfg.mode_est.empty()) {
+      if (rgb && cfg.mode_est.empty()) {
         TICK("computeRgbResidual");
         computeRgbResidual(pow(minimumGradientMagnitudes[i], 2.0) / pow(sobelScale, 2.0), nextdIdx[i], nextdIdy[i], lastDepth[i],
                            nextDepth[i], lastImage[i], nextImage[i], lastMask[i], nextMask[i], corresImg[i], sumResidualRGB,
@@ -781,7 +782,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       float residual[2];
 
       // note: we always need to run the ICP step to access the reprojection error in 'icpErrorSurface'
-      if (icp && odom_cfg.mode_est.empty()) {
+      if (icp && cfg.mode_est.empty()) {
         TICK("icpStep");
         icpStep(device_Rcurr, device_tcurr, vmap_curr, nmap_curr, device_Rprev_inv, device_tprev, intr(i), vmap_g_prev, nmap_g_prev,
                 distThres_, angleThres_, sumDataSE3, outDataSE3, A_icp.data(), b_icp.data(), &residual[0],
@@ -815,7 +816,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       A_rgbd.setZero();
       b_rgbd.setZero();
 
-      if (rgb && odom_cfg.mode_est.empty()) {
+      if (rgb && cfg.mode_est.empty()) {
         TICK("rgbStep");
         rgbStep(corresImg[i], sigmaVal, pointClouds[i], intr(i).fx, intr(i).fy, nextdIdx[i], nextdIdy[i], sobelScale, sumDataSE3,
                 outDataSE3, A_rgbd.data(), b_rgbd.data(), GPUConfig::getInstance().rgbStepThreads, GPUConfig::getInstance().rgbStepBlocks);
@@ -854,7 +855,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 
       Eigen::Isometry3f rgbOdom = Eigen::Isometry3f::Identity();
 
-      if (odom_cfg.mode_est.empty() || kp_icp) {
+      if (cfg.mode_est.empty() || kp_icp) {
         OdometryProvider::computeUpdateSE3(resultRt, result, rgbOdom);
         assert(resultRt.cast<float>() == rgbOdom.matrix());
       }
@@ -911,7 +912,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
   //  std::cout << "T: " << std::endl << T.matrix().inverse() << std::endl;
 
     Nlast_poses.push(T_0x);
-    while (Nlast_poses.size()>Nhist) {
+    while (Nlast_poses.size()>cfg.history) {
       Nlast_poses.pop();
     }
 
@@ -925,15 +926,18 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       projectToPointCloud(NlastDepth.front()[i], lastPointCloudsN, intr, i);
 
       Eigen::Isometry3f T_nx;
-      /*if(next_keypoints[i].rows()>0) {
-        // transformation from ke ypoints
+      if(cfg.segm_source.empty() || cfg.segm_source=="est") {
+        // transformation from previous estimation
+        T_nx = Nlast_poses.front().inverse() * T_0x;
+      }
+      else if(cfg.segm_source=="ransac") {
+        // transformation from keypoints
         std::tie(T_nx, std::ignore) = ransac(lastPointCloudsN, nextPointClouds[i],
                                              Nlast_keypoints.front()[i], next_keypoints[i],
                                              last_segmentation==maskID, 0.03f);
       }
-      else*/ {
-        // transformation from previous estimation
-        T_nx = Nlast_poses.front().inverse() * T_0x;
+      else {
+        throw std::runtime_error("invalid segmentation mode: "+cfg.segm_mode);
       }
 
       const cv::Mat_<uint8_t> next_img = download(nextImage[i]);
@@ -1012,7 +1016,7 @@ void RGBDOdometry::setLastKeypointsFromPrevious() {
   }
 
   // delete all but N last keypoints
-  while (Nlast_keypoints.size()>Nhist) {
+  while (Nlast_keypoints.size()>cfg.history) {
     Nlast_keypoints.pop();
   }
 }
@@ -1066,7 +1070,7 @@ void RGBDOdometry::setLastSegmentation(const cv::Mat &segm) {
       }
     }
 
-    while (NlastMask.size()>Nhist) {
+    while (NlastMask.size()>cfg.history) {
       NlastMask.pop();
     }
 }

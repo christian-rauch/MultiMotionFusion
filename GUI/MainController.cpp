@@ -80,6 +80,12 @@
                     2. "icp": iterative estimation with fixes keypoint correspondences,
                               same objective and gradients as for the regular ICP optimisation on dense
                     3. "ls": RANSAC with least-squares procrustes optimisation on highest resolution
+    -segm_source    Source for transformation from which motion is derived
+                    1. "est": via keypoint projection on estimated transform (default)
+                    2. "ransac": via keypoint projection from RANSAC estimated transform
+    -segm_mode      Mode for motion segmentation
+                    1. "dense": reprojection of dense  depth (default)
+                    2. "sparse": reprojection of sparse keypoints
 
     -l             Processes a log-file (*.klg/pangolin/rosbag).
     -topic_colour  ROS topic for colour images (sensor_msgs/CompressedImage)
@@ -316,6 +322,13 @@ MainController::MainController(int argc, char* argv[])
     // fall back to no keypoint transformation estimation, if not provided
     odom_cfg.mode_est = std::string();
   }
+
+  Parse::get().arg(argc, argv, "-segm_source", odom_cfg.segm_source);
+
+  Parse::get().arg(argc, argv, "-segm_mode", odom_cfg.segm_mode);
+
+  // TODO: make configurable
+  odom_cfg.history = 10; // frames
 
   gui->flipColors->Ref()->Set(logReader->flipColors);
   gui->rgbOnly->Ref()->Set(false);

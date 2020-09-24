@@ -97,7 +97,7 @@ class Model {
   // static std::list<unsigned char> availableIDs;
 
  public:
-  Model(unsigned char id, float confidenceThresh, bool enableFillIn = true, bool enableErrorRecording = true,
+  Model(unsigned char id, float confidenceThresh, const OdometryConfig &odom_cfg, bool enableFillIn = true, bool enableErrorRecording = true,
         bool enablePoseLogging = false, MatchingType matchingType = MatchingType::Drost,
         float maxDepth = std::numeric_limits<float>::max());  // TODO: Default disable
   virtual ~Model();
@@ -127,8 +127,7 @@ class Model {
 
   virtual void performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight, bool pyramid, bool fastOdom, bool so3,
                                float maxDepthProcessed, GPUTexture* rgb, GPUTexture *last_segmentation, int64_t logTimestamp, bool tryFillIn = false,
-                               const std::vector<cv::Mat> &features = {}, const std::vector<Eigen::MatrixX2d> &kp_coordinates = {}, const std::vector<Eigen::MatrixXd> &kp_descriptors = {},
-                               const OdometryConfig &odom_cfg = {});
+                               const std::vector<cv::Mat> &features = {}, const std::vector<Eigen::MatrixX2d> &kp_coordinates = {}, const std::vector<Eigen::MatrixXd> &kp_descriptors = {});
 
   // Compute fusion-weight based on velocity
   virtual float computeFusionWeight(float weightMultiplier) const;

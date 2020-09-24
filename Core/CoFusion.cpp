@@ -28,7 +28,7 @@ CoFusion::CoFusion(const int timeDelta, const int countThresh, const float errTh
       newModelListeners(0),
       inactiveModelListeners(0),
       modelToModel(Resolution::getInstance().width(), Resolution::getInstance().height(), Intrinsics::getInstance().cx(),
-                   Intrinsics::getInstance().cy(), Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy()),
+                   Intrinsics::getInstance().cy(), Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), 0, {}),
       kp_predictor(new SuperPoint(keypoint_predictor_path)),
       odom_cfg(odom_cfg),
       ferns(500, depthCut * 1000, photoThresh),
@@ -70,7 +70,7 @@ CoFusion::CoFusion(const int timeDelta, const int countThresh, const float errTh
   createFeedbackBuffers();
 
   labelGenerator.init(Resolution::getInstance().width(), Resolution::getInstance().height(), Segmentation::METHOD::CONNECTED_COMPONENTS);
-  globalModel = std::make_shared<Model>(getNextModelID(true), initConfidenceGlobal, true, true, enablePoseLogging);
+  globalModel = std::make_shared<Model>(getNextModelID(true), initConfidenceGlobal, odom_cfg, true, true, enablePoseLogging);
   models.push_back(globalModel);
 
   Stopwatch::getInstance().setCustomSignature(12431231);
@@ -108,7 +108,7 @@ CoFusion::~CoFusion() {
 void CoFusion::preallocateModels(unsigned count) {
   for (unsigned i = 0; i < count; ++i)
     preallocatedModels.push_back(
-        std::make_shared<Model>(getNextModelID(true), initConfThresObject, false, true, enablePoseLogging, modelMatchingType));
+        std::make_shared<Model>(getNextModelID(true), initConfThresObject, odom_cfg, false, true, enablePoseLogging, modelMatchingType));
 }
 
 SegmentationResult CoFusion::performSegmentation(const FrameData& frame) {
@@ -271,7 +271,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       // TODO: use one global store for the feature maps and keypoints for the current and last observed frame
       for (auto model : models) {
         model->performTracking(frameToFrameRGB, rgbOnly, icpWeight, pyramid, fastOdom, so3, maxDepthProcessed, textures[GPUTexture::RGB],
-                               textures[GPUTexture::MASK], frame.timestamp, requiresFillIn(model), features, coordinates, descriptors, odom_cfg);
+                               textures[GPUTexture::MASK], frame.timestamp, requiresFillIn(model), features, coordinates, descriptors);
       }
       TOCK("odom");
 
@@ -460,7 +460,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       Eigen::Vector3f trans = globalModel->getPose().topRightCorner(3, 1);
       Eigen::Matrix<float, 3, 3, Eigen::RowMajor> rot = globalModel->getPose().topLeftCorner(3, 3);
 
-      modelToModel.getIncrementalTransformation(trans, rot, false, 10, pyramid, fastOdom, false, 0, 0, {}, {});
+      modelToModel.getIncrementalTransformation(trans, rot, false, 10, pyramid, fastOdom, false, 0, 0, {});
 
       Eigen::MatrixXd covar = modelToModel.getCovariance();
       bool covOk = true;
@@ -649,7 +649,7 @@ void CoFusion::spawnObjectModel() {
     newModel = preallocatedModels.front();
     preallocatedModels.pop_front();
   } else {
-    newModel = std::make_shared<Model>(getNextModelID(true), initConfThresObject, false, true, enablePoseLogging, modelMatchingType);
+    newModel = std::make_shared<Model>(getNextModelID(true), initConfThresObject, odom_cfg, false, true, enablePoseLogging, modelMatchingType);
   }
   newModel->getFrameOdometry().initFirstRGB(textures[GPUTexture::RGB]);
 }

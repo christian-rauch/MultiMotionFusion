@@ -122,7 +122,7 @@ const int Model::bufferSize = Model::MAX_VERTICES * Vertex::SIZE;
 
 GPUTexture Model::deformationNodes = GPUTexture(NODE_TEXTURE_DIMENSION, 1, GL_LUMINANCE32F_ARB, GL_LUMINANCE, GL_FLOAT);
 
-Model::Model(unsigned char id, float confidenceThresh, bool enableFillIn, bool enableErrorRecording, bool enablePoseLogging,
+Model::Model(unsigned char id, float confidenceThresh, const OdometryConfig &odom_cfg, bool enableFillIn, bool enableErrorRecording, bool enablePoseLogging,
              MatchingType matchingType, float maxDepthThesh)
     : pose(Eigen::Matrix4f::Identity()),
       lastPose(Eigen::Matrix4f::Identity()),
@@ -139,7 +139,7 @@ Model::Model(unsigned char id, float confidenceThresh, bool enableFillIn, bool e
       rgbError(enableErrorRecording ? std::make_unique<GPUTexture>(Resolution::getInstance().width(), Resolution::getInstance().height(), GL_R32F, GL_RED, GL_FLOAT, true, true, cudaGraphicsRegisterFlagsSurfaceLoadStore, "RGB") : nullptr),  // FIXME
       gpu(Model::GPUSetup::getInstance()),
       frameToModel(Resolution::getInstance().width(), Resolution::getInstance().height(), Intrinsics::getInstance().cx(),
-                   Intrinsics::getInstance().cy(), Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), id),
+                   Intrinsics::getInstance().cy(), Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), id, odom_cfg),
       fillIn(enableFillIn ? std::make_unique<FillIn>() : nullptr) {
   switch (matchingType) {
     case MatchingType::Drost:
@@ -404,8 +404,7 @@ void Model::initICP(bool doFillIn, bool frameToFrameRGB, float depthCutoff, GPUT
 
 void Model::performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight, bool pyramid, bool fastOdom, bool so3,
                             float maxDepthProcessed, GPUTexture* rgb, GPUTexture* last_segmentation, int64_t logTimestamp, bool doFillIn,
-                            const std::vector<cv::Mat> &features, const std::vector<Eigen::MatrixX2d> &kp_coordinates, const std::vector<Eigen::MatrixXd> &kp_descriptors,
-                            const OdometryConfig &odom_cfg) {
+                            const std::vector<cv::Mat> &features, const std::vector<Eigen::MatrixX2d> &kp_coordinates, const std::vector<Eigen::MatrixXd> &kp_descriptors) {
   assert(fillIn || !doFillIn);
   lastPose = pose;
 
@@ -424,7 +423,7 @@ void Model::performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight,
   Eigen::Matrix<float, 3, 3, Eigen::RowMajor> rotObject = pose.topLeftCorner(3, 3);
 
   getFrameOdometry().getIncrementalTransformation(transObject, rotObject, rgbOnly, icpWeight, pyramid, fastOdom, so3,
-                                                  icpError->getCudaSurface(), rgbError->getCudaSurface(), projError, odom_cfg);
+                                                  icpError->getCudaSurface(), rgbError->getCudaSurface(), projError);
 
   const cv::Mat icp_img = icpError->downloadTexture();
   cv::imshow("ICP error ctr "+std::to_string(getID()), icp_img+0.5);
