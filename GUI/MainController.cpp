@@ -312,9 +312,9 @@ MainController::MainController(int argc, char* argv[])
   if (Parse::get().arg(argc, argv, "-k", tmpFloat) > -1) gui->unaryErrorK->Ref()->Set(tmpFloat);
 
   Parse::get().arg(argc, argv, "-model", keypoint_model_path);
-  if(Parse::get().arg(argc, argv, "-kp_est", kp_est_mode) == -1) {
+  if(Parse::get().arg(argc, argv, "-kp_est", odom_cfg.mode_est) == -1) {
     // fall back to no keypoint transformation estimation, if not provided
-    kp_est_mode = std::string();
+    odom_cfg.mode_est = std::string();
   }
 
   gui->flipColors->Ref()->Set(logReader->flipColors);
@@ -415,7 +415,7 @@ void MainController::launch() {
       coFusion = new CoFusion(openLoop ? std::numeric_limits<int>::max() / 2 : timeDelta, icpCountThresh, icpErrThresh, covThresh,
                               !openLoop, iclnuim, reloc, photoThresh, confGlobalInit, confObjectInit, gui->depthCutoff->Get(),
                               gui->icpWeight->Get(), fastOdom, fernThresh, so3, frameToFrameRGB, gui->modelSpawnOffset->Get(),
-                              Model::MatchingType::Drost, exportDir, exportSegmentation, keypoint_model_path, kp_est_mode);
+                              Model::MatchingType::Drost, exportDir, exportSegmentation, keypoint_model_path, odom_cfg);
 
       coFusion->preallocateModels(preallocatedModelsCount);
 

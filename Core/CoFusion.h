@@ -51,7 +51,7 @@ class CoFusion {
            const bool fastOdom = false, const float fernThresh = 0.3095, const bool so3 = true, const bool frameToFrameRGB = false,
            const unsigned modelSpawnOffset = 20, const Model::MatchingType matchingType = Model::MatchingType::Drost,
            const std::string& exportDirectory = "", const bool exportSegmentationResults = false, const std::string keypoint_predictor_path = {},
-           const std::string kp_est_mode = {});
+           const OdometryConfig &odom_cfg = {});
 
   virtual ~CoFusion();
 
@@ -328,7 +328,7 @@ class CoFusion {
   RGBDOdometry modelToModel;
 
   const std::shared_ptr<FeatureMatchesInterface> kp_predictor;
-  const std::string kp_est_mode;
+  const OdometryConfig odom_cfg;
 
   // TODO move to model?
   Ferns ferns;

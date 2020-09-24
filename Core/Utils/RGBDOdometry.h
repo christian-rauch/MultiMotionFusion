@@ -30,6 +30,13 @@
 #include <queue>
 #include <array>
 
+struct OdometryConfig {
+  // estimation mode:
+  // - "icp": ICP with keypoint correspondences
+  // - "ls": RANSAC least-squares optimisation
+  std::string mode_est;
+};
+
 class RGBDOdometry {
  public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -62,7 +69,7 @@ class RGBDOdometry {
   void getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::Matrix<float, 3, 3, Eigen::RowMajor>& rot, const bool& rgbOnly,
                                     const float& icpWeight, const bool& pyramid, const bool& fastOdom, const bool& so3,
                                     const cudaSurfaceObject_t& icpErrorSurface, const cudaSurfaceObject_t& rgbErrorSurface,
-                                    const std::vector<std::unique_ptr<GPUTexture>> &projError, const std::string &kp_est_mode);
+                                    const std::vector<std::unique_ptr<GPUTexture>> &projError, const OdometryConfig &odom_cfg);
 
   Eigen::MatrixXd getCovariance();
 
