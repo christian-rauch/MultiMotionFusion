@@ -221,6 +221,8 @@ class Model {
   inline RGBDOdometry& getFrameOdometry() { return frameToModel; }
   inline ModelProjection& getIndexMap() { return indexMap; }
 
+  RGBDOdometry::KpData& getKeypoints() { return kp_data; };
+
   inline unsigned getUnseenCount() const { return unseenCount; }
   inline void resetUnseenCount() { unseenCount = 0; }
   inline unsigned incrementUnseenCount() {
@@ -271,6 +273,8 @@ class Model {
   std::unique_ptr<GPUTexture> icpError;
   std::unique_ptr<GPUTexture> rgbError;
   std::vector<std::unique_ptr<GPUTexture>> projError;
+
+  RGBDOdometry::KpData kp_data;
 
   const GPUSetup& gpu;
 

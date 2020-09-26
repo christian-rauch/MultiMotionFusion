@@ -527,7 +527,8 @@ void RGBDOdometry::initFirstRGB(GPUTexture* rgb) {
 void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::Matrix<float, 3, 3, Eigen::RowMajor>& rot,
                                                 const bool& rgbOnly, const float& icpWeight, const bool& pyramid, const bool& fastOdom,
                                                 const bool& so3, const cudaSurfaceObject_t& icpErrorSurface, const cudaSurfaceObject_t& rgbErrorSurface,
-                                                const std::vector<std::unique_ptr<GPUTexture>> &projError) {
+                                                const std::vector<std::unique_ptr<GPUTexture>> &projError,
+                                                KpData *const kp_data) {
   bool icp = !rgbOnly && icpWeight > 0;
   bool rgb = rgbOnly || icpWeight < 100;
 
@@ -966,8 +967,13 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 //                                GPUConfig::getInstance().icpStepThreads, GPUConfig::getInstance().icpStepBlocks,
 //                                icpErrorSurface);
 
-      if(!kp_valid.empty())
+      kp_data->clear();
+      if(cfg.segm_mode=="sparse")
       {
+        for (size_t j=0; j<kp_valid.size(); j++) {
+          kp_data->emplace_back(kp_valid[j], distance[int(j)]);
+        }
+        // vis
         cv::Mat img_inlier;
         cv::cvtColor(next_img, img_inlier, cv::COLOR_GRAY2BGR);
         const float err_max_vis = 0.05f;

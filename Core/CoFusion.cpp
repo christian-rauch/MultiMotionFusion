@@ -460,7 +460,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       Eigen::Vector3f trans = globalModel->getPose().topRightCorner(3, 1);
       Eigen::Matrix<float, 3, 3, Eigen::RowMajor> rot = globalModel->getPose().topLeftCorner(3, 3);
 
-      modelToModel.getIncrementalTransformation(trans, rot, false, 10, pyramid, fastOdom, false, 0, 0, {});
+      modelToModel.getIncrementalTransformation(trans, rot, false, 10, pyramid, fastOdom, false, 0, 0, {}, nullptr);
 
       Eigen::MatrixXd covar = modelToModel.getCovariance();
       bool covOk = true;

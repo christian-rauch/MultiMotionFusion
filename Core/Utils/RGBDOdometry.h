@@ -52,6 +52,9 @@ struct OdometryConfig {
 
 class RGBDOdometry {
  public:
+  // {(x,y) coordinates}, {Euclidean distance to previous}
+  typedef std::vector<std::tuple<cv::Point, double>> KpData;
+
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   RGBDOdometry(int width, int height, float cx, float cy, float fx, float fy, unsigned char maskID,
                const OdometryConfig &cfg,
@@ -83,7 +86,7 @@ class RGBDOdometry {
   void getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::Matrix<float, 3, 3, Eigen::RowMajor>& rot, const bool& rgbOnly,
                                     const float& icpWeight, const bool& pyramid, const bool& fastOdom, const bool& so3,
                                     const cudaSurfaceObject_t& icpErrorSurface, const cudaSurfaceObject_t& rgbErrorSurface,
-                                    const std::vector<std::unique_ptr<GPUTexture>> &projError);
+                                    const std::vector<std::unique_ptr<GPUTexture>> &projError, KpData *const kp_data);
 
   Eigen::MatrixXd getCovariance();
 
