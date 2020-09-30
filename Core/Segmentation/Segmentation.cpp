@@ -23,6 +23,8 @@
 #include "densecrf.h"
 #include "../Model/Model.h"
 
+#include <opencv2/core/eigen.hpp>
+
 #ifdef SHOW_DEBUG_VISUALISATION
 #include <iomanip>
 #include "../Utils/Gnuplot.h"
@@ -52,7 +54,7 @@ SegmentationResult::ModelData::ModelData(unsigned t_id, ModelListIterator const&
 
 void Segmentation::init(int width, int height, METHOD method) {
   // TODO: Make customisable.
-  slic = Slic(width, height, 16, gSLICr::RGB);
+  slic = Slic(width, height, 48, gSLICr::RGB);
   this->method = method;
 }
 
@@ -182,7 +184,70 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
 
     cv::Mat vertConfTex = m->downloadVertexConfTexture();
     cv::Mat icpFull = m->downloadICPErrorTexture();
-    cv::Mat icp = slic.downsample<float>(icpFull);
+//    cv::Mat icp = slic.downsample<float>(icpFull);
+
+    cv::Mat icp(int(lowHeight), int(lowWidth), CV_32FC1, cv::Scalar(0));
+    cv::Mat kpcount(int(lowHeight), int(lowWidth), CV_32FC1, cv::Scalar(0));
+    const int* slic_map = slic.getResult();
+    static const long len_vis_max = 20;
+    const long len_vis = std::min(len_vis_max, m->getTrackXY().cols());
+
+    if (len_vis>1) {
+      cv::Mat track_err;
+      cv::cvtColor(frame.rgb, track_err, cv::COLOR_RGB2GRAY);
+      cv::cvtColor(track_err, track_err, cv::COLOR_GRAY2BGR);
+      cv::Mat proj_err = track_err.clone();
+      const cv::Rect rect(cv::Point(0,0), track_err.size());
+
+      static const double threshold = 0.05;
+
+      for (int itrack=0; itrack<m->getTrackXY().rows(); itrack++) {
+        const Model::VectorXp2 &cs = m->getTrackXY().row(itrack).rightCols(len_vis);
+        const Model::VectorXp3 &ps = m->getTrackPoint().row(itrack).rightCols(len_vis);
+        const Eigen::VectorXd  &ds = m->getTrackProjError().row(itrack).rightCols(len_vis);
+        for (int ik=0; ik<(cs.size()-1); ik++) {
+          // ignore 2D points outside of image, including invalid (-1,-1) points
+          if (!(cs[ik].inside(rect) && cs[ik+1].inside(rect))) { continue; }
+
+          // ignore trajectories with outliers
+          if (ds.maxCoeff()>=threshold) { continue; }
+
+          // distance between current and start point of trajectory section
+          const double e = std::min((ps[0]-ps[ik+1]).norm()/threshold, 1.0);
+
+          // ignore invalid 3D point distances
+          if (std::isnan(e)) { continue; }
+
+          cv::line(track_err, cs[ik], cs[ik+1], cv::Scalar((1-e)*255,0,e*255), 3);
+        }
+
+        const cv::Point track_end = cs.tail<1>()[0];
+        if (track_end.inside(rect)) {
+          const double e = (ps[0]-ps.tail<1>()[0]).norm();
+          const Eigen::RowVectorXd &track_d = m->getTrackProjError().row(itrack);
+          if (!std::isnan(e) && track_d.maxCoeff()<threshold) {
+            // map from image continuous full-dim index to SLIC continuous low-dim index
+            const int index = track_end.y * int(fullWidth) + track_end.x;
+            icp.at<float>(slic_map[index]) += float(e);
+            kpcount.at<float>(slic_map[index]) += 1;
+
+            const double ee = std::min(e/0.02, 1.0);
+            cv::circle(proj_err, track_end, 5, cv::Scalar((1-ee)*255, 0, ee*255), cv::FILLED);
+          }
+        }
+      }
+
+      cv::imshow("track err "+std::to_string(m->getID()), track_err);
+      cv::imshow("proj err "+std::to_string(m->getID()), proj_err);
+    }
+
+    icp /= kpcount;
+    icp.setTo(0, kpcount==0);
+
+    // visualise error and confidence per SLIC region
+    cv::imshow("icp up "+std::to_string(m->getID()), slic.upsample<float>(icp));
+    cv::waitKey(1);
+
     cv::Mat conf = slic.downsample<float>(vertConfTex, 3);
     result.modelData.push_back({m->getID(), it, icp, conf});
     modelIdToIndex[m->getID()] = mIndex++;
@@ -479,6 +544,8 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
     crfResult.col(i).maxCoeff(&m);
     map.data[i] = result.modelData[m].id;
   }
+
+  assert(crfResult.array().isFinite().all());
 
   TOCK("CRF-FULL");
 
