@@ -142,6 +142,33 @@ draw_matches(const Eigen::MatrixXf &last_keypoints,
   return img_matches;
 }
 
+Eigen::Vector3f min_depth(const cv::Point &kp, const cv::Mat &pc, const int size) {
+  // create mask
+  cv::Mat_<bool> m(pc.size(), false);
+  cv::circle(m, kp, size, cv::Scalar(true), -1);
+
+  // extract depth
+  std::vector<cv::Mat> xyz;
+  cv::split(pc, xyz);
+  const cv::Mat &d = xyz[2];
+  m &= (d>0);
+
+  Eigen::Vector3f v = Eigen::Vector3f::Zero();
+
+  // find minimum depth location within masked area
+  if( cv::countNonZero(m)>0) {
+    cv::Point min_loc;
+    cv::minMaxLoc(d, nullptr, nullptr, &min_loc, nullptr, m);
+    cv::cv2eigen(pc.at<cv::Vec3f>(min_loc), v);
+  }
+  else {
+    // mark invalid as NaN
+    v *= std::numeric_limits<float>::quiet_NaN();
+  }
+
+  return v;
+}
+
 std::tuple<std::vector<cv::Point>, Eigen::VectorXf, Eigen::VectorXf>
 inlier(const Eigen::Isometry3f &T_01,
        const DeviceArray2D<float3> &dpc0, const DeviceArray2D<float3> &dpc1,
