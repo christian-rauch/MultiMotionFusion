@@ -43,6 +43,8 @@
 // TODO: load implementation dynamically
 #include <super_point_inference.hpp>
 
+#include "Utils/PointTracker.hpp"
+
 class CoFusion {
  public:
   CoFusion(const int timeDelta = 200, const int countThresh = 35000, const float errThresh = 5e-05, const float covThresh = 1e-05,
@@ -329,6 +331,8 @@ class CoFusion {
 
   const std::shared_ptr<FeatureMatchesInterface> kp_predictor;
   const OdometryConfig odom_cfg;
+
+  tracker::PointTracker tracker;
 
   // TODO move to model?
   Ferns ferns;

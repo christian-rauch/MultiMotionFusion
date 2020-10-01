@@ -31,6 +31,7 @@ CoFusion::CoFusion(const int timeDelta, const int countThresh, const float errTh
                    Intrinsics::getInstance().cy(), Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), 0, {}),
       kp_predictor(new SuperPoint(keypoint_predictor_path)),
       odom_cfg(odom_cfg),
+      tracker({Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), Intrinsics::getInstance().cx(), Intrinsics::getInstance().cy()}),
       ferns(500, depthCut * 1000, photoThresh),
       tick(1),
       timeDelta(timeDelta),
@@ -227,6 +228,11 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
 //  cv::waitKey(1);
 
   TOCK("Keypoints");
+
+  tracker.addKeypoints(coordinates[0], descriptors[0], frame.depth, 0.7f);
+  cv::Mat img_tracks = tracker.drawTracks(frame.rgb, 20);
+  cv::imshow("tracks", img_tracks);
+  cv::waitKey(1);
 
   TICK("Preprocess");
 
