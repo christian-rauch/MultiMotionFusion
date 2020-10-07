@@ -464,6 +464,42 @@ void Model::updateTracks(const tracker::Tracks& tracks) {
       }
     }
   }
+
+  // L2 distances of local points to previous point, Ntracks x Nimages
+  track_pe.resize(this->tracks.size(), 0);
+  track_xy.resize(this->tracks.size(), 0);
+  track_p.resize(this->tracks.size(), 0);
+  int it=0;
+
+  for (const auto &[o_track, l_track] : this->tracks) {
+    // resize the projection error matrix, assumes that all tracks have same length
+    const int len_dist = int(l_track->size()-1);
+    if (track_pe.cols() != len_dist) {
+      track_pe.resize(Eigen::NoChange, len_dist);
+    }
+
+    for (int ik=0; ik<len_dist; ik++) {
+      if ((*l_track)[size_t(ik)] != nullptr && (*l_track)[size_t(ik+1)] != nullptr) {
+        track_pe(it,ik) = ((*l_track)[size_t(ik+1)]->coordinate - (*l_track)[size_t(ik)]->coordinate).norm();
+      }
+      else {
+        track_pe(it,ik) = std::numeric_limits<double>::quiet_NaN();
+      }
+    }
+
+    if (track_xy.cols() != int(l_track->size())) {
+      track_xy.resize(Eigen::NoChange, int(l_track->size()));
+    }
+    if (track_p.cols() != int(l_track->size())) {
+      track_p.resize(Eigen::NoChange, int(l_track->size()));
+    }
+    for (size_t ik=0; ik<l_track->size(); ik++) {
+      track_xy(it,int(ik)) = ((*l_track)[ik] == nullptr) ? cv::Point(-1,-1) : (*l_track)[ik]->xy;
+      track_p(it,int(ik)) = ((*l_track)[ik] == nullptr) ? Eigen::RowVector3d::Constant(std::numeric_limits<double>::quiet_NaN()) : (*l_track)[ik]->coordinate;
+    }
+
+    it++;
+  } // tracks
 }
 
 float Model::computeFusionWeight(float weightMultiplier) const {

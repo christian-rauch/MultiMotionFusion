@@ -88,6 +88,12 @@ class Model {
 
   enum class MatchingType { Drost };
 
+  typedef Eigen::Matrix<cv::Point, Eigen::Dynamic, Eigen::Dynamic> MatrixXp2;
+  typedef Eigen::Matrix<Eigen::Vector3d, Eigen::Dynamic, Eigen::Dynamic> MatrixXp3;
+
+  typedef Eigen::Matrix<cv::Point, Eigen::Dynamic, 1> VectorXp2;
+  typedef Eigen::Matrix<Eigen::Vector3d, Eigen::Dynamic, 1> VectorXp3;
+
  public:
   static const int TEXTURE_DIMENSION;
   static const int MAX_VERTICES;
@@ -226,6 +232,10 @@ class Model {
 
   RGBDOdometry::KpData& getKeypoints() { return kp_data; };
 
+  const MatrixXp2& getTrackXY() const { return track_xy; };
+  const MatrixXp3& getTrackPoint() const  { return track_p; };
+  const Eigen::MatrixXd& getTrackProjError() const { return track_pe; };
+
   inline unsigned getUnseenCount() const { return unseenCount; }
   inline void resetUnseenCount() { unseenCount = 0; }
   inline unsigned incrementUnseenCount() {
@@ -283,6 +293,11 @@ class Model {
 
   // map of original to local projected tracks
   std::map<const tracker::TrackCPtr, tracker::TrackPtr> tracks;
+
+  // track projection error
+  Eigen::MatrixXd track_pe;
+  MatrixXp2 track_xy;
+  MatrixXp3 track_p;
 
   const GPUSetup& gpu;
 
