@@ -432,7 +432,38 @@ void Model::performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight,
   pose.topRightCorner(3, 1) = transObject;
   pose.topLeftCorner(3, 3) = rotObject;
 
+  poses.emplace_back(pose);
+
   TOCK("odom - Model: " + std::to_string(id));
+}
+
+void Model::updateTracks(const tracker::Tracks& tracks) {
+  const auto project_kp = [](const tracker::KeypointPtr &origin_kp, const Eigen::Isometry3d &T) -> tracker::KeypointPtr
+  {
+    if (origin_kp==nullptr)
+      return nullptr;
+
+    // project keypoint from origin frame (camera) to local model frame
+    return  std::make_shared<tracker::Keypoint>(tracker::Keypoint{
+                              origin_kp->xy,
+                              T * origin_kp->coordinate.transpose(),
+                              origin_kp->descriptor});
+  };
+
+  for (const tracker::TrackPtr &track : tracks) {
+    if(this->tracks.count(track)) {
+      // update local track with projection of newest keypoint
+      this->tracks[track]->push_back(project_kp(track->back(), Eigen::Isometry3d(pose.cast<double>())));
+    }
+    else {
+      // create new local track with projection of all keypoints
+      assert(poses.size()==track->size());
+      this->tracks[track] = std::make_shared<tracker::Track>(track->size(), nullptr);
+      for (size_t ik=0; ik<track->size(); ik++) {
+        (*this->tracks[track])[ik] = project_kp(track->back(), Eigen::Isometry3d(poses[ik].cast<double>()));
+      }
+    }
+  }
 }
 
 float Model::computeFusionWeight(float weightMultiplier) const {

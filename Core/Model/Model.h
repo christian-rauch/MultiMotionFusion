@@ -33,6 +33,7 @@
 #include <memory>
 #include <list>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <Utils/PointTracker.hpp>
 
 #include "Buffers.h"
 
@@ -128,6 +129,8 @@ class Model {
   virtual void performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight, bool pyramid, bool fastOdom, bool so3,
                                float maxDepthProcessed, GPUTexture* rgb, GPUTexture *last_segmentation, int64_t logTimestamp, bool tryFillIn = false,
                                const std::vector<cv::Mat> &features = {}, const std::vector<Eigen::MatrixX2d> &kp_coordinates = {}, const std::vector<Eigen::MatrixXd> &kp_descriptors = {});
+
+  virtual void updateTracks(const tracker::Tracks& tracks);
 
   // Compute fusion-weight based on velocity
   virtual float computeFusionWeight(float weightMultiplier) const;
@@ -242,6 +245,8 @@ class Model {
   Eigen::Matrix4f pose;
   Eigen::Matrix4f lastPose;
 
+  std::vector<Eigen::Isometry3f> poses;
+
   std::vector<PoseLogItem> poseLog;  // optional, for testing
 
   // Confidence Threshold (low in the beginning, increasing)
@@ -275,6 +280,9 @@ class Model {
   std::vector<std::unique_ptr<GPUTexture>> projError;
 
   RGBDOdometry::KpData kp_data;
+
+  // map of original to local projected tracks
+  std::map<const tracker::TrackCPtr, tracker::TrackPtr> tracks;
 
   const GPUSetup& gpu;
 

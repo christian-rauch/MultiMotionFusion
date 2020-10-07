@@ -278,6 +278,9 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       for (auto model : models) {
         model->performTracking(frameToFrameRGB, rgbOnly, icpWeight, pyramid, fastOdom, so3, maxDepthProcessed, textures[GPUTexture::RGB],
                                textures[GPUTexture::MASK], frame.timestamp, requiresFillIn(model), features, coordinates, descriptors);
+
+        // update tracks in origin (camera) frame and their projection by the model pose
+        model->updateTracks(tracker.getTracks());
       }
       TOCK("odom");
 
