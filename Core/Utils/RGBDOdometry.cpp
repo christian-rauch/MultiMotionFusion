@@ -581,10 +581,10 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
     cv::resize(last_segmentation==maskID, mask, cv::Size(lastDepth[l].cols(), lastDepth[l].rows()));
     if (next_keypoints[l].rows()>0) {
       matches[l] = pairwise_matches(last_keypoints[l], next_keypoints[l], mask);
-      cv::Mat img_matches = draw_matches(last_keypoints[l], next_keypoints[l], matches[l], mask);
-      cv::resize(img_matches, img_matches, cv::Size(2*lastDepth[0].cols()/2, lastDepth[0].rows()/2));
-      cv::imshow("matches "+std::to_string(maskID)+" L"+std::to_string(l), img_matches);
-      cv::waitKey(1);
+//      cv::Mat img_matches = draw_matches(last_keypoints[l], next_keypoints[l], matches[l], mask);
+//      cv::resize(img_matches, img_matches, cv::Size(2*lastDepth[0].cols()/2, lastDepth[0].rows()/2));
+//      cv::imshow("matches "+std::to_string(maskID)+" L"+std::to_string(l), img_matches);
+//      cv::waitKey(1);
 
       // upload indices
       if (!matches[l].empty()) {
