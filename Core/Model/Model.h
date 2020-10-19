@@ -196,6 +196,8 @@ class Model {
   //    return indexMap.getUnaryConfTex()->downloadTexture();
   //}
 
+  void exportTracksPLY(const std::string &export_dir) const;
+
   inline cv::Mat downloadVertexConfTexture() { return indexMap.getSplatVertexConfTex()->downloadTexture(); }
 
   inline cv::Mat downloadICPErrorTexture() { return icpError->downloadTexture(); }

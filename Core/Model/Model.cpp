@@ -1012,6 +1012,63 @@ Model::SurfelMap Model::downloadMap() {
   return result;
 }
 
+void Model::exportTracksPLY(const std::string &export_dir) const {
+  const MatrixXp3 &points = getTrackPoint();
+
+  std::stringstream ss_hdr, ss_vrt, ss_edg;
+
+  size_t vert_id = 0;
+  size_t edge_id = 0;
+  std::queue<size_t> edge_ids;
+  for(int track=0; track<points.rows(); track++) {
+    while (edge_ids.size()!=0) { edge_ids.pop(); }
+    for(int v=0; v<points.cols(); v++) {
+      // add valid points
+      const Eigen::Array3d p = points(track,v).array();
+      if (!p.isNaN().any()) {
+        ss_vrt << p.transpose();
+        ss_vrt << std::endl;
+        edge_ids.push(vert_id);
+        vert_id++;
+      }
+      else {
+        // if we encounter an invalid point, reset the track connection
+        while (edge_ids.size()!=0) { edge_ids.pop(); }
+      }
+
+      // add track edge
+      if (edge_ids.size()==2) {
+        ss_edg << edge_ids.front() << " " << edge_ids.back();
+        ss_edg << " " << getTrackProjError()(track,v-1);
+        ss_edg << std::endl;
+        edge_id++;
+        edge_ids.pop();
+      }
+    }
+  }
+
+  // PLY header
+  ss_hdr << "ply" << std::endl << "format ascii 1.0" << std::endl;
+
+  ss_hdr << "element vertex " << vert_id << std::endl;
+  for(const std::string &c : {"x", "y", "z"})
+    ss_hdr << "property float " << c << std::endl;
+
+  ss_hdr << "element edge " << edge_id << std::endl;
+  ss_hdr << "property int vertex1" << std::endl;
+  ss_hdr << "property int vertex2" << std::endl;
+  ss_hdr << "property float32 distance" << std::endl;
+
+  ss_hdr << "end_header" << std::endl;
+
+  std::ofstream file;
+  file.open(export_dir+"/tracks-"+std::to_string(getID())+".ply");
+  file << ss_hdr.rdbuf();
+  file << ss_vrt.rdbuf();
+  file << ss_edg.rdbuf();
+  file.close();
+}
+
 void Model::performFillIn(GPUTexture* rawRGB, GPUTexture* rawDepth, bool frameToFrameRGB, bool lost) {
   if (fillIn) {
     TICK("FillIn");

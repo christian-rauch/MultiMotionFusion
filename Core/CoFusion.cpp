@@ -821,6 +821,9 @@ void CoFusion::savePly() {
 
   for (auto& m : models) exportModelPLY(m);
   for (auto& m : inactiveModels) exportModelPLY(m);
+
+  for (auto& m : models) m->exportTracksPLY(exportDir);
+  for (auto& m : inactiveModels) m->exportTracksPLY(exportDir);
 }
 
 void CoFusion::exportPoses() {
