@@ -776,7 +776,8 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
         // noop
       }
       else {
-        assert(false && "no keypoints for ICP transformation estimation");
+        // matches are only available from the second image on
+        assert(iimg==0 && "no keypoint matches for ICP transformation estimation");
       }
 
       float tmpError = sqrt(sigma) / rgbSize;
@@ -828,7 +829,8 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
         // noop
       }
       else {
-        assert(false && "no keypoints for ICP transformation estimation");
+        // matches are only available from the second image on
+        assert(iimg==0 && "no keypoint matches for ICP transformation estimation");
       }
 
 //      if (icp) {
@@ -893,7 +895,8 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
           rgbOdom = kpT;
       }
       else {
-        assert(false && "no keypoints for transformation update");
+        // matches are only available from the second image on
+        assert(iimg==0 && "no keypoint matches for transformation update");
       }
 
 //      std::cout << "odom update L" << i << std::endl << rgbOdom.matrix() << std::endl;
