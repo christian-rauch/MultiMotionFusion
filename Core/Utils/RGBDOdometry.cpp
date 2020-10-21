@@ -574,6 +574,10 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
     }
   }
 
+  if (!cfg.mode_est.empty() && std::set<std::string>{"ls", "icp"}.count(cfg.mode_est)==0) {
+    throw std::runtime_error("invalid estimation mode: "+cfg.mode_est);
+  }
+
   // get keypoint correspondences
   // compute on CPU (matches), upload to GPU (matchID)
   for (int l = 0; l < NUM_PYRS; l++) {
