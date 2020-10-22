@@ -972,7 +972,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
                                              last_segmentation==maskID, 0.03f);
       }
       else {
-        throw std::runtime_error("invalid segmentation mode: "+cfg.segm_mode);
+        throw std::runtime_error("invalid segmentation source: "+cfg.segm_source);
       }
 
       const cv::Mat_<uint8_t> next_img = download(nextImage[i]);

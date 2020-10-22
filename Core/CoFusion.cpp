@@ -23,7 +23,7 @@ CoFusion::CoFusion(const int timeDelta, const int countThresh, const float errTh
                    const float initConfidenceObject, const float depthCut, const float icpThresh, const bool fastOdom,
                    const float fernThresh, const bool so3, const bool frameToFrameRGB, const unsigned modelSpawnOffset,
                    const Model::MatchingType matchingType, const std::string& exportDirectory, const bool exportSegmentationResults,
-                   const std::string keypoint_predictor_path, const OdometryConfig &odom_cfg)
+                   const std::string keypoint_predictor_path, const OdometryConfig &odom_cfg, const SegmentationConfiguration &segm_cfg)
     : modelMatchingType(matchingType),
       newModelListeners(0),
       inactiveModelListeners(0),
@@ -70,7 +70,7 @@ CoFusion::CoFusion(const int timeDelta, const int countThresh, const float errTh
   createCompute();
   createFeedbackBuffers();
 
-  labelGenerator.init(Resolution::getInstance().width(), Resolution::getInstance().height(), Segmentation::METHOD::CONNECTED_COMPONENTS);
+  labelGenerator.init(Resolution::getInstance().width(), Resolution::getInstance().height(), Segmentation::METHOD::CONNECTED_COMPONENTS, segm_cfg);
   globalModel = std::make_shared<Model>(getNextModelID(true), initConfidenceGlobal, odom_cfg, true, true, enablePoseLogging);
   models.push_back(globalModel);
 

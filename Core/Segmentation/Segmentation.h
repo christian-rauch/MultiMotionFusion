@@ -67,12 +67,32 @@ struct SegmentationResult {
   std::vector<ModelData> modelData;
 };
 
+struct SegmentationConfiguration {
+  // segmentation mode:
+  // "dense": reprojection of dense  depth (default)
+  // "sparse": reprojection of sparse track keypoints
+  std::string mode;
+
+  // length of track to consider for motion segmentation
+  // 0: use entire track length
+  // >0: use N last frames
+  size_t history = 20;
+
+  // motion source:
+  // "est": use previous estimated transformations
+  // "ransac": independently use RANSAC on track keypoints
+  std::string source;
+
+  // super pixel size (pixel)
+  int sp_size = 16;
+};
+
 class Segmentation {
  public:
   enum class METHOD { CONNECTED_COMPONENTS, TEMPORAL };
 
  public:
-  void init(int width, int height, METHOD method);
+  void init(int width, int height, METHOD method, const SegmentationConfiguration &cfg = {});
 
   SegmentationResult performSegmentation(std::list<std::shared_ptr<Model>>& models, const FrameData& frame, unsigned char nextModelID,
                                          bool allowNew);
@@ -140,6 +160,8 @@ class Segmentation {
   // post-processing
   float maxRelSizeNew = 0.4;
   float minRelSizeNew = 0.07;
+
+  SegmentationConfiguration cfg;
 
  private:
   Slic slic;

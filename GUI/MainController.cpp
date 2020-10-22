@@ -85,7 +85,8 @@
                     2. "ransac": via keypoint projection from RANSAC estimated transform
     -segm_mode      Mode for motion segmentation
                     1. "dense": reprojection of dense  depth (default)
-                    2. "sparse": reprojection of sparse keypoints
+                    2. "sparse": reprojection of sparse track keypoints
+    -segm_sp_size   size (edge length in pixels) of super pixel (default: 16 pixel)
 
     -l             Processes a log-file (*.klg/pangolin/rosbag).
     -topic_colour  ROS topic for colour images (sensor_msgs/CompressedImage)
@@ -323,9 +324,11 @@ MainController::MainController(int argc, char* argv[])
     odom_cfg.mode_est = std::string();
   }
 
-  Parse::get().arg(argc, argv, "-segm_source", odom_cfg.segm_source);
+  Parse::get().arg(argc, argv, "-segm_source", segm_cfg.source);
 
-  Parse::get().arg(argc, argv, "-segm_mode", odom_cfg.segm_mode);
+  Parse::get().arg(argc, argv, "-segm_mode", segm_cfg.mode);
+
+  Parse::get().arg(argc, argv, "-segm_sp_size", segm_cfg.sp_size);
 
   // TODO: make configurable
   odom_cfg.history = 10; // frames
@@ -428,7 +431,7 @@ void MainController::launch() {
       coFusion = new CoFusion(openLoop ? std::numeric_limits<int>::max() / 2 : timeDelta, icpCountThresh, icpErrThresh, covThresh,
                               !openLoop, iclnuim, reloc, photoThresh, confGlobalInit, confObjectInit, gui->depthCutoff->Get(),
                               gui->icpWeight->Get(), fastOdom, fernThresh, so3, frameToFrameRGB, gui->modelSpawnOffset->Get(),
-                              Model::MatchingType::Drost, exportDir, exportSegmentation, keypoint_model_path, odom_cfg);
+                              Model::MatchingType::Drost, exportDir, exportSegmentation, keypoint_model_path, odom_cfg, segm_cfg);
 
       coFusion->preallocateModels(preallocatedModelsCount);
 

@@ -71,6 +71,7 @@ class MainController {
 
   std::string keypoint_model_path;
   OdometryConfig odom_cfg;
+  SegmentationConfiguration segm_cfg;
 
   GPUResize* resizeStream;
 };

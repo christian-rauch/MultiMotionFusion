@@ -53,7 +53,7 @@ class CoFusion {
            const bool fastOdom = false, const float fernThresh = 0.3095, const bool so3 = true, const bool frameToFrameRGB = false,
            const unsigned modelSpawnOffset = 20, const Model::MatchingType matchingType = Model::MatchingType::Drost,
            const std::string& exportDirectory = "", const bool exportSegmentationResults = false, const std::string keypoint_predictor_path = {},
-           const OdometryConfig &odom_cfg = {});
+           const OdometryConfig &odom_cfg = {}, const SegmentationConfiguration &segm_cfg = {});
 
   virtual ~CoFusion();
 
