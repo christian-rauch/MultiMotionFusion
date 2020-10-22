@@ -30,6 +30,8 @@
 #include <queue>
 #include <array>
 
+//#define NLAST_SEGM
+
 struct OdometryConfig {
   // estimation mode:
   // - (empty): use default ICP, no keypoint transformation estimation
@@ -198,6 +200,7 @@ class RGBDOdometry {
   cv::Mat next_segmentation;
   cv::Mat last_segmentation;
 
+#ifdef NLAST_SEGM
   // store list of previous correspondences and depth
   std::queue<std::array<cv::Mat_<uint8_t>, NUM_PYRS>> Nlast_image;
   std::queue<std::array<DeviceArray2D<float>, NUM_PYRS>> NlastDepth;
@@ -205,6 +208,7 @@ class RGBDOdometry {
   std::queue<std::array<mXXf, NUM_PYRS>> Nlast_keypoints;
   std::queue<Eigen::Isometry3f> Nlast_poses;
   std::queue<std::array<DeviceArray2D<unsigned char>, NUM_PYRS>> NlastMask;
+#endif
 
   size_t iimg = 0;
 };

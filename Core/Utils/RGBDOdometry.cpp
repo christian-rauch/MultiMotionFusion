@@ -498,6 +498,7 @@ void RGBDOdometry::initRGBDFromPrevious(const Eigen::Matrix4f& pose) {
   copyMaps2(vmaps_curr_[0], vmaps_tmp);
   copyMaps2(nmaps_curr_[0], nmaps_tmp);
 
+#ifdef NLAST_SEGM
   // add new depth image to end of queue
   // for the very first two images, there will be no valid 'nextDepth' yet
   if (iimg>1) {
@@ -526,6 +527,7 @@ void RGBDOdometry::initRGBDFromPrevious(const Eigen::Matrix4f& pose) {
     }
     NlastDepth.pop();
   }
+#endif
 
   // transform previous point cloud to initial camera pose at origin
   const mat33 device_Rcam = Eigen::Matrix<float, 3, 3, Eigen::RowMajor>(pose.topLeftCorner(3, 3));
@@ -940,6 +942,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
 
 //  std::cout << "trans: " << std::endl << trans.transpose() << " -> |" << trans.norm() << "|" << std::endl;
 
+#ifdef NLAST_SEGM
   if (iimg>1) {
     // current pose in initial reference frame at t=0
     Eigen::Isometry3f T_0x = Eigen::Isometry3f::Identity();
@@ -1024,6 +1027,7 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
       cv::waitKey(1);
     }
   }
+#endif
 
   iimg++;
 }
@@ -1047,6 +1051,7 @@ void RGBDOdometry::setLastKeypointsFromPrevious() {
   }
   last_keypoints = next_keypoints;
 
+#ifdef NLAST_SEGM
   // add new keypoints to end of queue
   if (iimg>1) {
     Nlast_keypoints.emplace();
@@ -1059,6 +1064,7 @@ void RGBDOdometry::setLastKeypointsFromPrevious() {
   while (Nlast_keypoints.size()>cfg.history) {
     Nlast_keypoints.pop();
   }
+#endif
 }
 
 void RGBDOdometry::setNextFeatureMap(const std::vector<cv::Mat> &feat) {
@@ -1103,6 +1109,7 @@ void RGBDOdometry::setLastSegmentation(const cv::Mat &segm) {
     lastMask[0].upload(segm.data, segm.step, segm.rows, segm.cols);
     last_segmentation = segm;
 
+#ifdef NLAST_SEGM
     if (iimg>1) {
       NlastMask.emplace();
       for (int i = 0; i < RGBDOdometry::NUM_PYRS; ++i) {
@@ -1113,4 +1120,5 @@ void RGBDOdometry::setLastSegmentation(const cv::Mat &segm) {
     while (NlastMask.size()>cfg.history) {
       NlastMask.pop();
     }
+#endif
 }
