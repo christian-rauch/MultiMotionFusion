@@ -136,7 +136,7 @@ class Model {
                                float maxDepthProcessed, GPUTexture* rgb, GPUTexture *last_segmentation, int64_t logTimestamp, bool tryFillIn = false,
                                const std::vector<cv::Mat> &features = {}, const std::vector<Eigen::MatrixX2d> &kp_coordinates = {}, const std::vector<Eigen::MatrixXd> &kp_descriptors = {});
 
-  virtual void updateTracks(const tracker::Tracks& tracks);
+  virtual void updateTracks(const tracker::Tracks& tracks_add, const tracker::Tracks &tracks_remove = {});
 
   // Compute fusion-weight based on velocity
   virtual float computeFusionWeight(float weightMultiplier) const;

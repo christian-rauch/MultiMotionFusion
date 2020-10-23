@@ -437,7 +437,7 @@ void Model::performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight,
   TOCK("odom - Model: " + std::to_string(id));
 }
 
-void Model::updateTracks(const tracker::Tracks& tracks) {
+void Model::updateTracks(const tracker::Tracks& tracks_add, const tracker::Tracks& tracks_remove) {
   const auto project_kp = [](const tracker::KeypointPtr &origin_kp, const Eigen::Isometry3d &T) -> tracker::KeypointPtr
   {
     if (origin_kp==nullptr)
@@ -450,7 +450,8 @@ void Model::updateTracks(const tracker::Tracks& tracks) {
                               origin_kp->descriptor});
   };
 
-  for (const tracker::TrackPtr &track : tracks) {
+  // update inlier tracks
+  for (const tracker::TrackPtr &track : tracks_add) {
     if(this->tracks.count(track)) {
       // update local track with projection of newest keypoint
       this->tracks[track]->push_back(project_kp(track->back(), Eigen::Isometry3d(pose.cast<double>())));
@@ -463,6 +464,11 @@ void Model::updateTracks(const tracker::Tracks& tracks) {
         (*this->tracks[track])[ik] = project_kp(track->back(), Eigen::Isometry3d(poses[ik].cast<double>()));
       }
     }
+  }
+
+  // remove outlier tracks
+  for (const tracker::TrackPtr &track : tracks_remove) {
+    this->tracks.erase(track);
   }
 
   // L2 distances of local points to previous point, Ntracks x Nimages
