@@ -1019,20 +1019,18 @@ Model::SurfelMap Model::downloadMap() {
 }
 
 void Model::exportTracksPLY(const std::string &export_dir) const {
-  const MatrixXp3 &points = getTrackPoint();
-
   std::stringstream ss_hdr, ss_vrt, ss_edg;
 
   size_t vert_id = 0;
   size_t edge_id = 0;
   std::queue<size_t> edge_ids;
-  for(int track=0; track<points.rows(); track++) {
-    while (edge_ids.size()!=0) { edge_ids.pop(); }
-    for(int v=0; v<points.cols(); v++) {
+  for (const auto &[track_camera, track_local] : tracks) {
+    // clear FIFO buffer
+    edge_ids = {};
+    for (const tracker::KeypointPtr &kp : *track_local) {
       // add valid points
-      const Eigen::Array3d p = points(track,v).array();
-      if (!p.isNaN().any()) {
-        ss_vrt << p.transpose();
+      if (kp!=nullptr && kp->coordinate.array().isFinite().all()) {
+        ss_vrt << kp->coordinate;
         ss_vrt << std::endl;
         edge_ids.push(vert_id);
         vert_id++;
@@ -1045,7 +1043,6 @@ void Model::exportTracksPLY(const std::string &export_dir) const {
       // add track edge
       if (edge_ids.size()==2) {
         ss_edg << edge_ids.front() << " " << edge_ids.back();
-        ss_edg << " " << getTrackProjError()(track,v-1);
         ss_edg << std::endl;
         edge_id++;
         edge_ids.pop();
@@ -1063,7 +1060,6 @@ void Model::exportTracksPLY(const std::string &export_dir) const {
   ss_hdr << "element edge " << edge_id << std::endl;
   ss_hdr << "property int vertex1" << std::endl;
   ss_hdr << "property int vertex2" << std::endl;
-  ss_hdr << "property float32 distance" << std::endl;
 
   ss_hdr << "end_header" << std::endl;
 
