@@ -26,6 +26,8 @@ fit(const Eigen::MatrixX3f &p0, const Eigen::MatrixX3f &p1, const Eigen::VectorX
   // find T_01 = (R_01,t_01) such that sum_i w_i * || (R_01 * p1_i - t_01) - p0_i ||^2 is minimised
   const Eigen::Matrix3f A = ((p1.rowwise()-p1m).transpose() * W * (p0.rowwise()-p0m)).transpose();
 
+  assert(A.array().isFinite().all());
+
   Eigen::JacobiSVD<Eigen::Matrix3f> svd(A, Eigen::ComputeFullU | Eigen::ComputeFullV);
 
   const Eigen::Matrix3f U = svd.matrixU();
