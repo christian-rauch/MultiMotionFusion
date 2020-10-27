@@ -21,6 +21,8 @@
 
 #include <opencv2/opencv.hpp>
 
+#include "Utils/RigidRANSAC.h"
+
 Model::GPUSetup::GPUSetup()
     : initProgram(loadProgramFromFile("init_unstable.vert")),
       drawProgram(loadProgramFromFile("draw_feedback.vert", "draw_feedback.frag")),
@@ -121,6 +123,18 @@ const int Model::MAX_NODES = Model::NODE_TEXTURE_DIMENSION / 16;  // 16 floats p
 const int Model::bufferSize = Model::MAX_VERTICES * Vertex::SIZE;
 
 GPUTexture Model::deformationNodes = GPUTexture(NODE_TEXTURE_DIMENSION, 1, GL_LUMINANCE32F_ARB, GL_LUMINANCE, GL_FLOAT);
+
+tracker::KeypointPtr project_kp(const tracker::KeypointPtr &origin_kp, const Eigen::Isometry3d &T)
+{
+  if (origin_kp==nullptr)
+    return nullptr;
+
+  // project keypoint from origin frame (camera) to local model frame
+  return  std::make_shared<tracker::Keypoint>(tracker::Keypoint{
+                            origin_kp->xy,
+                            T * origin_kp->coordinate.transpose(),
+                            origin_kp->descriptor});
+};
 
 Model::Model(unsigned char id, float confidenceThresh, const OdometryConfig &odom_cfg, bool enableFillIn, bool enableErrorRecording, bool enablePoseLogging,
              MatchingType matchingType, float maxDepthThesh)
@@ -437,46 +451,20 @@ void Model::performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight,
   TOCK("odom - Model: " + std::to_string(id));
 }
 
-void Model::updateTracks(const tracker::Tracks& tracks_add, const tracker::Tracks& tracks_remove) {
-  const auto project_kp = [](const tracker::KeypointPtr &origin_kp, const Eigen::Isometry3d &T) -> tracker::KeypointPtr
-  {
-    if (origin_kp==nullptr)
-      return nullptr;
-
-    // project keypoint from origin frame (camera) to local model frame
-    return  std::make_shared<tracker::Keypoint>(tracker::Keypoint{
-                              origin_kp->xy,
-                              T * origin_kp->coordinate.transpose(),
-                              origin_kp->descriptor});
-  };
-
-  // update inlier tracks
-  for (const tracker::TrackPtr &track : tracks_add) {
-    if(this->tracks.count(track)) {
-      // update local track with projection of newest keypoint
-      this->tracks[track]->push_back(project_kp(track->back(), Eigen::Isometry3d(pose.cast<double>())));
-    }
-    else {
-      // create new local track with projection of all keypoints
-      assert(poses.size()==track->size());
-      this->tracks[track] = std::make_shared<tracker::Track>(track->size(), nullptr);
-      for (size_t ik=0; ik<track->size(); ik++) {
-        (*this->tracks[track])[ik] = project_kp(track->back(), Eigen::Isometry3d(poses[ik].cast<double>()));
-      }
-    }
+void Model::updateTrackPose() {
+  for (const auto &[o_track, l_track] : this->tracks) {
+    l_track->push_back(project_kp(o_track->back(), Eigen::Isometry3d(pose.cast<double>())));
+    assert(o_track->size()==l_track->size());
   }
+}
 
-  // remove outlier tracks
-  for (const tracker::TrackPtr &track : tracks_remove) {
-    this->tracks.erase(track);
-  }
-
+void Model::computeTrackProjectionError() {
   // L2 distances of local points to previous point, Ntracks x Nimages
-  track_pe.resize(this->tracks.size(), 0);
-  track_xy.resize(this->tracks.size(), 0);
-  track_p.resize(this->tracks.size(), 0);
-  int it=0;
+  track_pe.resize(int(this->tracks.size()), 0);
+  track_xy.resize(int(this->tracks.size()), 0);
+  track_p.resize(int(this->tracks.size()), 0);
 
+  int it=0;
   for (const auto &[o_track, l_track] : this->tracks) {
     // resize the projection error matrix, assumes that all tracks have same length
     const int len_dist = int(l_track->size()-1);
@@ -506,6 +494,75 @@ void Model::updateTracks(const tracker::Tracks& tracks_add, const tracker::Track
 
     it++;
   } // tracks
+}
+
+void Model::updateTracks(const tracker::Tracks& tracks_add, const tracker::Tracks& tracks_remove) {
+  // add new inlier tracks with new pose estimates
+  for (const tracker::TrackPtr &track : tracks_add) {
+    if (!this->tracks.count(track)) {
+      this->tracks[track] = std::make_shared<tracker::Track>(track->size(), nullptr);
+      for (size_t ik=0; ik<track->size(); ik++) {
+        (*this->tracks[track])[ik] = project_kp((*track)[ik], Eigen::Isometry3d(poses[ik].cast<double>()));
+      }
+    }
+  }
+
+  // remove outlier tracks
+  for (const tracker::TrackPtr &track : tracks_remove) {
+    this->tracks.erase(track);
+  }
+
+#ifndef NDEBUG
+  for (const auto &[o_track, l_track] : this->tracks) {
+    assert(o_track->size()==l_track->size());
+  }
+#endif
+}
+
+void Model::refineTrackSubset(const tracker::Tracks& tracks) {
+  if (tracks.empty()) { return; }
+
+  // apply RANSAC on every set of track segments
+  // model must have 60% of samples within 3cm error
+  // this assumes that the 'tracks' are already associated to the model via segments
+  RigidRANSAC rrs(10, 0.03f, 0.6f);
+
+  poses.clear();
+
+  poses.emplace_back().setIdentity();
+
+  const size_t ntracks = tracks.size();
+  const size_t len = (*tracks.begin())->size();
+  for (size_t ik=0; ik<(len-1); ik++) {
+    Eigen::MatrixX3f p0s, p1s;
+    p0s.resize(int(ntracks), Eigen::NoChange);
+    p1s.resize(int(ntracks), Eigen::NoChange);
+
+    int nvalid = 0;
+    for (size_t it=0; it<ntracks; it++) {
+      if ((*tracks[it])[ik] && (*tracks[it])[ik+1]) {
+        const Eigen::RowVector3d &p0 = (*tracks[it])[ik]->coordinate;
+        const Eigen::RowVector3d &p1 = (*tracks[it])[ik+1]->coordinate;
+        if (p0.array().isFinite().all() && p1.array().isFinite().all()) {
+          p0s.row(nvalid) = p0.cast<float>();
+          p1s.row(nvalid) = p1.cast<float>();
+          nvalid++;
+        }
+      }
+    }
+    p0s.conservativeResize(nvalid, Eigen::NoChange);
+    p1s.conservativeResize(nvalid, Eigen::NoChange);
+
+    // least squares estimate
+    Eigen::Isometry3f T_01 = rrs.estimate(p0s, p1s);
+    assert(T_01.matrix().array().isFinite().all());
+    poses.emplace_back() = poses.at(ik) * T_01;
+  }
+
+  // the new 'initial' pose is the pose at the end of the track
+  pose = poses.back().matrix();
+
+  assert(poses.size()==len);
 }
 
 float Model::computeFusionWeight(float weightMultiplier) const {

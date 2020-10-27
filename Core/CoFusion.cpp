@@ -272,6 +272,9 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
     if (bootstrap || !inPose) {
       Model::generateCUDATextures(textures[GPUTexture::DEPTH_METRIC_FILTERED], textures[GPUTexture::MASK]);
 
+      // "global" tracks in image and camera space
+      const tracker::Tracks &tracks = tracker.getTracks();
+
       TICK("odom");
       // NOTE: each model will individually store a copy of the 'last' and 'next' feature maps and keypoints on GPU
       // TODO: use one global store for the feature maps and keypoints for the current and last observed frame
@@ -279,8 +282,11 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
         model->performTracking(frameToFrameRGB, rgbOnly, icpWeight, pyramid, fastOdom, so3, maxDepthProcessed, textures[GPUTexture::RGB],
                                textures[GPUTexture::MASK], frame.timestamp, requiresFillIn(model), features, coordinates, descriptors);
 
-        // update tracks in origin (camera) frame and their projection by the model pose
-        model->updateTracks(tracker.getTracks());
+        // update the pose of currently associated tracks without modifying the current set of tracks
+        model->updateTrackPose();
+
+        // update projection error
+        model->computeTrackProjectionError();
       }
       TOCK("odom");
 
@@ -348,6 +354,41 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
           moveNewModelToList();
         }
 
+        {
+          // associate tracks to segments via their last keypoint location
+          const cv::Mat &segm = segmentationResult.fullSegmentation;
+          std::unordered_map<uint8_t, tracker::Tracks> segm_tracks;
+          for (const tracker::TrackPtr &track : tracks) {
+            if (track->back()!=nullptr) {
+              const cv::Point p = track->back()->xy;
+              if (cv::Rect(cv::Point(), segm.size()).contains(p)) {
+                segm_tracks[segm.at<uint8_t>(p)].push_back(track);
+              }
+            }
+          }
+
+          // update model-specific set of tracks for currently visible models
+          for (const auto &model : models) {
+            if (segm_tracks.count(uint8_t(model->getID()))) {
+              // gather tracks that are not associated the segment
+              tracker::Tracks tracks_remove;
+              for (const auto &[id, tracks] : segm_tracks) {
+                if (id!=model->getID()) {
+                  tracks_remove.insert(tracks_remove.end(), tracks.begin(), tracks.end());
+                }
+              }
+
+              // initialise the poses of a new model
+              if (segmentationResult.hasNewLabel && model->getID()==segmentationResult.modelData.back().id) {
+                model->refineTrackSubset(segm_tracks[uint8_t(model->getID())]);
+              }
+
+              // update the model-specific tracks
+              model->updateTracks(segm_tracks[uint8_t(model->getID())], tracks_remove);
+            }
+          } // models
+        }
+
         for (auto& m : segmentationResult.modelData) {  // FIXME reduce count somewhere
           if (m.superPixelCount <= 0 && (*m.modelListIterator)->incrementUnseenCount() > 0) {
             if (m.id != 0) {
@@ -362,6 +403,12 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
         for (unsigned i = 1; i < models.size(); i++) {
           const float oldConf = (*++it)->getConfidenceThreshold();
           (*it)->setConfidenceThreshold(std::min(std::max(oldConf, segmentationResult.modelData[i].avgConfidence), 9.0f));
+        }
+      }
+      else {
+        // single model, add all tracks
+        for (const auto &model : models) {
+          model->updateTracks(tracks, {});
         }
       }
 

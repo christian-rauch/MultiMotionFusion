@@ -136,7 +136,17 @@ class Model {
                                float maxDepthProcessed, GPUTexture* rgb, GPUTexture *last_segmentation, int64_t logTimestamp, bool tryFillIn = false,
                                const std::vector<cv::Mat> &features = {}, const std::vector<Eigen::MatrixX2d> &kp_coordinates = {}, const std::vector<Eigen::MatrixXd> &kp_descriptors = {});
 
-  virtual void updateTracks(const tracker::Tracks& tracks_add, const tracker::Tracks &tracks_remove = {});
+  // update the pose of the last track segment in the local model frame
+  virtual void updateTrackPose();
+
+  // compute the projection error between keypoints on the trajectory for segmentation
+  virtual void computeTrackProjectionError();
+
+  // add/remove tracks
+  virtual void updateTracks(const tracker::Tracks& tracks_add = {}, const tracker::Tracks &tracks_remove = {});
+
+  // re-estimate all model poses given the track subset
+  virtual void refineTrackSubset(const tracker::Tracks& tracks);
 
   // Compute fusion-weight based on velocity
   virtual float computeFusionWeight(float weightMultiplier) const;
