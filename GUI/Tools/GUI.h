@@ -177,6 +177,7 @@ class GUI {
     }
 
     pause = new pangolin::Var<bool>("ui.Pause", false, true);
+    logProgress = new pangolin::Var<std::string>("ui.Log", "0");
     step = new pangolin::Var<bool>("ui.Step", false, false);
     skip = new pangolin::Var<bool>("ui.Skip", false, false);
     saveCloud = new pangolin::Var<bool>("ui.Save cloud", false, false);
@@ -250,7 +251,6 @@ class GUI {
 
     trackInliers = new pangolin::Var<std::string>("ui.Inliers", "0");
     trackRes = new pangolin::Var<std::string>("ui.Residual", "0");
-    logProgress = new pangolin::Var<std::string>("ui.Log", "0");
 
     if (showcaseMode) {
       pangolin::RegisterKeyPressCallback(' ', pangolin::SetVarFunctor<bool>("ui.Reset", true));
