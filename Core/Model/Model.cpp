@@ -527,22 +527,21 @@ void Model::refineTrackSubset(const tracker::Tracks& tracks) {
   // this assumes that the 'tracks' are already associated to the model via segments
   RigidRANSAC rrs(10, 0.03f, 0.6f);
 
-  poses.clear();
-
-  poses.emplace_back().setIdentity();
+  const size_t len = (*tracks.begin())->size();
+  poses.resize(len);
+  poses[0].setIdentity();
 
   const size_t ntracks = tracks.size();
-  const size_t len = (*tracks.begin())->size();
-  for (size_t ik=0; ik<(len-1); ik++) {
+  for (size_t ik=0, jk=1; jk < len; jk++) {
     Eigen::MatrixX3f p0s, p1s;
     p0s.resize(int(ntracks), Eigen::NoChange);
     p1s.resize(int(ntracks), Eigen::NoChange);
 
     int nvalid = 0;
     for (size_t it=0; it<ntracks; it++) {
-      if ((*tracks[it])[ik] && (*tracks[it])[ik+1]) {
+      if ((*tracks[it])[ik] && (*tracks[it])[jk]) {
         const Eigen::RowVector3d &p0 = (*tracks[it])[ik]->coordinate;
-        const Eigen::RowVector3d &p1 = (*tracks[it])[ik+1]->coordinate;
+        const Eigen::RowVector3d &p1 = (*tracks[it])[jk]->coordinate;
         if (p0.array().isFinite().all() && p1.array().isFinite().all()) {
           p0s.row(nvalid) = p0.cast<float>();
           p1s.row(nvalid) = p1.cast<float>();
@@ -553,16 +552,22 @@ void Model::refineTrackSubset(const tracker::Tracks& tracks) {
     p0s.conservativeResize(nvalid, Eigen::NoChange);
     p1s.conservativeResize(nvalid, Eigen::NoChange);
 
+    // skip to the next frame if there are not enough correspondences
+    if (nvalid<3) {
+      poses[jk] = poses.at(ik);
+      continue;
+    }
+
     // least squares estimate
     Eigen::Isometry3f T_01 = rrs.estimate(p0s, p1s);
     assert(T_01.matrix().array().isFinite().all());
-    poses.emplace_back() = poses.at(ik) * T_01;
+    poses[jk] = poses.at(ik) * T_01;
+
+    ik = jk;
   }
 
   // the new 'initial' pose is the pose at the end of the track
   pose = poses.back().matrix();
-
-  assert(poses.size()==len);
 }
 
 float Model::computeFusionWeight(float weightMultiplier) const {
