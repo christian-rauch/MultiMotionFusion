@@ -60,7 +60,7 @@ void Segmentation::init(int width, int height, METHOD method, const Segmentation
 }
 
 SegmentationResult Segmentation::performSegmentation(std::list<std::shared_ptr<Model>>& models, const FrameData& frame,
-                                                     unsigned char nextModelID, bool allowNew) {
+                                                     unsigned char nextModelID, bool allowNew, const tracker::Tracks &tracks) {
   if (frame.mask.total()) {
     assert(frame.mask.type() == CV_8UC1);
     assert(frame.mask.isContinuous());
@@ -121,11 +121,11 @@ SegmentationResult Segmentation::performSegmentation(std::list<std::shared_ptr<M
     return result;
   }
 
-  return performSegmentationCRF(models, frame, nextModelID, allowNew);
+  return performSegmentationCRF(models, frame, nextModelID, allowNew, tracks);
 }
 
 SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_ptr<Model>>& models, const FrameData& frame,
-                                                        unsigned char nextModelID, bool allowNew) {
+                                                        unsigned char nextModelID, bool allowNew, const tracker::Tracks &tracks) {
   assert(models.size() < 256);
 
   static unsigned CFRAME = 0;
@@ -205,31 +205,34 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
 
         static const double threshold = 0.05;
 
-        for (int itrack=0; itrack<m->getTrackXY().rows(); itrack++) {
-          const Model::VectorXp2 &cs = m->getTrackXY().row(itrack).rightCols(len_vis);
-          const Model::VectorXp3 &ps = m->getTrackPoint().row(itrack).rightCols(len_vis);
-          const Eigen::VectorXd  &ds = m->getTrackProjError().row(itrack).rightCols(len_vis-1);
-          for (int ik=0; ik<(cs.size()-1); ik++) {
-            // ignore 2D points outside of image, including invalid (-1,-1) points
-            if (!(cs[ik].inside(rect) && cs[ik+1].inside(rect))) { continue; }
+        // project the last (newest) keypoints of the tracks in the camera frame to tracks in the local frame
+        const tracker::Tracks ltracks = m->computeTrackProjection(tracks, size_t(len_vis_max));
 
-            // ignore trajectories with outliers
-            if (ds.maxCoeff()>=threshold) { continue; }
+        for (size_t it=0; it<ltracks.size(); it++) {
+          for (size_t ik=0; ik<(ltracks[it]->size()-1); ik++) {
+            // skip invalid pairs
+            if ((*ltracks[it])[ik]==nullptr || (*ltracks[it])[ik+1]==nullptr || (*ltracks[it]).front()==nullptr) {
+              continue;
+            }
+
+            const cv::Point &c0 = (*ltracks[it])[ik]->xy;
+            const cv::Point &c1 = (*ltracks[it])[ik+1]->xy;
+            const Eigen::RowVector3d &p0 = (*ltracks[it]).front()->coordinate;
+            const Eigen::RowVector3d &px = (*ltracks[it])[ik+1]->coordinate;
 
             // distance between current and start point of trajectory section
-            const double e = std::min((ps[0]-ps[ik+1]).norm()/threshold, 1.0);
+            const double e = std::min((p0-px).norm()/threshold, 1.0);
 
             // ignore invalid 3D point distances
             if (std::isnan(e)) { continue; }
 
-            cv::line(track_err, cs[ik], cs[ik+1], cv::Scalar((1-e)*255,0,e*255), 3);
+            cv::line(track_err, c0, c1, cv::Scalar((1-e)*255,0,e*255), 3);
           }
 
-          const cv::Point track_end = cs.tail<1>()[0];
-          if (track_end.inside(rect)) {
-            const double e = (ps[0]-ps.tail<1>()[0]).norm();
-            const Eigen::RowVectorXd &track_d = m->getTrackProjError().row(itrack);
-            if (!std::isnan(e) && track_d.maxCoeff()<threshold) {
+          if (ltracks[it]->front() != nullptr && ltracks[it]->back()!=nullptr) {
+            const cv::Point track_end = ltracks[it]->back()->xy;
+            const double e = (ltracks[it]->front()->coordinate - ltracks[it]->back()->coordinate).norm();
+            if (!std::isnan(e) && e<threshold) {
               // map from image continuous full-dim index to SLIC continuous low-dim index
               const int index = track_end.y * int(fullWidth) + track_end.x;
               icp.at<float>(slic_map[index]) += float(e);

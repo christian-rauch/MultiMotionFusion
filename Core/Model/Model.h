@@ -142,6 +142,8 @@ class Model {
   // compute the projection error between keypoints on the trajectory for segmentation
   virtual void computeTrackProjectionError();
 
+  virtual tracker::Tracks computeTrackProjection(const tracker::Tracks& tracks, const size_t length = 0);
+
   // add/remove tracks
   virtual void updateTracks(const tracker::Tracks& tracks_add = {}, const tracker::Tracks &tracks_remove = {});
 

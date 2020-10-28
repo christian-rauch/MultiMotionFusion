@@ -113,7 +113,7 @@ void CoFusion::preallocateModels(unsigned count) {
 }
 
 SegmentationResult CoFusion::performSegmentation(const FrameData& frame) {
-  return labelGenerator.performSegmentation(models, frame, getNextModelID(), spawnOffset >= modelSpawnOffset);
+  return labelGenerator.performSegmentation(models, frame, getNextModelID(), spawnOffset >= modelSpawnOffset, tracker.getTracks());
 }
 
 void CoFusion::createTextures() {

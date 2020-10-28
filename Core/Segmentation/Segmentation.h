@@ -19,6 +19,7 @@
 
 #include "Slic.h"
 #include "../FrameData.h"
+#include "../Utils/PointTracker.hpp"
 #include <Eigen/Core>
 #include <thread>
 #include <opencv2/imgproc/imgproc.hpp>
@@ -95,10 +96,10 @@ class Segmentation {
   void init(int width, int height, METHOD method, const SegmentationConfiguration &cfg = {});
 
   SegmentationResult performSegmentation(std::list<std::shared_ptr<Model>>& models, const FrameData& frame, unsigned char nextModelID,
-                                         bool allowNew);
+                                         bool allowNew, const tracker::Tracks &tracks);
 
   SegmentationResult performSegmentationCRF(std::list<std::shared_ptr<Model>>& models, const FrameData& frame, unsigned char nextModelID,
-                                            bool allowNew);
+                                            bool allowNew, const tracker::Tracks &tracks);
 
   /**
      * @brief denseCRF Compute a segmentation of labels based on a fully connected CRF, using icp+projection unary terms and rgb+position+depth pairwise terms

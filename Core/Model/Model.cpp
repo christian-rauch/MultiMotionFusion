@@ -496,6 +496,20 @@ void Model::computeTrackProjectionError() {
   } // tracks
 }
 
+tracker::Tracks Model::computeTrackProjection(const tracker::Tracks& tracks, const size_t length) {
+  tracker::Tracks ltracks(tracks.size()); // local tracks
+
+  for (size_t it=0; it<tracks.size(); it++) {
+    const size_t len_vis = (length==0) ? tracks[it]->size() : std::min(length, tracks[it]->size());
+    ltracks[it] = std::make_shared<tracker::Track>();
+    for (size_t ik=tracks[it]->size()-len_vis; ik<tracks[it]->size(); ik++) {
+      ltracks[it]->push_back(project_kp((*tracks[it])[ik], Eigen::Isometry3d(poses[ik].cast<double>())));
+    }
+  }
+
+  return ltracks;
+}
+
 void Model::updateTracks(const tracker::Tracks& tracks_add, const tracker::Tracks& tracks_remove) {
   // add new inlier tracks with new pose estimates
   for (const tracker::TrackPtr &track : tracks_add) {
