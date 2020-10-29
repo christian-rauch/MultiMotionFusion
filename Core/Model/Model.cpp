@@ -568,6 +568,13 @@ void Model::refineTrackSubset(const tracker::Tracks& tracks) {
 
   // the new 'initial' pose is the pose at the end of the track
   pose = poses.back().matrix();
+
+  // update tracks
+  for (const auto &[o_track, l_track] : this->tracks) {
+    for (size_t ik=0; ik<o_track->size(); ik++) {
+      (*l_track)[ik] = project_kp((*o_track)[ik], Eigen::Isometry3d(poses[ik].cast<double>()));
+    }
+  }
 }
 
 float Model::computeFusionWeight(float weightMultiplier) const {
