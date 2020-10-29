@@ -439,9 +439,9 @@ void Model::performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight,
   getFrameOdometry().getIncrementalTransformation(transObject, rotObject, rgbOnly, icpWeight, pyramid, fastOdom, so3,
                                                   icpError->getCudaSurface(), rgbError->getCudaSurface(), projError, &kp_data);
 
-  const cv::Mat icp_img = icpError->downloadTexture();
-  cv::imshow("ICP error ctr "+std::to_string(getID()), icp_img+0.5);
-  cv::waitKey(1);
+//  const cv::Mat icp_img = icpError->downloadTexture();
+//  cv::imshow("ICP error ctr "+std::to_string(getID()), icp_img+0.5);
+//  cv::waitKey(1);
 
   pose.topRightCorner(3, 1) = transObject;
   pose.topLeftCorner(3, 3) = rotObject;

@@ -256,7 +256,7 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
     }
 
     // visualise error and confidence per SLIC region
-    cv::imshow("icp up "+std::to_string(m->getID()), slic.upsample<float>(icp));
+//    cv::imshow("icp up "+std::to_string(m->getID()), slic.upsample<float>(icp));
     cv::waitKey(1);
 
     cv::Mat conf = slic.downsample<float>(vertConfTex, 3);
