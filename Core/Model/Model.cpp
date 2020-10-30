@@ -573,7 +573,7 @@ void Model::refineTrackSubset(const tracker::Tracks& tracks) {
     }
 
     // least squares estimate
-    Eigen::Isometry3f T_01 = rrs.estimate(p0s, p1s);
+    const Eigen::Isometry3f T_01 = rrs.estimate(p0s, p1s).transformation;
     assert(T_01.matrix().array().isFinite().all());
     poses[jk] = poses.at(ik) * T_01;
 

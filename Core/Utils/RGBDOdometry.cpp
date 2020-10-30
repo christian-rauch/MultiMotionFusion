@@ -279,7 +279,7 @@ ransac(const DeviceArray2D<float3> &dpc0, const DeviceArray2D<float3> &dpc1,
   if (k>=3) {
     // model must have 10% of samples within 'inlier_threshold' error
     RigidRANSAC rrs(600, inlier_threshold, 0.1f);
-    kpT_nx = rrs.estimate(p0,p1);
+    kpT_nx = rrs.estimate(p0,p1).transformation;
   }
 
   // find final inliers

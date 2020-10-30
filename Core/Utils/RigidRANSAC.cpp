@@ -1,7 +1,6 @@
 #include "RigidRANSAC.h"
 #include <limits>
-
-#include <iostream>
+#include <algorithm>
 
 // minimum number of data points to fit model (3D rigid transform)
 static const int Nparams = 3;
@@ -47,48 +46,56 @@ apply(const Eigen::Isometry3f &T, const Eigen::MatrixX3f &p0, const Eigen::Matri
   return (p0 - (T * p1.transpose()).transpose()).rowwise().norm();
 }
 
-Eigen::Isometry3f
-RigidRANSAC::estimate(const Eigen::MatrixX3f &p0, const Eigen::MatrixX3f &p1)
+RigidRANSAC::Result
+RigidRANSAC::estimate(const Eigen::MatrixX3f &p0, const Eigen::MatrixX3f &p1, const VectorXb &mask)
 {
+  const int N = int(p0.rows());
+
   assert(p0.rows() == p1.rows());
+  assert(N >= Nparams);
+  assert(mask.size() == 0 || mask.size() == N);
+
+  Result result;
 
   // keep track of best model and its performance
-  Eigen::Isometry3f bestT = fit(p0, p1);
-  float bestE = std::numeric_limits<float>::max();
-
-  const int N = p0.rows();
-
-  std::uniform_int_distribution<int> distribution(0, N-1);
+  result.transformation = fit(p0, p1, mask.cast<float>());
+  result.error = std::numeric_limits<float>::max();
 
   for(int it=0; it<iterations; it++) {
-    Eigen::VectorXf weights = Eigen::VectorXf::Zero(N);
-    for(int p=0; p<Nparams; p++) {
-      weights[distribution(generator)] = 1;
+    // random order of indices
+    std::vector<Eigen::Index> idx;
+    for (Eigen::Index i = 0; i < N; ++i) { idx.push_back(i); }
+    std::shuffle(idx.begin(), idx.end(), generator);
+
+    VectorXb weights = VectorXb::Zero(N);
+    for (size_t i = 0; i < idx.size() && weights.count()<Nparams; ++i) {
+      const Eigen::Index id = idx[i];
+      weights[id] = (mask.size()>0) ? mask[id] : true;
     }
 
-    const Eigen::Isometry3f transform = fit(p0, p1, weights);
+    assert(weights.count()==Nparams);
+
+    const Eigen::Isometry3f transform = fit(p0, p1, weights.cast<float>());
     const Eigen::VectorXf distance = apply(transform, p0, p1);
 
-//    std::cout << "fit error (mean): " << distance.array().mean() << std::endl;
-//    std::cout << "fit error (min): " << distance.array().minCoeff() << std::endl;
-//    std::cout << "fit error (max): " << distance.array().maxCoeff() << std::endl;
-
-    const auto inliers = distance.array() < inlier_threshold;
-    const int Ninliers = inliers.cast<int>().sum();
-//    std::cout << "inlier: " << Ninliers << std::endl;
+    VectorXb inliers = (distance.array() < inlier_threshold);
+    if (mask.size()>0) {
+      inliers = inliers.array() && mask.array();
+    }
+    const Eigen::Index Ninliers = inliers.count();
 
     if(Ninliers > inlier_fraction*N) {
       // potential model
       const Eigen::Isometry3f Tall = fit(p0, p1, inliers.cast<float>());
-      const float error = (apply(Tall, p0, p1).array() * inliers.cast<float>()).mean();
-      if(error < bestE) {
-        bestE = error;
-        bestT = Tall;
+      // mean error over inliers
+      const float error = inliers.select(apply(Tall, p0, p1), 0).sum() / Ninliers;
+      if(error < result.error) {
+        result.error = error;
+        result.transformation = Tall;
+        result.inlier = inliers;
       }
     }
   }
 
-//  std::cout << "best fit: " << bestE << std::endl;
-
-  return bestT;
+  return result;
 }
