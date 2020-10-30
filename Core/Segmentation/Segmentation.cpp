@@ -251,6 +251,9 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
       icp /= kpcount;
       icp.setTo(0, kpcount==0);
     } // sparse mode
+    else if (cfg.mode == "crf") {
+      // handle later
+    }
     else {
       throw std::runtime_error("invalid segmentation mode: "+cfg.mode);
     }
@@ -281,6 +284,99 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
     labelDebugImages.push_back({vertConfTex, icpFull, icp});
 #endif
   }
+
+  if (cfg.mode == "crf") {
+    // currently visible tracks
+    tracker::Tracks tracks_visible;
+    const cv::Rect rect(cv::Point(0,0), frame.rgb.size());
+    for (size_t it=0; it<tracks.size(); it++) {
+      if (tracks[it]->back() != nullptr && tracks[it]->back()->xy.inside(rect)) {
+        tracks_visible.push_back(tracks[it]);
+      }
+    }
+
+    DenseCRF crf(int(tracks_visible.size()), int(numLabels));
+
+    Eigen::MatrixXd u(numLabels, tracks_visible.size());
+
+    int i=0;
+    for (const auto &model : models) {
+      const tracker::Tracks ltracks = model->computeTrackProjection(tracks_visible, cfg.history);
+      for (size_t it=0; it<ltracks.size(); it++) {
+        if (ltracks[it]->front() != nullptr && ltracks[it]->back() != nullptr) {
+          const Eigen::RowVector3d &p0 = ltracks[it]->front()->coordinate;
+          const Eigen::RowVector3d &px = ltracks[it]->back()->coordinate;
+          const double e = (p0-px).norm();
+          u(i, int(it)) = e;
+        }
+        else {
+          u(i, int(it)) = std::numeric_limits<double>::quiet_NaN();
+        }
+      }
+      i++;
+    }
+
+    // normalise [0..1]
+    for (int i=0; i<int(numExistingModels); i++) {
+      const Eigen::RowVectorXd row = u.row(i);
+      const double min = row.array().isFinite().select(row, +std::numeric_limits<double>::infinity()).minCoeff();
+      const double max = row.array().isFinite().select(row, -std::numeric_limits<double>::infinity()).maxCoeff();
+      u.row(i) = (u.row(i).array()-min) / (max-min);
+      u.row(i) = row.array().isFinite().select(u.row(i), 1);
+    }
+    if (allowNew) {
+      u.bottomRows<1>() = 1 - u.topRows(numExistingModels).array().colwise().sum() / numExistingModels;
+    }
+    crf.setUnaryEnergy(u.cast<float>());
+
+//    std::cout << "u: " << std::endl << u << std::endl;
+
+    {
+      cv::Mat track_err;
+      cv::cvtColor(frame.rgb, track_err, cv::COLOR_RGB2GRAY);
+      cv::cvtColor(track_err, track_err, cv::COLOR_GRAY2BGR);
+      for (int mid=0; mid<int(numLabels); mid++) {
+        cv::Mat track_mod = track_err.clone();
+        for (size_t it=0; it<tracks_visible.size(); it++) {
+          cv::circle(track_mod, tracks_visible[it]->back()->xy, 3, cv::Scalar((u(mid,it))*255), cv::FILLED);
+        }
+        cv::imshow("model "+std::to_string(mid)+" unary", track_mod);
+      }
+      cv::waitKey(1);
+    }
+
+    Eigen::MatrixXf features(2, tracks_visible.size());
+    for (size_t it=0; it<tracks_visible.size(); it++) {
+      if (tracks_visible[it]->back() != nullptr) {
+        features.col(int(it)).x() = tracks_visible[it]->back()->xy.x;
+        features.col(int(it)).y() = tracks_visible[it]->back()->xy.y;
+      }
+    }
+    crf.addPairwiseEnergy(features, new PottsCompatibility(10));
+
+
+    // maximum a posteriori
+    const Eigen::VectorXi labels = crf.map(10).cast<int>();
+
+//    std::cout << "l: " << std::endl << labels.transpose() << std::endl;
+
+    {
+      cv::Mat track_err;
+      cv::cvtColor(frame.rgb, track_err, cv::COLOR_RGB2GRAY);
+      cv::cvtColor(track_err, track_err, cv::COLOR_GRAY2BGR);
+      for (int mid=0; mid<int(numLabels); mid++) {
+        cv::Mat track_mod = track_err.clone();
+        for (size_t it=0; it<tracks_visible.size(); it++) {
+          if (labels[int(it)]==mid && tracks_visible[it]->back()!=nullptr) {
+            cv::circle(track_mod, tracks_visible[it]->back()->xy, 3, cv::Scalar(255), cv::FILLED);
+          }
+        }
+        cv::imshow("model "+std::to_string(mid)+" tracks", track_mod);
+      }
+      cv::waitKey(1);
+    }
+  }
+
   if (allowNew) {
     modelIdToIndex[nextModelID] = mIndex;
     result.modelData.push_back({nextModelID});
