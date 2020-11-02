@@ -25,6 +25,8 @@
 
 #include <opencv2/core/eigen.hpp>
 
+#include "../Utils/SequentialRigidRANSAC.hpp"
+
 #ifdef SHOW_DEBUG_VISUALISATION
 #include <iomanip>
 #include "../Utils/Gnuplot.h"
@@ -254,6 +256,9 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
     else if (cfg.mode == "crf") {
       // handle later
     }
+    else if (cfg.mode == "sequential_ransac") {
+      // handle later
+    }
     else {
       throw std::runtime_error("invalid segmentation mode: "+cfg.mode);
     }
@@ -375,6 +380,66 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
       }
       cv::waitKey(1);
     }
+  }
+
+  if (cfg.mode == "sequential_ransac") {
+    SequentialRigidRANSAC ransac(10, 0.01f, 0);
+
+    const size_t ntracks = tracks.size();
+
+    Eigen::MatrixX3f p0s, p1s;
+    p0s.resize(int(ntracks), Eigen::NoChange);
+    p1s.resize(int(ntracks), Eigen::NoChange);
+
+//    static const int len_vis_max = int(cfg.history);
+    static const int len_vis_max = 2;
+
+    int nvalid = 0;
+    std::map<int, size_t> track_valid_full; // map valid index to full track set
+    for (size_t it=0; it<ntracks; it++) {
+      const size_t ik = size_t(std::max(0, int(tracks[it]->size())-len_vis_max));
+      if ((*tracks[it])[ik] && tracks[it]->back()) {
+        const Eigen::RowVector3d &p0 = (*tracks[it])[ik]->coordinate;
+        const Eigen::RowVector3d &p1 = tracks[it]->back()->coordinate;
+        if (p0.array().isFinite().all() && p1.array().isFinite().all()) {
+          p0s.row(nvalid) = p0.cast<float>();
+          p1s.row(nvalid) = p1.cast<float>();
+          track_valid_full[nvalid] = it;
+          nvalid++;
+        }
+      }
+    }
+    p0s.conservativeResize(nvalid, Eigen::NoChange);
+    p1s.conservativeResize(nvalid, Eigen::NoChange);
+
+    const std::vector<RigidRANSAC::Result> transformations = ransac.estimate(p0s, p1s);
+
+
+    // visualise
+
+    cv::Mat track_segm;
+    cv::cvtColor(frame.rgb, track_segm, cv::COLOR_RGB2GRAY);
+    cv::cvtColor(track_segm, track_segm, cv::COLOR_GRAY2BGR);
+
+    std::default_random_engine g;
+    std::uniform_real_distribution<double> u(0,1);
+    for (size_t i = 0; i < transformations.size(); ++i) {
+      g.seed(i+1);
+      const cv::Scalar c(u(g)*255, u(g)*255, u(g)*255);
+      for (int j = 0; j < transformations[i].inlier.size(); ++j) {
+        if (transformations[i].inlier[j]) {
+          cv::circle(track_segm, tracks[track_valid_full.at(j)]->back()->xy, 3, c, cv::FILLED);
+        }
+      }
+    }
+    // show all valid tracks
+    for (const auto &[valid, full] : track_valid_full) {
+      cv::circle(track_segm, tracks[full]->back()->xy, 5, cv::Scalar(255), 1);
+    }
+
+
+    cv::imshow("track segmentation", track_segm);
+    cv::waitKey(1);
   }
 
   if (allowNew) {
