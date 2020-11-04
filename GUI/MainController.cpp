@@ -59,6 +59,7 @@
     -o      Open loop mode.
     -rl     Enable relocalisation.
     -fs     Frame skip if processing a log to simulate real-time.
+    -skip   Skip frames in regular intervals
     -fo     Fast odometry (single level pyramid).
     -nso    Disables SO(3) pre-alignment in tracking.
     -r      Rewind and loop log forever.
@@ -290,6 +291,7 @@ MainController::MainController(int argc, char* argv[])
   openLoop = true;  // FIXME //!groundTruthOdometry && (Parse::get().arg(argc, argv, "-o", empty) > -1);
   reloc = Parse::get().arg(argc, argv, "-rl", empty) > -1;
   frameskip = Parse::get().arg(argc, argv, "-fs", empty) > -1;
+  Parse::get().arg(argc, argv, "-skip", min_frame_skip);
   quit = Parse::get().arg(argc, argv, "-q", empty) > -1;
   fastOdom = Parse::get().arg(argc, argv, "-fo", empty) > -1;
   rewind = Parse::get().arg(argc, argv, "-r", empty) > -1;
@@ -516,6 +518,7 @@ void MainController::run() {
         if (frameskip && Stopwatch::getInstance().getTimings().at("Run") > 1000.f / 30.f) {
           framesToSkip = int(Stopwatch::getInstance().getTimings().at("Run") / (1000.f / 30.f));
         }
+        framesToSkip = std::max(framesToSkip, min_frame_skip);
       }
     } else if (pangolin::Pushed(*gui->skip)) {
       coFusion->setTick(coFusion->getTick() + 1);

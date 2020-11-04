@@ -63,6 +63,8 @@ class MainController {
 
   int timeDelta, icpCountThresh, start, end, preallocatedModelsCount;
 
+  int min_frame_skip = 0;
+
   bool fillIn, openLoop, reloc, frameskip, quit, fastOdom, so3, rewind, frameToFrameRGB;
 
   int framesToSkip;
