@@ -513,11 +513,9 @@ tracker::Tracks Model::computeTrackProjection(const tracker::Tracks& tracks, con
 void Model::updateTracks(const tracker::Tracks& tracks_add, const tracker::Tracks& tracks_remove) {
   // add new inlier tracks with new pose estimates
   for (const tracker::TrackPtr &track : tracks_add) {
-    if (!this->tracks.count(track)) {
-      this->tracks[track] = std::make_shared<tracker::Track>(track->size(), nullptr);
-      for (size_t ik=0; ik<track->size(); ik++) {
-        (*this->tracks[track])[ik] = project_kp((*track)[ik], Eigen::Isometry3d(poses[ik].cast<double>()));
-      }
+    this->tracks[track] = std::make_shared<tracker::Track>(track->size(), nullptr);
+    for (size_t ik=0; ik<track->size(); ik++) {
+      (*this->tracks[track])[ik] = project_kp((*track)[ik], Eigen::Isometry3d(poses[ik].cast<double>()));
     }
   }
 
