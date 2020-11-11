@@ -50,6 +50,9 @@ struct OdometryConfig {
   std::string segm_mode;
 
   size_t history;
+
+  // initialise ICP odometry with transformation from keypoint tracks
+  bool track_init;
 };
 
 class RGBDOdometry {

@@ -275,6 +275,36 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       // "global" tracks in image and camera space
       const tracker::Tracks &tracks = tracker.getTracks();
 
+      // initialise by track transformation
+      if (odom_cfg.track_init) {
+        for (auto model : models) {
+          const Eigen::Isometry3f Tinit = model->getLastTrackTransform();
+          model->overridePose((model->getPose()*Tinit).matrix());
+
+          if (!frameToFrameRGB) {
+            model->combinedPredict(maxDepthProcessed, lastFrameRecovery ? 0 : tick, tick, timeDelta, ModelProjection::ACTIVE);
+
+            model->performFillIn(textures[GPUTexture::RGB], textures[GPUTexture::DEPTH_METRIC_FILTERED], frameToFrameRGB, lost);
+
+            model->predictIndices(tick, maxDepthProcessed, timeDelta);
+
+            model->fuse(tick, textures[GPUTexture::RGB], textures[GPUTexture::MASK], textures[GPUTexture::DEPTH_METRIC],
+                        textures[GPUTexture::DEPTH_METRIC_FILTERED], maxDepthProcessed, weightMultiplier);
+
+            model->predictIndices(tick, maxDepthProcessed, timeDelta);
+
+            std::vector<float> rawGraph;
+            bool fernAccepted = false;
+            model->clean(tick, rawGraph, timeDelta, maxDepthProcessed, fernAccepted, textures[GPUTexture::DEPTH_METRIC_FILTERED],
+                         textures[GPUTexture::MASK]);
+          }
+          else {
+            // TODO: warp previous depth and colour image to new initialised pose
+            throw std::runtime_error("ICP initialisation not supported in frame-to-frame mode");
+          }
+        }
+      }
+
       TICK("odom");
       // NOTE: each model will individually store a copy of the 'last' and 'next' feature maps and keypoints on GPU
       // TODO: use one global store for the feature maps and keypoints for the current and last observed frame

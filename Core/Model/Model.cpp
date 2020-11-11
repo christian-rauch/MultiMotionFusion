@@ -589,6 +589,41 @@ void Model::refineTrackSubset(const tracker::Tracks& tracks) {
   }
 }
 
+Eigen::Isometry3f Model::getLastTrackTransform() const {
+  const size_t ntracks = tracks.size();
+  Eigen::MatrixX3f p0s, p1s;
+  p0s.resize(int(ntracks), Eigen::NoChange);
+  p1s.resize(int(ntracks), Eigen::NoChange);
+
+  int nvalid = 0;
+  for (const auto &[track_camera, track_local] : this->tracks) {
+    tracker::KeypointPtr kp0 = track_camera->end()[-2];
+    tracker::KeypointPtr kp1 = track_camera->end()[-1];
+    if (kp0 && kp1) {
+      const Eigen::RowVector3d &p0 = kp0->coordinate;
+      const Eigen::RowVector3d &p1 = kp1->coordinate;
+      if (p0.array().isFinite().all() && p1.array().isFinite().all()) {
+        p0s.row(nvalid) = p0.cast<float>();
+        p1s.row(nvalid) = p1.cast<float>();
+        nvalid++;
+      }
+    }
+  }
+  p0s.conservativeResize(nvalid, Eigen::NoChange);
+  p1s.conservativeResize(nvalid, Eigen::NoChange);
+
+  // skip to the next frame if there are not enough correspondences
+  if (nvalid<3) {
+    return Eigen::Isometry3f::Identity();
+  }
+
+  // least squares estimate
+  RigidRANSAC rrs(10, 0.03f, 0.6f);
+  const Eigen::Isometry3f T_01 = rrs.estimate(p0s, p1s).transformation;
+  assert(T_01.matrix().array().isFinite().all());
+  return T_01;
+}
+
 float Model::computeFusionWeight(float weightMultiplier) const {
   Eigen::Matrix4f diff = getLastTransform();
   Eigen::Vector3f diffTrans = diff.topRightCorner(3, 1);

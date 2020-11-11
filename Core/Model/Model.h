@@ -150,6 +150,9 @@ class Model {
   // re-estimate all model poses given the track subset
   virtual void refineTrackSubset(const tracker::Tracks& tracks);
 
+  // get the transformation between the last two point sets on model tracks
+  virtual Eigen::Isometry3f getLastTrackTransform() const;
+
   // Compute fusion-weight based on velocity
   virtual float computeFusionWeight(float weightMultiplier) const;
 
