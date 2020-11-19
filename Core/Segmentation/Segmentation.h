@@ -20,6 +20,7 @@
 #include "Slic.h"
 #include "../FrameData.h"
 #include "../Utils/PointTracker.hpp"
+#include "../Utils/DenseMotionMetric.hpp"
 #include <Eigen/Core>
 #include <thread>
 #include <opencv2/imgproc/imgproc.hpp>
@@ -96,10 +97,10 @@ class Segmentation {
   void init(int width, int height, METHOD method, const SegmentationConfiguration &cfg = {});
 
   SegmentationResult performSegmentation(std::list<std::shared_ptr<Model>>& models, const FrameData& frame, unsigned char nextModelID,
-                                         bool allowNew, const tracker::Tracks &tracks);
+                                         bool allowNew, const tracker::Tracks &tracks, const motion::DenseMotionMetric &dmm);
 
   SegmentationResult performSegmentationCRF(std::list<std::shared_ptr<Model>>& models, const FrameData& frame, unsigned char nextModelID,
-                                            bool allowNew, const tracker::Tracks &tracks);
+                                            bool allowNew, const tracker::Tracks &tracks, const motion::DenseMotionMetric &dmm);
 
   /**
      * @brief denseCRF Compute a segmentation of labels based on a fully connected CRF, using icp+projection unary terms and rgb+position+depth pairwise terms

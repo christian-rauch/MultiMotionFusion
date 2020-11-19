@@ -92,6 +92,13 @@ void projectionError(const mat44& Tcurr,
                      int blocks,
                      const cudaSurfaceObject_t& rpeSurface);
 
+void projectionError2(const DeviceArray2D<float>& vmap_prev,
+                      const DeviceArray2D<float>& nmap_prev,
+                      const DeviceArray2D<float>& vmap_curr,
+                      const DeviceArray2D<float>& nmap_curr,
+                      const mat44 &T_curr_prev,
+                      const CameraModel& intr,
+                      DeviceArray2D<float>& error);
 
 void projectionFeatureDistance(const mat44& Tcurr,
                               const DeviceArray2D<float3> &vmap_curr,
@@ -210,6 +217,10 @@ void tranformMaps(const DeviceArray2D<float>& vmap_src,
                   const float3& tvec,
                   DeviceArray2D<float>& vmap_dst,
                   DeviceArray2D<float>& nmap_dst);
+
+void projectVMapsCameraOrigin(const CameraModel& intr,
+                              const DeviceArray2D<float>& vmap_src, const DeviceArray2D<float>& nmap_src,
+                              DeviceArray2D<float>& vmap_dst, DeviceArray2D<float>& nmap_dst);
 
 void copyMaps(const DeviceArray<float>& vmap_src,
               const DeviceArray<float>& nmap_src,

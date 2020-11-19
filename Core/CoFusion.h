@@ -44,6 +44,7 @@
 #include <super_point_inference.hpp>
 
 #include "Utils/PointTracker.hpp"
+#include "Utils/DenseMotionMetric.hpp"
 
 class CoFusion {
  public:
@@ -333,6 +334,8 @@ class CoFusion {
   const OdometryConfig odom_cfg;
 
   tracker::PointTracker tracker;
+
+  motion::DenseMotionMetric dmm;
 
   // TODO move to model?
   Ferns ferns;

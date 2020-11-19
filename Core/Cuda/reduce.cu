@@ -597,6 +597,85 @@ void projectionError(const mat44& Tcurr,
     cudaSafeCall(cudaDeviceSynchronize());
 }
 
+__global__ void projectionError2Kernel(const int rows, const int cols,
+                                       const PtrStep<float> vmap_src, const PtrStep<float> nmap_src,
+                                       const PtrStepSz<float> vmap_dst, const PtrStep<float> nmap_dst,
+                                       const mat44 T_curr_prev, const CameraModel intr,
+                                       PtrStep<float> error)
+{
+  const int x = threadIdx.x + blockIdx.x * blockDim.x;
+  const int y = threadIdx.y + blockIdx.y * blockDim.y;
+
+  if (x < cols && y < rows) {
+    const float3 vsrc = {vmap_src.ptr(y + 0 * rows)[x],
+                         vmap_src.ptr(y + 1 * rows)[x],
+                         vmap_src.ptr(y + 2 * rows)[x]};
+
+    const float3 nsrc = {nmap_src.ptr(y + 0 * rows)[x],
+                         nmap_src.ptr(y + 1 * rows)[x],
+                         nmap_src.ptr(y + 2 * rows)[x]};
+
+    const float3 vdst = {vmap_dst.ptr(y + 0 * rows)[x],
+                         vmap_dst.ptr(y + 1 * rows)[x],
+                         vmap_dst.ptr(y + 2 * rows)[x]};
+
+    const float3 ndst = {nmap_dst.ptr(y + 0 * rows)[x],
+                         nmap_dst.ptr(y + 1 * rows)[x],
+                         nmap_dst.ptr(y + 2 * rows)[x]};
+
+    // transform vertices and normals from previous (source) to current (destination) camera frame
+    const float4 v = T_curr_prev * hom34(vsrc);
+    const float3 vcurr_cp = {v.x, v.y, v.z};
+    const float4 n = T_curr_prev * make_float4(nsrc.x, nsrc.y, nsrc.z, 0);
+    const float3 ncurr_cp = {n.x, n.y, n.z};
+
+    // project transformed points to current image
+    int2 xp;
+    xp.x = __float2int_rn(intr.cx + (v.x * intr.fx) / v.z);
+    xp.y = __float2int_rn(intr.cy + (v.y * intr.fy) / v.z);
+
+    if (xp.x > 0 && xp.x < cols &&
+        xp.y > 0 && xp.y < rows &&
+        !isnan (vsrc.z) && vsrc.z > 0)
+    {
+      float3 vprev_g;
+      vprev_g.x = __ldg(&vmap_dst.ptr(xp.y + 0 * rows)[xp.x]);
+      vprev_g.y = __ldg(&vmap_dst.ptr(xp.y + 1 * rows)[xp.x]);
+      vprev_g.z = __ldg(&vmap_dst.ptr(xp.y + 2 * rows)[xp.x]);
+
+      error.ptr(y)[x] = norm(vprev_g-vcurr_cp);
+    }
+    else {
+      error.ptr(y)[x] = 0;
+    }
+  }
+}
+
+void projectionError2(const DeviceArray2D<float>& vmap_prev,
+                      const DeviceArray2D<float>& nmap_prev,
+                      const DeviceArray2D<float>& vmap_curr,
+                      const DeviceArray2D<float>& nmap_curr,
+                      const mat44& T_curr_prev,
+                      const CameraModel& intr,
+                      DeviceArray2D<float>& error)
+{
+    const int cols = vmap_curr.cols();
+    const int rows = vmap_curr.rows() / 3;
+
+    error.create(rows, cols);
+
+    dim3 block(32, 8);
+    dim3 grid(1, 1, 1);
+    grid.x = getGridDim(cols, block.x);
+    grid.y = getGridDim(rows, block.y);
+
+    projectionError2Kernel<<<grid, block>>>(rows, cols, vmap_prev, nmap_prev, vmap_curr, nmap_curr,
+                                                T_curr_prev, intr, error);
+
+    cudaSafeCall(cudaGetLastError());
+    cudaSafeCall(cudaDeviceSynchronize());
+}
+
 struct FeatureProjectionError
 {
     // transformation from last to current frame

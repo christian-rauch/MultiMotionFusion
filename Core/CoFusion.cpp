@@ -32,6 +32,7 @@ CoFusion::CoFusion(const int timeDelta, const int countThresh, const float errTh
       kp_predictor(new SuperPoint(keypoint_predictor_path)),
       odom_cfg(odom_cfg),
       tracker({Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), Intrinsics::getInstance().cx(), Intrinsics::getInstance().cy()}),
+      dmm({Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), Intrinsics::getInstance().cx(), Intrinsics::getInstance().cy()}, 20),
       ferns(500, depthCut * 1000, photoThresh),
       tick(1),
       timeDelta(timeDelta),
@@ -113,7 +114,7 @@ void CoFusion::preallocateModels(unsigned count) {
 }
 
 SegmentationResult CoFusion::performSegmentation(const FrameData& frame) {
-  return labelGenerator.performSegmentation(models, frame, getNextModelID(), spawnOffset >= modelSpawnOffset, tracker.getTracks());
+  return labelGenerator.performSegmentation(models, frame, getNextModelID(), spawnOffset >= modelSpawnOffset, tracker.getTracks(), dmm);
 }
 
 void CoFusion::createTextures() {
@@ -265,6 +266,8 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
         model->getFrameOdometry().setNextKeypoints(coordinates, descriptors);
         model->getFrameOdometry().setNextFeatureMap(features);
     }
+
+    dmm.addDepth(globalModel->getFrameOdometry().getCurrVmap(), globalModel->getFrameOdometry().getCurrNmap());
   } else {
     bool trackingOk = true;
 
@@ -319,6 +322,8 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
         model->computeTrackProjectionError();
       }
       TOCK("odom");
+
+      dmm.addDepth(globalModel->getFrameOdometry().getCurrVmap(), globalModel->getFrameOdometry().getCurrNmap());
 
       if (bootstrap) {
         assert(inPose);

@@ -103,6 +103,10 @@ class RGBDOdometry {
 
   void setLastSegmentation(const cv::Mat &segm);
 
+  const DeviceArray2D<float>& getCurrVmap(const size_t layer = 0) const { return vmaps_curr_[layer]; }
+
+  const DeviceArray2D<float>& getCurrNmap(const size_t layer = 0) const { return nmaps_curr_[layer]; }
+
   float lastICPError;
   float lastICPCount;
   float lastRGBError;

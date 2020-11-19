@@ -82,6 +82,11 @@ struct mat44
         memcpy(data, e.data(), sizeof(mat44));
     }
 
+    mat44(const Eigen::Matrix4f &e)
+    {
+        Eigen::Matrix<float, 4, 4, Eigen::RowMajor>::Map((float*)data) = e;
+    }
+
     mat44(Eigen::Matrix<float, 4, 4, Eigen::RowMajor> e)
     {
         memcpy(data, e.data(), sizeof(mat44));

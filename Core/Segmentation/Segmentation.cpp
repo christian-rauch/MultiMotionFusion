@@ -62,7 +62,7 @@ void Segmentation::init(int width, int height, METHOD method, const Segmentation
 }
 
 SegmentationResult Segmentation::performSegmentation(std::list<std::shared_ptr<Model>>& models, const FrameData& frame,
-                                                     unsigned char nextModelID, bool allowNew, const tracker::Tracks &tracks) {
+                                                     unsigned char nextModelID, bool allowNew, const tracker::Tracks &tracks, const motion::DenseMotionMetric &dmm) {
   if (frame.mask.total()) {
     assert(frame.mask.type() == CV_8UC1);
     assert(frame.mask.isContinuous());
@@ -123,11 +123,11 @@ SegmentationResult Segmentation::performSegmentation(std::list<std::shared_ptr<M
     return result;
   }
 
-  return performSegmentationCRF(models, frame, nextModelID, allowNew, tracks);
+  return performSegmentationCRF(models, frame, nextModelID, allowNew, tracks, dmm);
 }
 
 SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_ptr<Model>>& models, const FrameData& frame,
-                                                        unsigned char nextModelID, bool allowNew, const tracker::Tracks &tracks) {
+                                                        unsigned char nextModelID, bool allowNew, const tracker::Tracks &tracks, const motion::DenseMotionMetric &dmm) {
   assert(models.size() < 256);
 
   static unsigned CFRAME = 0;
@@ -258,6 +258,12 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
     }
     else if (cfg.mode == "sequential_ransac") {
       // handle later
+    }
+    else if (cfg.mode == "track_projection") {
+      // TODO: separate tracks
+      const cv::Mat err = dmm.projectionError(tracks);
+      cv::imshow("err", err);
+      cv::waitKey(1);
     }
     else {
       throw std::runtime_error("invalid segmentation mode: "+cfg.mode);
