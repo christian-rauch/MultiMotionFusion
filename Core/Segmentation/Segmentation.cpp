@@ -179,6 +179,9 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
   }
   result.depthRange = depthMax - depthMin;
 
+  // outlier tracks not associated to any model
+  tracker::Tracks outlier;
+
   // Compute per model data (ICP texture..)
   unsigned char modelIdToIndex[256];
   unsigned char mIndex = 0;
@@ -260,10 +263,80 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
       // handle later
     }
     else if (cfg.mode == "track_projection") {
-      // TODO: separate tracks
-      const cv::Mat err = dmm.projectionError(tracks);
-      cv::imshow("err", err);
-      cv::waitKey(1);
+      // separate tracks of current model
+      static const double threshold = 0.02;
+      tracker::Tracks inlier;
+      const tracker::Tracks ltracks = m->computeTrackProjection(tracks, size_t(20));
+
+      cv::Mat track_err;
+      cv::cvtColor(frame.rgb, track_err, cv::COLOR_RGB2GRAY);
+      cv::cvtColor(track_err, track_err, cv::COLOR_GRAY2BGR);
+
+      cv::Mat_<uint8_t> mask(frame.rgb.size(), 0);
+
+      for (size_t it=0; it<ltracks.size(); it++) {
+        const auto kp0 = ltracks[it]->front();
+        const auto kp1 = ltracks[it]->back();
+
+        // skip invalid pairs
+        if (kp0==nullptr || kp1==nullptr) { continue; }
+
+        // distance between current and start point of trajectory section
+        const Eigen::RowVector3d &p0 = kp0->coordinate;
+        const Eigen::RowVector3d &px = kp1->coordinate;
+        const double e = (p0-px).norm();
+
+        const cv::Point &c1 = kp1->xy;
+
+        // ignore invalid 3D point distances
+        if (std::isnan(e)) { continue; }
+
+        if (e<threshold) {
+          // inlier
+          inlier.push_back(ltracks[it]);
+          mask(c1) = 1;
+          cv::circle(track_err, c1, 5, cv::Scalar(255, 0, 0), cv::FILLED);
+        }
+        else {
+          // outlier
+          outlier.push_back(ltracks[it]);
+          mask(c1) = 2;
+          cv::circle(track_err, c1, 5, cv::Scalar(0, 0, 255), cv::FILLED);
+        }
+      }
+
+      std::cout << "in/out: " << inlier.size() << "/" << outlier.size() << std::endl;
+
+      cv::imshow("in/out "+std::to_string(m->getID()), track_err);
+
+      cv::Mat inlier_err;
+      if (!inlier.empty()) {
+        inlier_err = dmm.projectionError(inlier);
+
+        if(!inlier_err.empty()) {
+          cv::imshow("inlier err", inlier_err);
+          icpFull = inlier_err;
+        }
+      }
+
+      cv::Mat outlier_err;
+      if (!outlier.empty()) {
+        outlier_err = dmm.projectionError(outlier);
+
+        if(!outlier_err.empty()) {
+          cv::imshow("outlier err", outlier_err);
+        }
+      }
+
+      if (!inlier_err.empty() && !outlier_err.empty()) {
+        cv::Mat inlier_mask = inlier_err<outlier_err;
+        cv::Mat outlier_mask = inlier_err>outlier_err;
+
+        cv::imshow("inlier mask", inlier_mask);
+        cv::imshow("outlier mask", outlier_mask);
+      }
+
+      icp = slic.downsample<float>(icpFull);
     }
     else {
       throw std::runtime_error("invalid segmentation mode: "+cfg.mode);
@@ -457,6 +530,12 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
 #endif
   }
 
+  cv::Mat icp_outlier;
+  if (!outlier.empty() && cfg.mode == "track_projection") {
+    const cv::Mat outlier_err = dmm.projectionError(outlier);
+    icp_outlier = slic.downsample<float>(outlier_err);
+  }
+
   TOCK("SLIC+SCALING");
   TICK("CRF-FULL");
 
@@ -524,7 +603,13 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
     }
 
     if (allowNew) {
-      unary(models.size(), k) = std::max(unaryThresholdNew - unaryWeightError * lowestError, 0.01f);
+      if (!icp_outlier.empty() && cfg.mode == "track_projection") {
+        // explicitely use outlier projection error
+        unary(models.size(), k) = unaryWeightError * ((float*)(icp_outlier.data))[k];
+      }
+      else {
+        unary(models.size(), k) = std::max(unaryThresholdNew - unaryWeightError * lowestError, 0.01f);
+      }
       sum += unary(models.size(), k);
     }
 
