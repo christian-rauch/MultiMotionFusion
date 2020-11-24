@@ -338,6 +338,68 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
 
       icp = slic.downsample<float>(icpFull);
     }
+    else if (cfg.mode == "triangle_projection") {
+      const tracker::Tracks ltracks = m->computeTrackProjection(tracks, size_t(20));
+
+      const std::vector<motion::Triangle> triangles = motion::triangulate(ltracks);
+
+      cv::Mat_<float> tri_proje_err(frame.rgb.size(), 0);
+
+      cv::Mat img_tri;
+      cv::cvtColor(frame.rgb, img_tri, cv::COLOR_RGB2GRAY);
+      cv::cvtColor(img_tri, img_tri, cv::COLOR_GRAY2BGR);
+
+      cv::Mat tri_segm(frame.rgb.size(), CV_8UC3, cv::Scalar(0));
+
+      for (const motion::Triangle &tri : triangles) {
+        Eigen::Vector3d es;
+        std::vector<cv::Point> points;
+        for (size_t i = 0; i < 3; ++i) {
+          const auto kp0 = tri.tracks[i]->front();
+          const auto kp1 = tri.tracks[i]->back();
+
+          // distance between current and start point of trajectory section
+          const double e = (kp0->coordinate-kp1->coordinate).norm();
+          es[int(i)] = e;
+
+          points.push_back(kp1->xy);
+        }
+
+        // visualisation
+        if (points.size()==3) {
+          static constexpr double threshold = 0.05;
+          const double eavg = es.mean();
+          const double estd = std::sqrt(((es.array() - eavg).pow(2).sum() / double(es.size())));
+          if (std::isfinite(eavg) && estd<0.02) {
+            cv::fillConvexPoly(tri_proje_err, points, cv::Scalar(eavg));
+            const double en = std::min(1., (eavg/threshold));
+            cv::fillConvexPoly(tri_segm, points, cv::Scalar((1-en) * 255, 0, en * 255));
+          }
+          cv::polylines(img_tri, points, true, cv::Scalar(0, 255, 0));
+
+          for (int i = 0; i < 3; ++i) {
+            cv::Scalar c(255,255,255);
+            if (es[i]<threshold) {
+              // inlier
+              c = cv::Scalar(255, 0, 0);
+            }
+            else if (es[i]>threshold) {
+              // outlier
+              c = cv::Scalar(0, 0, 255);
+            }
+            cv::circle(img_tri, points[i], 3, c, cv::FILLED);
+          }
+        }
+      }
+
+      cv::addWeighted(img_tri, 1.0, tri_segm, 0.5, 1, tri_segm);
+      cv::imshow("tri_proje_err "+std::to_string(m->getID()), tri_proje_err);
+
+      cv::imshow("tri_segm "+std::to_string(m->getID()), tri_segm);
+
+      icpFull = tri_proje_err;
+      icp = slic.downsample<float>(icpFull);
+    }
     else {
       throw std::runtime_error("invalid segmentation mode: "+cfg.mode);
     }

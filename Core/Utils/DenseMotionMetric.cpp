@@ -2,8 +2,50 @@
 #include "RigidRANSAC.h"
 #include "cuda_runtime.h"
 #include "../Core/Cuda/cudafuncs.cuh"
+#include <opencv2/imgproc.hpp>
+#include <unordered_map>
 
 namespace motion {
+
+// custom hash function for 'cv::Point_' types
+struct PointHash {
+  template <typename T>
+  std::size_t operator()(const cv::Point_<T> &pt) const {
+    return std::hash<T>()(pt.x) ^ (std::hash<T>()(pt.y) << 1);
+  }
+};
+
+std::vector<Triangle> triangulate(const tracker::Tracks &tracks)
+{
+  std::vector<cv::Point2f> pts;
+  std::unordered_map<cv::Point2l, tracker::TrackPtr, PointHash> coordinate_track;
+  for (const tracker::TrackPtr &track : tracks) {
+    if (track->front()!=nullptr && track->back()!=nullptr &&
+        track->front()->coordinate.array().isFinite().all() &&
+        track->back()->coordinate.array().isFinite().all())
+    {
+      const cv::Point pt = track->back()->xy;
+      pts.push_back(pt);
+      coordinate_track[pt] = track;
+    }
+  }
+
+  cv::Subdiv2D subdiv(cv::boundingRect(pts));
+  subdiv.insert(pts);
+
+  std::vector<cv::Vec6f> triangles;
+  subdiv.getTriangleList(triangles);
+
+  std::vector<Triangle> triplets;
+  for (const cv::Vec6f &tri : triangles) {
+    const cv::Point2l v0(std::lrint(tri[0]),std::lrint(tri[1]));
+    const cv::Point2l v1(std::lrint(tri[2]),std::lrint(tri[3]));
+    const cv::Point2l v2(std::lrint(tri[4]),std::lrint(tri[5]));
+    triplets.push_back(Triangle{.tracks = {coordinate_track[v0], coordinate_track[v1], coordinate_track[v2]}});
+  }
+
+  return triplets;
+}
 
 DenseMotionMetric::DenseMotionMetric(const CameraModel &intrinsics, const size_t history) :
   intrinsics(intrinsics), index(0), vmaps(history), nmaps(history)

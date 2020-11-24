@@ -8,6 +8,12 @@
 
 namespace motion {
 
+struct Triangle {
+  std::array<tracker::TrackPtr, 3> tracks;
+};
+
+std::vector<Triangle> triangulate(const tracker::Tracks &tracks);
+
 class DenseMotionMetric {
 public:
   DenseMotionMetric(const CameraModel &intrinsics, const size_t history);
