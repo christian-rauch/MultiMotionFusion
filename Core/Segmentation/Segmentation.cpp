@@ -827,6 +827,13 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
   crf.setUnaryEnergy(unary);
   crf.addPairwiseGaussian(2, 2, new PottsCompatibility(weightSmoothness));
 
+//  cv::Mat unary_img;
+//  cv::eigen2cv(unary, unary_img);
+//  for (int i = 0; i < unary.rows(); ++i) {
+//    cv::imshow("unary "+std::to_string(i), 0.1 * slic.upsample<float>(unary_img.row(i)));
+//  }
+//  cv::waitKey(1);
+
   Eigen::MatrixXf feature(6, lowTotal);
   for (unsigned j = 0; j < lowHeight; j++)
     for (unsigned i = 0; i < lowWidth; i++) {
