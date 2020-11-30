@@ -48,17 +48,19 @@ std::vector<Triangle> triangulate(const tracker::Tracks &tracks)
 }
 
 DenseMotionMetric::DenseMotionMetric(const CameraModel &intrinsics, const size_t history) :
-  intrinsics(intrinsics), index(0), vmaps(history), nmaps(history)
+  intrinsics(intrinsics), index(0), vmaps(history), nmaps(history), rgbs(history)
 {
 
 }
 
 void
-DenseMotionMetric::addDepth(const DeviceArray2D<float> &vmap,
+DenseMotionMetric::addRGBD(const cv::Mat &rgb,
+                           const DeviceArray2D<float> &vmap,
                             const DeviceArray2D<float> &nmap)
 {
   vmap.copyTo(vmaps[index]);
   nmap.copyTo(nmaps[index]);
+  rgbs[index] = rgb;
 
   // advance and wrap index
   index++;
@@ -115,6 +117,25 @@ DenseMotionMetric::projectionError(const tracker::Tracks &tracks) const
   err.download(err_img.data, err_img.step);
 
   return std::move(err_img);
+}
+
+std::tuple<const cv::Mat&, const DeviceArray2D<float>&, const DeviceArray2D<float>&>
+DenseMotionMetric::getRGBD(const int &idx) const
+{
+  if (idx>0)
+    throw std::runtime_error("requested index ("+std::to_string(idx)+") is interpreted relative to the newest sample and must be non-positive");
+
+  if (size_t(-idx)>=vmaps.size())
+    throw std::runtime_error("requested index ("+std::to_string(idx)+") must must point within history size ("+std::to_string(vmaps.size())+")");
+
+  auto wrap = [this](const int &idx) -> size_t {
+    return size_t(((idx % int(vmaps.size())) + int(vmaps.size())) % int(vmaps.size()));
+  };
+
+  // interpret 'idx' relative to the end (newest element) of the buffer
+  const size_t id_request = wrap(int(index-1)+idx);
+
+  return {rgbs[id_request], vmaps[id_request], nmaps[id_request]};
 }
 
 } // namespace motion

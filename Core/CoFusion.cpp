@@ -267,7 +267,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
         model->getFrameOdometry().setNextFeatureMap(features);
     }
 
-    dmm.addDepth(globalModel->getFrameOdometry().getCurrVmap(), globalModel->getFrameOdometry().getCurrNmap());
+    dmm.addRGBD(textures[GPUTexture::RGB]->downloadTexture(), globalModel->getFrameOdometry().getCurrVmap(), globalModel->getFrameOdometry().getCurrNmap());
   } else {
     bool trackingOk = true;
 
@@ -323,7 +323,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       }
       TOCK("odom");
 
-      dmm.addDepth(globalModel->getFrameOdometry().getCurrVmap(), globalModel->getFrameOdometry().getCurrNmap());
+      dmm.addRGBD(textures[GPUTexture::RGB]->downloadTexture(), globalModel->getFrameOdometry().getCurrVmap(), globalModel->getFrameOdometry().getCurrNmap());
 
       if (bootstrap) {
         assert(inPose);

@@ -24,6 +24,7 @@
 #include "../Model/Model.h"
 
 #include <opencv2/core/eigen.hpp>
+#include <opencv2/video/tracking.hpp>
 
 #include "../Utils/SequentialRigidRANSAC.hpp"
 
@@ -257,6 +258,9 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
       icp.setTo(0, kpcount==0);
     } // sparse mode
     else if (cfg.mode == "crf") {
+      // handle later
+    }
+    else if (cfg.mode == "flow_crf") {
       // handle later
     }
     else if (cfg.mode == "sequential_ransac") {
@@ -521,6 +525,248 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
       }
       cv::waitKey(1);
     }
+  }
+
+  if (cfg.mode == "flow_crf") {
+    cv::Mat next, prev;
+    std::tie(next, std::ignore, std::ignore) = dmm.getRGBD(0);
+    std::tie(prev, std::ignore, std::ignore) = dmm.getRGBD(-1);
+
+    // scale
+//    constexpr double s = 0.25;
+    constexpr double s = 1;
+
+    cv::Mat flow;
+    cv::Mat gnext, gprev;
+    if (!prev.empty()) {
+      cv::resize(next, next, s * cv::Point(next.size()));
+      cv::resize(prev, prev, s * cv::Point(prev.size()));
+
+//      cv::imwrite("/tmp/next.png", next);
+
+      cv::cvtColor(next, gnext, cv::COLOR_BGR2GRAY);
+      cv::cvtColor(prev, gprev, cv::COLOR_BGR2GRAY);
+
+      cv::imshow("next", gnext);
+      cv::imshow("prev", gprev);
+
+      // prev, next, flow, pyr_scale, levels, winsize, iterations, poly_n, poly_sigma, flags
+//      cv::calcOpticalFlowFarneback(prev, next, uflow, 0.5, 3, 15, 3, 5, 1.2, 0);
+      cv::calcOpticalFlowFarneback(gprev, gnext, flow, 0.5, 3, s*25, 3, 5, 1.2, 0);
+
+      // show flow
+      std::vector<cv::Mat> flow_x_y;
+      cv::split(flow, flow_x_y);
+      cv::imshow("flow vx", cv::abs(flow_x_y[0]));
+      cv::imshow("flow vy", cv::abs(flow_x_y[1]));
+
+      cv::Mat mag, ang;
+      cv::cartToPolar(flow_x_y[0], flow_x_y[1], mag, ang);
+      std::vector<cv::Mat_<uint8_t>> hsv(3, {mag.size(), 0});
+      hsv[0] = ang * 180./M_PI_2;
+      cv::normalize(mag, hsv[2], 0, 255, cv::NORM_MINMAX);
+      cv::Mat flow_vis;
+      cv::merge(hsv, flow_vis);
+      cv::cvtColor(flow_vis, flow_vis, cv::COLOR_HSV2BGR);
+      cv::imshow("flow_vis", flow_vis);
+    } // prev
+
+    if (!flow.empty()) {
+      auto drawOptFlowMap = [](const cv::Mat& flow, cv::Mat& cflowmap, int step,
+                          double, const cv::Scalar& color)
+      {
+          for(int y = 0; y < cflowmap.rows; y += step)
+              for(int x = 0; x < cflowmap.cols; x += step)
+              {
+                  const cv::Point2f& fxy = flow.at<cv::Point2f>(y, x);
+                  cv::line(cflowmap, cv::Point(x,y), cv::Point(cvRound(x+fxy.x), cvRound(y+fxy.y)), color);
+                  cv::circle(cflowmap, cv::Point(x,y), 2, color, -1);
+              }
+      };
+
+      cv::Mat cflow;
+      cv::cvtColor(gprev, cflow, cv::COLOR_GRAY2BGR);
+      drawOptFlowMap(flow, cflow, 16, 1.5, cv::Scalar(0, 255, 0));
+      cv::imshow("flow", cflow);
+    } // flow
+
+    if (!flow.empty()) {
+      DenseCRF2D crf(next.cols, next.rows, int(numLabels));
+
+      // unary: Nmodels x Npixel
+      Eigen::MatrixXf unary(numLabels, next.rows * next.cols);
+      // error of unkown association
+      unary.fill(std::numeric_limits<float>::infinity());
+      for (const ModelPointer &model : models) {
+        const tracker::Tracks ltracks = model->computeTrackProjection(tracks, cfg.history);
+
+//        std::cout << "mdl " << model->getID() << ": " << ltracks.size() << std::endl;
+
+//        Eigen::VectorXd errs(ltracks.size());
+
+        for (size_t it=0; it<ltracks.size(); it++) {
+          const auto kp0 = ltracks[it]->front();
+          const auto kp1 = ltracks[it]->back();
+
+          // skip invalid pairs
+          if (kp0==nullptr || kp1==nullptr) { continue; }
+
+          const cv::Point &c1 = s * kp1->xy;
+
+          // distance between current and start point of trajectory section
+          const Eigen::RowVector3d &p0 = kp0->coordinate;
+          const Eigen::RowVector3d &px = kp1->coordinate;
+          const double e = (p0-px).norm();
+
+          // ignore invalid 3D point distances
+          if (std::isnan(e)) { continue; }
+
+//          errs[int(it)] = e;
+
+//          unary(model->getID(), c1.y*next.cols + c1.x) = float(e);
+
+          unary(model->getID(), c1.y*next.cols + c1.x) = (e>0.02);
+
+          if (allowNew) {
+            unary(numLabels-1, c1.y*next.cols + c1.x) = (e<0.02);
+          }
+        }
+      }
+
+//      // set default projection error for outlier
+//      std::set<int> val_tracks;
+//      if (allowNew) {
+//        for (const tracker::TrackPtr &track : tracks) {
+//          const tracker::KeypointPtr kp = track->back();
+//          if (kp != nullptr) {
+//            const cv::Point &c1 = s * kp->xy;
+//            unary(numLabels-1, c1.y*next.cols + c1.x) = 0.03f;
+//            if (/*unary(0, c1.y*next.cols + c1.x) > 0.05f && */unary(0, c1.y*next.cols + c1.x)<std::numeric_limits<float>::infinity()) {
+//              std::cout << "u(m)X: " << unary.col(c1.y*next.cols + c1.x).transpose() << std::endl;
+//              val_tracks.insert(c1.y*next.cols + c1.x);
+//            }
+//          }
+//        }
+//      }
+
+      // DBG
+      {
+        std::vector<cv::Mat_<float>> errs(numLabels, {next.size(), 0});
+        for (size_t l = 0; l < numLabels; ++l) {
+          for (int u = 0; u < flow.rows; ++u) {
+            for (int v = 0; v < flow.cols; ++v) {
+              const int i = u * flow.cols + v;
+                errs[l].at<float>(u,v) = unary(int(l), i);
+            }
+          }
+//          cv::imshow("errors "+std::to_string(l), errs[l]/0.05);
+          cv::imshow("errors "+std::to_string(l), errs[l]);
+        }
+      }
+
+//      {
+//        cv::Mat lbls(next.size(), CV_8UC3, cv::Scalar(0,0,0));
+//        for (int u = 0; u < flow.rows; ++u) {
+//          for (int v = 0; v < flow.cols; ++v) {
+//            const int i = u * flow.cols + v;
+//            if (unary(0, i)<1e-6)
+//              lbls.at<cv::Vec3b>(u,v)[0] = 255;
+//            if (unary(1, i)<1e-6)
+//              lbls.at<cv::Vec3b>(u,v)[1] = 255;
+////            if (unary(2, i)<1e-6)
+////              lbls.at<cv::Vec3b>(u,v)[2] = 255;
+//          }
+//        }
+//        cv::imwrite("/tmp/lbls.png", lbls);
+//      }
+
+//      std::cout << "unary (metric):" << std::endl << unary << std::endl;
+
+      // turn errors to probabilities p(track | model) via softmax
+      unary *= -1;
+//      unary = unary.array().isFinite().select(unary.array().exp() / unary.array().exp().colwise().sum(), 1/numLabels);
+      for (int i = 0; i < unary.cols(); ++i) {
+        const auto exp = unary.col(i).array().exp();
+        if (exp.sum()>0) {
+          // apply regular softmax
+          unary.col(i) = exp / exp.sum();
+        }
+        else {
+          // all infinite, assume equal probability for all models
+          unary.col(i).fill(1 / float(numLabels));
+        }
+//        if (val_tracks.count(i)) {
+//          std::cout << "u(p)X: " << unary.col(i).transpose() << std::endl;
+//        }
+      }
+      // TODO: fix
+//      unary.bottomRows<1>().fill(1 / float(numLabels));
+
+//      std::cout << "unary (probs):" << std::endl << unary << std::endl;
+
+      // DBG
+      {
+        std::vector<cv::Mat_<float>> probs(numLabels, {next.size(), 0});
+        for (size_t l = 0; l < numLabels; ++l) {
+          for (int u = 0; u < flow.rows; ++u) {
+            for (int v = 0; v < flow.cols; ++v) {
+              const int i = u * flow.cols + v;
+                probs[l].at<float>(u,v) = unary(int(l), i);
+            }
+          }
+          cv::imshow("probs "+std::to_string(l), probs[l]);
+          cv::imshow("probs>0.5 "+std::to_string(l), probs[l]>0.5);
+        }
+      }
+
+      // log probability
+      unary = -unary.array().log();
+
+      crf.setUnaryEnergy(unary);
+
+      crf.addPairwiseGaussian(3, 3, new PottsCompatibility(weightSmoothness));
+
+      // feature optical flow: x, y, vx, vy
+      Eigen::MatrixXf feature(4, next.rows * next.cols);
+      for (int u = 0; u < flow.rows; ++u) {
+        for (int v = 0; v < flow.cols; ++v) {
+          const int i = u * flow.cols + v;
+          feature.col(i).x() = v / 80;
+          feature.col(i).y() = u / 80;
+          // TODO: also add r,g,b if optical flow is not available
+          feature.col(i).z() = flow.at<cv::Point2f>(i).x * 10;
+          feature.col(i).w() = flow.at<cv::Point2f>(i).y * 10;
+//          feature.col(i)[2] = next.at<cv::Vec3b>(i)[0] / 13;
+//          feature.col(i)[3] = next.at<cv::Vec3b>(i)[1] / 13;
+//          feature.col(i)[4] = next.at<cv::Vec3b>(i)[2] / 13;
+        }
+      }
+
+      crf.addPairwiseEnergy(feature, new PottsCompatibility(weightAppearance));
+
+  //    crf.inference(10);
+      const Eigen::VectorXi lbl = crf.map(10).cast<int>();
+
+      // DBG
+      {
+        cv::Mat lbls(next.size(), CV_8UC3, cv::Scalar(0,0,0));
+        for (int u = 0; u < flow.rows; ++u) {
+          for (int v = 0; v < flow.cols; ++v) {
+            const int i = u * flow.cols + v;
+            if (lbl[i]==0)
+              lbls.at<cv::Vec3b>(u,v)[0] = 255;
+            if (lbl[i]==1)
+              lbls.at<cv::Vec3b>(u,v)[2] = 255;
+            if (lbl[i]==2)
+              lbls.at<cv::Vec3b>(u,v)[1] = 255;
+          }
+        }
+        cv::cvtColor(gprev, gprev, cv::COLOR_GRAY2BGR);
+        cv::addWeighted(gprev, 1, lbls, 0.5, 0, lbls);
+        cv::imshow("lbls", lbls);
+      }
+      cv::waitKey(1);
+    } // uflow
   }
 
   if (cfg.mode == "sequential_ransac") {

@@ -18,10 +18,14 @@ class DenseMotionMetric {
 public:
   DenseMotionMetric(const CameraModel &intrinsics, const size_t history);
 
-  void addDepth(const DeviceArray2D<float> &vmap,
-                const DeviceArray2D<float> &nmap);
+  void addRGBD(const cv::Mat &rgb,
+               const DeviceArray2D<float> &vmap,
+               const DeviceArray2D<float> &nmap);
 
   cv::Mat projectionError(const tracker::Tracks &tracks) const;
+
+  std::tuple<const cv::Mat &, const DeviceArray2D<float> &, const DeviceArray2D<float> &>
+  getRGBD(const int &idx) const;
 
 private:
   const CameraModel intrinsics;
@@ -30,6 +34,7 @@ private:
 
   std::vector<DeviceArray2D<float>> vmaps;
   std::vector<DeviceArray2D<float>> nmaps;
+  std::vector<cv::Mat> rgbs;
 };
 
 } // namespace motion
