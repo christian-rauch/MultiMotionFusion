@@ -198,34 +198,62 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
     cv::resize(frame.rgb, img, cv::Size(frame.rgb.cols >> i, frame.rgb.rows >> i));
     std::tie(features[i], coordinates[i], descriptors[i]) = kp_predictor->getFeatures(img);
   }
+
+#if 0 // draw Canny edges, Harris corners and Voronoi separation
+  for(size_t i=0; i<RGBDOdometry::NUM_PYRS; i++) {
+    cv::Mat grey;
+    cv::resize(frame.rgb, grey, cv::Size(frame.rgb.cols >> i, frame.rgb.rows >> i));
+    cv::cvtColor(grey, grey, cv::COLOR_RGB2GRAY);
+
+    cv::Mat corners;
+    cv::cornerHarris(grey, corners, 2, 3, 0.04);
+    cv::imshow("corner response "+std::to_string(i), corners*100);
+
+    cv::Mat edges;
+    cv::Canny(grey, edges, 100, 200);
+    cv::imshow("edge response "+std::to_string(i), edges*100);
+    std::vector<std::vector<cv::Point>> contours;
+    std::vector<cv::Vec4i> hierarchy;
+    cv::findContours(edges, contours, hierarchy, cv::RETR_LIST, cv::CHAIN_APPROX_TC89_L1);
+    cv::Mat pts_img = grey.clone();
+    for (const std::vector<cv::Point> &contour : contours) {
+      for (const cv::Point &point : contour) {
+        cv::circle(pts_img, point, 3, cv::Scalar(255), -1);
+      }
+    }
+    cv::imshow("contour points "+std::to_string(i), pts_img);
+
+    // TODO: intersection of contour edges with Voronoi edges
+    std::vector<cv::Point2f> pt_list;
+    for (int r=0; r<coordinates[i].rows(); r++) {
+      pt_list.emplace_back(coordinates[i].row(r).x() * grey.cols, coordinates[i].row(r).y() * grey.rows);
+    }
+    cv::Subdiv2D subdiv(cv::Rect({},frame.rgb.size()));
+    subdiv.insert(pt_list);
+    std::vector<std::vector<cv::Point2f>> facets;
+    std::vector<cv::Point2f> centers;
+    subdiv.getVoronoiFacetList({}, facets, centers);
+    cv::Mat voronoi_img = grey;
+    for (const std::vector<cv::Point2f> &facet : facets) {
+      std::vector<cv::Point> ifacet;
+      ifacet.resize(facet.size());
+      for( size_t j = 0; j < facet.size(); j++ ) { ifacet[j] = facet[j]; }
+      cv::polylines(voronoi_img, ifacet, true, cv::Scalar(255));
+    }
+    for (const cv::Point2f &pt : centers) {
+      cv::circle(voronoi_img, pt, 3, cv::Scalar(0), cv::FILLED);
+    }
+    cv::imshow("Voronoi "+std::to_string(i), voronoi_img);
+  } // pyramid levels
+  cv::waitKey(1);
+#endif
+
 //  cv::Mat img;
 //  cv::cvtColor(frame.rgb, img, cv::COLOR_RGB2GRAY);
-//  for(int i=0; i<coordinates.rows(); i++) {
-//      cv::circle(img, cv::Point(coordinates(i,0)*img.cols, coordinates(i,1)*img.rows), 5, cv::Scalar(255));
+//  for(int i=0; i<coordinates[0].rows(); i++) {
+//      cv::circle(img, cv::Point(coordinates[0](i,0)*img.cols, coordinates[0](i,1)*img.rows), 5, cv::Scalar(255));
 //  }
 //  cv::imshow("current observation", img);
-//  cv::waitKey(1);
-
-//  // rendered state at t-1
-//  int i=0;
-//  for(const auto &model : models) {
-//      const cv::Mat proj = model->getRGBProjection()->downloadTexture();
-
-//      Eigen::MatrixX2d coordinates;
-//      Eigen::MatrixXd descriptors;
-//      std::tie(std::ignore, coordinates, descriptors) = sp.getFeatures(proj);
-
-//      cv::Mat img;
-//      cv::cvtColor(proj, img, cv::COLOR_RGB2GRAY);
-//      for(int i=0; i<coordinates.rows(); i++) {
-//          cv::circle(img, cv::Point(coordinates(i,0)*img.cols, coordinates(i,1)*img.rows), 5, cv::Scalar(255));
-//      }
-//      const std::string win_name = "estimated model "+std::to_string(i);
-//      cv::namedWindow(win_name, cv::WINDOW_NORMAL);
-//      cv::imshow(win_name, img);
-
-//      i++;
-//  }
 //  cv::waitKey(1);
 
   TOCK("Keypoints");
