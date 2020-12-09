@@ -28,6 +28,8 @@
 
 #include "../Utils/SequentialRigidRANSAC.hpp"
 
+//#include "DCRF.hpp"
+
 #ifdef SHOW_DEBUG_VISUALISATION
 #include <iomanip>
 #include "../Utils/Gnuplot.h"
@@ -592,6 +594,7 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
 
     if (!flow.empty()) {
       DenseCRF2D crf(next.cols, next.rows, int(numLabels));
+//      DCRF crf(next.cols, next.rows, int(numLabels));
 
       // unary: Nmodels x Npixel
       Eigen::MatrixXf unary(numLabels, next.rows * next.cols);
