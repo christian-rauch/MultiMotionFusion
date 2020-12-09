@@ -498,6 +498,7 @@ void MainController::run() {
         if (coFusion->processFrame(logReader->getFrameData(), currentPose, weightMultiplier) && !showcaseMode) {
           gui->pause->Ref()->Set(true);
         }
+        gui->timing->Ref()->Set(Stopwatch::getInstance().getTimings().at("Run"));
 
         if (exportLabels) {
           gui->saveColorImage(exportDir + "Labels" + std::to_string(coFusion->getTick() - 1));

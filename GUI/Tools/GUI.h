@@ -178,6 +178,7 @@ class GUI {
 
     pause = new pangolin::Var<bool>("ui.Pause", false, true);
     logProgress = new pangolin::Var<std::string>("ui.Log", "0");
+    timing = new pangolin::Var<float>("ui.Timing (ms)");
     step = new pangolin::Var<bool>("ui.Step", false, false);
     skip = new pangolin::Var<bool>("ui.Skip", false, false);
     saveCloud = new pangolin::Var<bool>("ui.Save cloud", false, false);
@@ -615,6 +616,8 @@ class GUI {
       *drawGlobalModel, *drawObjectModels, *drawUnstable, *drawPoints, *drawTimes, *drawFerns, *drawDeforms, *drawWindow;
   pangolin::Var<int>* gpuMem;
   pangolin::Var<std::string> *totalPoints, *totalNodes, *totalFerns, *totalDefs, *totalFernDefs, *trackInliers, *trackRes, *logProgress;
+
+  pangolin::Var<float> *timing;
 
   pangolin::Var<float> *depthCutoff, *icpWeight, *outlierCoefficient;
 
