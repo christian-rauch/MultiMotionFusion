@@ -386,7 +386,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
           }
 
           // New model
-          std::cout << "Found new model." << std::endl;
+          std::cout << "Found new model " << newModelData.id << std::endl;
 
           spawnObjectModel();
           spawnOffset = 0;
@@ -455,7 +455,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
         for (auto& m : segmentationResult.modelData) {  // FIXME reduce count somewhere
           if (m.superPixelCount <= 0 && (*m.modelListIterator)->incrementUnseenCount() > 0) {
             if (m.id != 0) {
-              std::cout << "Lost a model." << std::endl;
+              std::cout << "Lost model " << m.id << std::endl;
               inactivateModel(m.modelListIterator);
             }
           }
@@ -788,7 +788,7 @@ void CoFusion::moveNewModelToList() {
 
 ModelListIterator CoFusion::inactivateModel(const ModelListIterator& it) {
   std::shared_ptr<Model> m = *it;
-  std::cout << "Deactivating model... ";
+  std::cout << "Deactivating model " << m->getID() << " ... ";
   if (!enableSmartModelDelete || (m->lastCount() >= modelKeepMinSurfels && m->getConfidenceThreshold() > modelKeepConfThreshold)) {
     std::cout << "keeping data";
     // [Removed code]
