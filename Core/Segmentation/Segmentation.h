@@ -102,6 +102,9 @@ class Segmentation {
   SegmentationResult performSegmentationCRF(std::list<std::shared_ptr<Model>>& models, const FrameData& frame, unsigned char nextModelID,
                                             bool allowNew, const tracker::Tracks &tracks, const motion::DenseMotionMetric &dmm);
 
+  SegmentationResult performSegmentationFlowCRF(std::list<std::shared_ptr<Model>>& models, const FrameData& frame, unsigned char nextModelID,
+                                                bool allowNew, const tracker::Tracks &tracks, const motion::DenseMotionMetric &dmm);
+
   /**
      * @brief denseCRF Compute a segmentation of labels based on a fully connected CRF, using icp+projection unary terms and rgb+position+depth pairwise terms
      * @param rgb input RGB image

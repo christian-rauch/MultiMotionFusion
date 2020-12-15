@@ -431,24 +431,30 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
           }
 
           // update model-specific set of tracks for currently visible models
+          uint8_t sid = 0;
           for (const auto &model : models) {
-            if (segm_tracks.count(uint8_t(model->getID()))) {
-              // gather tracks that are not associated the segment
+            if (segm_tracks.count(sid)) {
+              // gather tracks that are not associated to the segment
               tracker::Tracks tracks_remove;
               for (const auto &[id, tracks] : segm_tracks) {
-                if (id!=model->getID()) {
+                if (id!=sid) {
                   tracks_remove.insert(tracks_remove.end(), tracks.begin(), tracks.end());
                 }
               }
 
               // initialise the poses of a new model
+              if (segmentationResult.hasNewLabel) {
+                std::cout << "uid: " << model->getID() << ", segm id: " << segmentationResult.modelData.back().id << std::endl;
+              }
               if (segmentationResult.hasNewLabel && model->getID()==segmentationResult.modelData.back().id) {
-                model->refineTrackSubset(segm_tracks[uint8_t(model->getID())]);
+                std::cout << "new tracks: " << segm_tracks[sid].size() << std::endl;
+                model->refineTrackSubset(segm_tracks[sid]);
               }
 
               // update the model-specific tracks
-              model->updateTracks(segm_tracks[uint8_t(model->getID())], tracks_remove);
+              model->updateTracks(segm_tracks[sid], tracks_remove);
             }
+            sid++;
           } // models
         }
 
