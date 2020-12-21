@@ -258,7 +258,9 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
 
   TOCK("Keypoints");
 
+  TICK("Point Matching");
   tracker.addKeypoints(coordinates[0], descriptors[0], frame.depth, 0.7f, 30);
+  TOCK("Point Matching");
   cv::Mat img_tracks = tracker.drawTracks(frame.rgb, 20);
   cv::imshow("tracks", img_tracks);
   cv::waitKey(1);
@@ -456,28 +458,27 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
           }
 
           // update model-specific set of tracks for currently visible models
-          uint8_t sid = 0;
           for (const auto &model : models) {
-            if (segm_tracks.count(sid)) {
+            const uint8_t uid = uint8_t(model->getID());
+            if (segm_tracks.count(uid)) {
               // gather tracks that are not associated to the segment
               tracker::Tracks tracks_remove;
               for (const auto &[id, tracks] : segm_tracks) {
-                if (id!=sid) {
+                if (id!=uid) {
                   tracks_remove.insert(tracks_remove.end(), tracks.begin(), tracks.end());
                 }
               }
 
               // initialise the poses of a new model
               if (segmentationResult.hasNewLabel && model->getID()==segmentationResult.modelData.back().id) {
-                model->refineTrackSubset(segm_tracks[sid]);
+                model->refineTrackSubset(segm_tracks[uid]);
               }
 
               // update the model-specific tracks
-              model->updateTracks(segm_tracks[sid], tracks_remove);
+              model->updateTracks(segm_tracks[uid], tracks_remove);
               // remove invisible tracks
               model->updateTracks({}, invisible_tracks);
             }
-            sid++;
           } // models
 
           // associate invisble tracks by model poses projection error

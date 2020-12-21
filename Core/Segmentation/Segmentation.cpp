@@ -1372,20 +1372,8 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
   SegmentationResult result;
   result.fullSegmentation = cv::Mat(frame.rgb.size(), CV_8UC1, uint8_t(0));
 
-  const unsigned numExistingModels = unsigned(models.size());
-  const unsigned numLabels = allowNew ? numExistingModels + 1 : numExistingModels;
-
-//  const unsigned numLabels = unsigned(models.size()) + allowNew;
-
-  // map from the model's unique ID to the class ID (ordinal of active model)
-  std::unordered_map<unsigned int, size_t> cids;
-  {
-    size_t id = 0;
-    for (const ModelPointer &model : models) {
-      cids[model->getID()] = id++;
-    }
-    cids[nextModelID] = id;
-  }
+  // number of active (currently tracked) models and potential new model
+  const unsigned numLabels = unsigned(models.size()) + allowNew;
 
   cv::Mat next, prev;
   std::tie(next, std::ignore, std::ignore) = dmm.getRGBD(0);
@@ -1456,14 +1444,11 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     DenseCRF2D crf(next.cols, next.rows, int(numLabels));
 //      DCRF crf(next.cols, next.rows, int(numLabels));
 
-    if (allowNew) {
-      std::cout << "numLabels: " << numLabels << std::endl;
-    }
-
     // unary: Nmodels x Npixel
     Eigen::MatrixXf unary(numLabels, next.rows * next.cols);
     // error of unkown association
     unary.fill(std::numeric_limits<float>::infinity());
+    int label = 0;
     for (const ModelPointer &model : models) {
       const tracker::Tracks ltracks = model->computeTrackProjection(tracks, cfg.history);
 
@@ -1490,12 +1475,15 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
 //          errs[int(it)] = e;
 
-        unary(Eigen::Index(cids[model->getID()]), c1.y*next.cols + c1.x) = (e>0.02);
+        unary(label, c1.y*next.cols + c1.x) = (e>0.02);
 
+        // TODO: this will determine the "new" unary only from the last "old" model in the list,
+        //       we have to consider all active models
         if (allowNew) {
           unary(numLabels-1, c1.y*next.cols + c1.x) = (e<0.02);
         }
       }
+      label++;
     }
 
 //      // set default projection error for outlier
@@ -1597,6 +1585,14 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
     const Eigen::VectorXi lbl = crf.map(int(crfIterations)).cast<int>();
 
+    for (ModelListIterator m = models.begin(); m != models.end(); m++) {
+      result.modelData.push_back({(*m)->getID(), m, {}, {}});
+    }
+
+    if (allowNew) {
+      result.modelData.push_back({nextModelID});
+    }
+
     // create segmentation at CRF resolution
     cv::Mat_<uint8_t> crf_segm(next.size(), 0);
     std::array<uint32_t, 256> segm_count;
@@ -1604,9 +1600,9 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     for (int u = 0; u < flow.rows; ++u) {
       for (int v = 0; v < flow.cols; ++v) {
         const int i = u * flow.cols + v;
-        const auto &l = uint8_t(lbl[i]);
-        crf_segm.at<uint8_t>(i) = l;
-        segm_count[l]++;
+        const uint8_t &uid = uint8_t(result.modelData[size_t(lbl[i])].id);
+        crf_segm.at<uint8_t>(i) = uid;
+        segm_count[uid]++;
       }
     }
 
@@ -1620,29 +1616,25 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     // scale size of segments according to image scale
     constexpr float scale_weight = 1.0/(s*s);
 
-    for (ModelListIterator m = models.begin(); m != models.end(); m++) {
-      result.modelData.push_back({(*m)->getID(), m, {}, {}, uint(float(segm_count[cids[(*m)->getID()]]) * scale_weight), 0.4f});
-//      std::cout << "Mm " << result.modelData.back().id << ": " << result.modelData.back().superPixelCount << std::endl;
-      cv::Scalar dmean, dstddev;
-      cv::meanStdDev(frame.depth, dmean, dstddev, result.fullSegmentation==cids[(*m)->getID()]);
-//      std::cout << "depth stat: " << dmean << " +/- " << dstddev << std::endl;
-      result.modelData.back().depthMean = float(dmean[0]);
-      result.modelData.back().depthStd = float(dstddev[0]);
-    }
-
     // TODO: make configureable
     constexpr float new_model_size = 0.2f;
 
-    result.hasNewLabel = allowNew && float(cv::countNonZero(crf_segm)) / float(crf_segm.size().area()) > new_model_size;
-    if (result.hasNewLabel) {
-      std::cout << "new model ID: " << uint(nextModelID) << std::endl;
-      result.modelData.push_back({nextModelID, {}, {}, {}, uint(float(segm_count[cids[nextModelID]]) * scale_weight), 0.4f});
-//      std::cout << "*m " << result.modelData.back().id << ": " << result.modelData.back().superPixelCount << std::endl;
+    // ModelData(t_id, t_modelListIterator, t_lowICP, t_lowConf, t_superPixelCount, t_avgConfidence);
+    for (SegmentationResult::ModelData &mod : result.modelData) {
+      mod.superPixelCount = uint(float(segm_count[mod.id]) * scale_weight);
+      mod.avgConfidence = 0.4f;
+
       cv::Scalar dmean, dstddev;
-      cv::meanStdDev(frame.depth, dmean, dstddev, result.fullSegmentation==cids[nextModelID]);
-//      std::cout << "depth stat: " << dmean << " +/- " << dstddev << std::endl;
-      result.modelData.back().depthMean = float(dmean[0]);
-      result.modelData.back().depthStd = float(dstddev[0]);
+      cv::meanStdDev(frame.depth, dmean, dstddev, result.fullSegmentation==mod.id);
+      mod.depthMean = float(dmean[0]);
+      mod.depthStd = float(dstddev[0]);
+    }
+
+    result.hasNewLabel = allowNew && float(cv::countNonZero(crf_segm)) / float(crf_segm.size().area()) > new_model_size;
+
+    if (!result.hasNewLabel) {
+      // delete last, potentially new, model
+      result.modelData.pop_back();
     }
 
     // DBG

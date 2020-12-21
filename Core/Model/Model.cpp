@@ -508,6 +508,7 @@ void Model::computeTrackProjectionError() {
 }
 
 tracker::Tracks Model::computeTrackProjection(const tracker::Tracks& tracks, const size_t length) {
+  assert(!poses.empty());
   tracker::Tracks ltracks(tracks.size()); // local tracks
 
   for (size_t it=0; it<tracks.size(); it++) {
