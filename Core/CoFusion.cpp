@@ -436,6 +436,25 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
             }
           }
 
+          if (!segm_tracks.empty()) {
+            cv::Mat segm_tracks_img(segm.size(), CV_8UC3);
+            pangolin::ColourWheel colour_spacing;
+            // segments
+            for (const auto &[id, tracks] : segm_tracks) {
+              const pangolin::Colour c = colour_spacing.GetColourBin(id);
+              segm_tracks_img.setTo(cv::Scalar(c.b*255, c.g*255, c.r*255), segm==id);
+            }
+            // tracks
+            for (const auto &[id, tracks] : segm_tracks) {
+              const pangolin::Colour c = colour_spacing.GetColourBin(id);
+              for (const tracker::TrackPtr &track : tracks) {
+                cv::circle(segm_tracks_img, track->back()->xy, 4, cv::Scalar(), 1);
+                cv::circle(segm_tracks_img, track->back()->xy, 3, cv::Scalar(c.b*255, c.g*255, c.r*255), cv::FILLED);
+              }
+            }
+            cv::imshow("segm tracks", segm_tracks_img);
+          }
+
           // update model-specific set of tracks for currently visible models
           uint8_t sid = 0;
           for (const auto &model : models) {
