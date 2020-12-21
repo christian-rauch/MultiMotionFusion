@@ -421,12 +421,18 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
           // associate tracks to segments via their last keypoint location
           const cv::Mat &segm = segmentationResult.fullSegmentation;
           std::unordered_map<uint8_t, tracker::Tracks> segm_tracks;
+          tracker::Tracks invisible_tracks;
           for (const tracker::TrackPtr &track : tracks) {
             if (track->back()!=nullptr) {
-              const cv::Point p = track->back()->xy;
+              // visible tracks, associated by segments
+              const cv::Point &p = track->back()->xy;
               if (cv::Rect(cv::Point(), segm.size()).contains(p)) {
                 segm_tracks[segm.at<uint8_t>(p)].push_back(track);
               }
+            }
+            else {
+              // invisible tracks, associated by transformation
+              invisible_tracks.push_back(track);
             }
           }
 
@@ -443,19 +449,40 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
               }
 
               // initialise the poses of a new model
-              if (segmentationResult.hasNewLabel) {
-                std::cout << "uid: " << model->getID() << ", segm id: " << segmentationResult.modelData.back().id << std::endl;
-              }
               if (segmentationResult.hasNewLabel && model->getID()==segmentationResult.modelData.back().id) {
-                std::cout << "new tracks: " << segm_tracks[sid].size() << std::endl;
                 model->refineTrackSubset(segm_tracks[sid]);
               }
 
               // update the model-specific tracks
               model->updateTracks(segm_tracks[sid], tracks_remove);
+              // remove invisible tracks
+              model->updateTracks({}, invisible_tracks);
             }
             sid++;
           } // models
+
+          // associate invisble tracks by model poses projection error
+          for (const tracker::TrackPtr &track : invisible_tracks) {
+            // keep track of model with smallest projection error
+            ModelPointer model_min = nullptr;
+            double err_min = std::numeric_limits<double>::infinity();
+            for (const ModelPointer &model : models) {
+              Eigen::RowVectorXd pe;
+              std::tie(pe, std::ignore, std::ignore) =
+                  Model::computeTrackProjectionError(model->computeTrackProjection({track}));
+              if (!pe.array().isNaN().all()) {
+                const auto finite = pe.array().isFinite();
+                const double max_err = finite.select(pe, 0).sum() / finite.count();
+                if (max_err < err_min) {
+                  model_min = model;
+                  err_min = max_err;
+                }
+              }
+            }
+            if (model_min) {
+              model_min->updateTracks({track});
+            }
+          }
         }
 
         for (auto& m : segmentationResult.modelData) {  // FIXME reduce count somewhere
