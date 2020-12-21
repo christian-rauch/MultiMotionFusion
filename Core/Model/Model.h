@@ -140,6 +140,9 @@ class Model {
   virtual void updateTrackPose();
 
   // compute the projection error between keypoints on the trajectory for segmentation
+  static std::tuple<Eigen::MatrixXd, Model::MatrixXp2, Model::MatrixXp3>
+  computeTrackProjectionError(const tracker::Tracks &tracks);
+
   virtual void computeTrackProjectionError();
 
   virtual tracker::Tracks computeTrackProjection(const tracker::Tracks& tracks, const size_t length = 0);

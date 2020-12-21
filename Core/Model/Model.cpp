@@ -458,42 +458,53 @@ void Model::updateTrackPose() {
   }
 }
 
-void Model::computeTrackProjectionError() {
+std::tuple<Eigen::MatrixXd, Model::MatrixXp2, Model::MatrixXp3>
+Model::computeTrackProjectionError(const tracker::Tracks &tracks) {
   // L2 distances of local points to previous point, Ntracks x Nimages
-  track_pe.resize(int(this->tracks.size()), 0);
-  track_xy.resize(int(this->tracks.size()), 0);
-  track_p.resize(int(this->tracks.size()), 0);
+  Eigen::MatrixXd track_pe(int(tracks.size()), 0);
+  MatrixXp2 track_xy(int(tracks.size()), 0);
+  MatrixXp3 track_p(int(tracks.size()), 0);
 
   int it=0;
-  for (const auto &[o_track, l_track] : this->tracks) {
+  for (const tracker::TrackPtr &track : tracks) {
     // resize the projection error matrix, assumes that all tracks have same length
-    const int len_dist = int(l_track->size()-1);
+    const int len_dist = int(track->size()-1);
     if (track_pe.cols() != len_dist) {
       track_pe.resize(Eigen::NoChange, len_dist);
     }
 
     for (int ik=0; ik<len_dist; ik++) {
-      if ((*l_track)[size_t(ik)] != nullptr && (*l_track)[size_t(ik+1)] != nullptr) {
-        track_pe(it,ik) = ((*l_track)[size_t(ik+1)]->coordinate - (*l_track)[size_t(ik)]->coordinate).norm();
+      if ((*track)[size_t(ik)] != nullptr && (*track)[size_t(ik+1)] != nullptr) {
+        track_pe(it,ik) = ((*track)[size_t(ik+1)]->coordinate - (*track)[size_t(ik)]->coordinate).norm();
       }
       else {
         track_pe(it,ik) = std::numeric_limits<double>::quiet_NaN();
       }
     }
 
-    if (track_xy.cols() != int(l_track->size())) {
-      track_xy.resize(Eigen::NoChange, int(l_track->size()));
+    if (track_xy.cols() != int(track->size())) {
+      track_xy.resize(Eigen::NoChange, int(track->size()));
     }
-    if (track_p.cols() != int(l_track->size())) {
-      track_p.resize(Eigen::NoChange, int(l_track->size()));
+    if (track_p.cols() != int(track->size())) {
+      track_p.resize(Eigen::NoChange, int(track->size()));
     }
-    for (size_t ik=0; ik<l_track->size(); ik++) {
-      track_xy(it,int(ik)) = ((*l_track)[ik] == nullptr) ? cv::Point(-1,-1) : (*l_track)[ik]->xy;
-      track_p(it,int(ik)) = ((*l_track)[ik] == nullptr) ? Eigen::RowVector3d::Constant(std::numeric_limits<double>::quiet_NaN()) : (*l_track)[ik]->coordinate;
+    for (size_t ik=0; ik<track->size(); ik++) {
+      track_xy(it,int(ik)) = ((*track)[ik] == nullptr) ? cv::Point(-1,-1) : (*track)[ik]->xy;
+      track_p(it,int(ik)) = ((*track)[ik] == nullptr) ? Eigen::RowVector3d::Constant(std::numeric_limits<double>::quiet_NaN()) : (*track)[ik]->coordinate;
     }
 
     it++;
   } // tracks
+
+  return {track_pe, track_xy, track_p};
+}
+
+void Model::computeTrackProjectionError() {
+  tracker::Tracks local_tracks;
+  for (const auto &[o_track, l_track] : this->tracks) {
+    local_tracks.push_back(l_track);
+  }
+  std::tie(track_pe, track_xy, track_p) = computeTrackProjectionError(local_tracks);
 }
 
 tracker::Tracks Model::computeTrackProjection(const tracker::Tracks& tracks, const size_t length) {
@@ -511,6 +522,8 @@ tracker::Tracks Model::computeTrackProjection(const tracker::Tracks& tracks, con
 }
 
 void Model::updateTracks(const tracker::Tracks& tracks_add, const tracker::Tracks& tracks_remove) {
+  assert(!poses.empty());
+
   // add new inlier tracks with new pose estimates
   for (const tracker::TrackPtr &track : tracks_add) {
     this->tracks[track] = std::make_shared<tracker::Track>(track->size(), nullptr);
