@@ -23,7 +23,8 @@ void
 PointTracker::addKeypoints(const Eigen::MatrixX2d &coordinates,
                            const Eigen::MatrixXd &descriptors,
                            const cv::Mat &depth,
-                           const float min_feature_distance)
+                           const float min_feature_distance,
+                           const size_t &history)
 {
   const auto construct_kp =
       [intr=intrinsics](const Eigen::Vector2d &coordinate, const Eigen::VectorXd &descriptor, const cv::Mat &depth) -> KeypointPtr
@@ -58,7 +59,7 @@ PointTracker::addKeypoints(const Eigen::MatrixX2d &coordinates,
     }
   }
   else {
-    const std::vector<KeypointPtr> active_kp = getLastActiveKeypoints();
+    const std::vector<KeypointPtr> active_kp = getLastActiveKeypoints(history);
 
     // set all tracks to inactive by default
     for (TrackPtr &track : tracks) {
@@ -67,15 +68,26 @@ PointTracker::addKeypoints(const Eigen::MatrixX2d &coordinates,
 
     if(descriptors.rows()>0) {
       // match with previous keypoint set
-      cv::Mat previous(int(tracks.size()), int(descriptors.cols()), cv::traits::Type<double>::value);
-      for (size_t i=0; i<active_kp.size(); i++) {
-        cv::eigen2cv(active_kp[i]->descriptor, previous.row(int(i)));
-      }
+      cv::Mat previous;
       cv::Mat current;
+
+      Eigen::MatrixXf prev_tmp(int(tracks.size()), int(descriptors.cols()));
+      size_t n_current = 0;
+      // map from valid index in 'prev_tmp' to full range in 'active_kp'
+      std::unordered_map<size_t, size_t> map_valid_prev;
+      for (size_t i=0; i<active_kp.size(); i++) {
+        if (active_kp[i]) {
+          map_valid_prev[n_current] = i;
+          prev_tmp.row(int(n_current)) = active_kp[i]->descriptor.cast<float>();
+          n_current++;
+        }
+      }
+
+      // convert valid descriptors from Eigen to OpenCV
+      cv::eigen2cv(Eigen::MatrixXf(prev_tmp.topRows(int(n_current))), previous);
       cv::eigen2cv(descriptors, current);
 
       // convert to float for cv matching
-      previous.convertTo(previous, CV_32F);
       current.convertTo(current, CV_32F);
 
       // pairwise match between previous and current set of active keypoints
@@ -89,7 +101,8 @@ PointTracker::addKeypoints(const Eigen::MatrixX2d &coordinates,
 
       for(const cv::DMatch &match : matches) {
         if (min_feature_distance<std::numeric_limits<float>::epsilon() || match.distance <= min_feature_distance) {
-          tracks[size_t(match.trainIdx)]->back() = construct_kp(coordinates.row(match.queryIdx), descriptors.row(match.queryIdx), depth);
+          // map matched keypoint back to full set of global tracks
+          tracks[map_valid_prev.at(size_t(match.trainIdx))]->back() = construct_kp(coordinates.row(match.queryIdx), descriptors.row(match.queryIdx), depth);
           unmatched.erase(match.queryIdx);
         }
       }
@@ -149,15 +162,19 @@ PointTracker::drawTracks(const cv::Mat &image, const size_t length) const
 }
 
 std::vector<KeypointPtr>
-PointTracker::getLastActiveKeypoints() const
+PointTracker::getLastActiveKeypoints(const size_t &history) const
 {
   std::vector<KeypointPtr> active(tracks.size(), nullptr);
 
-  // find the last active keypoint of each track
-  // each track must have at least one active keypoint
+  // find the last active keypoint of each track within history
   for (size_t i=0; i<tracks.size(); i++) {
-    // iterate from last element to front
-    for (auto it = tracks[i]->rbegin(); it != tracks[i]->rend() && active[i] == nullptr; it++) {
+    // iterate from last element towards front for given history size
+    for (auto it = tracks[i]->rbegin();
+         it != tracks[i]->rend() &&
+         active[i] == nullptr &&
+         (!history || std::distance(tracks[i]->rbegin(), it)<int(history));
+         it++)
+    {
       active[i] = (*it);
     }
   }
