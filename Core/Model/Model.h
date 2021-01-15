@@ -214,7 +214,7 @@ class Model {
   //    return indexMap.getUnaryConfTex()->downloadTexture();
   //}
 
-  void exportTracksPLY(const std::string &export_dir) const;
+  void exportTracksPLY(const std::string &export_dir, const Eigen::Isometry3f &global_pose) const;
 
   inline cv::Mat downloadVertexConfTexture() { return indexMap.getSplatVertexConfTex()->downloadTexture(); }
 

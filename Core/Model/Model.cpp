@@ -1148,7 +1148,11 @@ Model::SurfelMap Model::downloadMap() {
   return result;
 }
 
-void Model::exportTracksPLY(const std::string &export_dir) const {
+void Model::exportTracksPLY(const std::string &export_dir, const Eigen::Isometry3f &global_pose) const {
+  // pre-multiply the exported tracks with the pose of the global model (id=0, static environment)
+  // this transforms object tracks (id>0) from the start of their trajectory to the end
+  const Eigen::Isometry3f Tp = global_pose * Eigen::Isometry3f(getPose()).inverse();
+
   std::stringstream ss_hdr, ss_vrt, ss_edg;
 
   size_t vert_id = 0;
@@ -1160,7 +1164,7 @@ void Model::exportTracksPLY(const std::string &export_dir) const {
     for (const tracker::KeypointPtr &kp : *track_local) {
       // add valid points
       if (kp!=nullptr && kp->coordinate.array().isFinite().all()) {
-        ss_vrt << kp->coordinate;
+        ss_vrt << (Tp.cast<double>() * kp->coordinate.transpose()).transpose();
         ss_vrt << std::endl;
         edge_ids.push(vert_id);
         vert_id++;

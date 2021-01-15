@@ -985,8 +985,9 @@ void CoFusion::savePly() {
   for (auto& m : models) exportModelPLY(m);
   for (auto& m : inactiveModels) exportModelPLY(m);
 
-  for (auto& m : models) m->exportTracksPLY(exportDir);
-  for (auto& m : inactiveModels) m->exportTracksPLY(exportDir);
+  const Eigen::Isometry3f global_pose(globalModel->getPose());
+  for (auto& m : models) m->exportTracksPLY(exportDir, global_pose);
+  for (auto& m : inactiveModels) m->exportTracksPLY(exportDir, global_pose);
 }
 
 void CoFusion::exportPoses() {
