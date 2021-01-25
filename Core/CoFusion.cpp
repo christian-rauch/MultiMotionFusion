@@ -297,6 +297,9 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
         model->getFrameOdometry().setNextFeatureMap(features);
     }
 
+    // assign all initial tracks in camera frame to global model
+    globalModel->initGlobalTracks(tracker.getTracks());
+
     dmm.addRGBD(textures[GPUTexture::RGB]->downloadTexture(), globalModel->getFrameOdometry().getCurrVmap(), globalModel->getFrameOdometry().getCurrNmap());
   } else {
     bool trackingOk = true;

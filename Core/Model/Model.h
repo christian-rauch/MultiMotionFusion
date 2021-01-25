@@ -147,6 +147,9 @@ class Model {
 
   virtual tracker::Tracks computeTrackProjection(const tracker::Tracks& tracks, const size_t length = 0);
 
+  // initialise the first set of tracks for the global model
+  virtual void initGlobalTracks(const tracker::Tracks& tracks);
+
   // add/remove tracks
   virtual void updateTracks(const tracker::Tracks& tracks_add = {}, const tracker::Tracks &tracks_remove = {});
 
