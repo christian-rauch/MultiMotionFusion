@@ -515,7 +515,7 @@ tracker::Tracks Model::computeTrackProjection(const tracker::Tracks& tracks, con
     const size_t len_vis = (length==0) ? tracks[it]->size() : std::min(length, tracks[it]->size());
     ltracks[it] = std::make_shared<tracker::Track>();
     for (size_t ik=tracks[it]->size()-len_vis; ik<tracks[it]->size(); ik++) {
-      ltracks[it]->push_back(project_kp((*tracks[it])[ik], Eigen::Isometry3d(poses[ik].cast<double>())));
+      ltracks[it]->push_back(project_kp((*tracks[it])[ik], poses.at(ik).cast<double>()));
     }
   }
 
@@ -541,7 +541,7 @@ void Model::updateTracks(const tracker::Tracks& tracks_add, const tracker::Track
   for (const tracker::TrackPtr &track : tracks_add) {
     this->tracks[track] = std::make_shared<tracker::Track>(track->size(), nullptr);
     for (size_t ik=0; ik<track->size(); ik++) {
-      (*this->tracks[track])[ik] = project_kp((*track)[ik], Eigen::Isometry3d(poses[ik].cast<double>()));
+      (*this->tracks[track])[ik] = project_kp((*track)[ik], poses.at(ik).cast<double>());
     }
   }
 
@@ -610,7 +610,7 @@ void Model::refineTrackSubset(const tracker::Tracks& tracks) {
   // update tracks
   for (const auto &[o_track, l_track] : this->tracks) {
     for (size_t ik=0; ik<o_track->size(); ik++) {
-      (*l_track)[ik] = project_kp((*o_track)[ik], Eigen::Isometry3d(poses[ik].cast<double>()));
+      (*l_track)[ik] = project_kp((*o_track)[ik], poses.at(ik).cast<double>());
     }
   }
 }
