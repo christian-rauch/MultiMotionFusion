@@ -474,7 +474,8 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
 
               // initialise the poses of a new model
               if (segmentationResult.hasNewLabel && model->getID()==segmentationResult.modelData.back().id) {
-                model->refineTrackSubset(segm_tracks[uid]);
+                model->overridePose(globalModel->getPose());
+                model->initGlobalTracks({}, Eigen::Isometry3f(globalModel->getPose()));
               }
 
               // update the model-specific tracks
