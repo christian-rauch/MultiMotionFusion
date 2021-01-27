@@ -512,11 +512,13 @@ tracker::Tracks Model::computeTrackProjection(const tracker::Tracks& tracks, con
   assert(!poses.empty());
   tracker::Tracks ltracks(tracks.size()); // local tracks
 
+  const size_t len_vis = (length==0) ? poses.size() : std::min(length, poses.size());
+
   for (size_t it=0; it<tracks.size(); it++) {
-    const size_t len_vis = (length==0) ? tracks[it]->size() : std::min(length, tracks[it]->size());
     ltracks[it] = std::make_shared<tracker::Track>();
-    for (size_t ik=tracks[it]->size()-len_vis; ik<tracks[it]->size(); ik++) {
-      ltracks[it]->push_back(project_kp((*tracks[it])[ik], poses.at(ik).cast<double>()));
+    for (size_t ip=poses.size()-len_vis; ip<poses.size(); ip++) {
+      const size_t id = tracks[it]->size() - poses.size() + ip;
+      ltracks[it]->push_back(project_kp((*tracks[it])[id], poses.at(ip).cast<double>()));
     }
   }
 
@@ -541,8 +543,9 @@ void Model::updateTracks(const tracker::Tracks& tracks_add, const tracker::Track
   // add new inlier tracks with new pose estimates
   for (const tracker::TrackPtr &track : tracks_add) {
     this->tracks[track] = std::make_shared<tracker::Track>(track->size(), nullptr);
-    for (size_t ik=0; ik<track->size(); ik++) {
-      (*this->tracks[track])[ik] = project_kp((*track)[ik], poses.at(ik).cast<double>());
+    for (size_t ip=0; ip<poses.size(); ip++) {
+      const size_t id = track->size() - poses.size() + ip;
+      (*this->tracks[track])[id] = project_kp((*track)[id], poses.at(ip).cast<double>());
     }
   }
 
