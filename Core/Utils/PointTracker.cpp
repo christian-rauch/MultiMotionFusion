@@ -22,12 +22,13 @@ const Tracks &PointTracker::getTracks() const
 void
 PointTracker::addKeypoints(const Eigen::MatrixX2d &coordinates,
                            const Eigen::MatrixXd &descriptors,
+                           const uint64_t timestamp,
                            const cv::Mat &depth,
                            const float min_feature_distance,
                            const size_t &history)
 {
   const auto construct_kp =
-      [intr=intrinsics](const Eigen::Vector2d &coordinate, const Eigen::VectorXd &descriptor, const cv::Mat &depth) -> KeypointPtr
+      [intr=intrinsics, &timestamp](const Eigen::Vector2d &coordinate, const Eigen::VectorXd &descriptor, const cv::Mat &depth) -> KeypointPtr
   {
     // extract keypoint coordinate
     cv::Vec2d xy_norm;
@@ -46,7 +47,7 @@ PointTracker::addKeypoints(const Eigen::MatrixX2d &coordinates,
       v.setConstant(std::numeric_limits<double>::quiet_NaN());
     }
 
-    return std::make_shared<const Keypoint>(Keypoint{xy, v, descriptor});
+    return std::make_shared<const Keypoint>(Keypoint{timestamp, xy, v, descriptor});
   };
 
   assert(coordinates.rows()==descriptors.rows());

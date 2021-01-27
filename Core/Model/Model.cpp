@@ -131,6 +131,7 @@ tracker::KeypointPtr project_kp(const tracker::KeypointPtr &origin_kp, const Eig
 
   // project keypoint from origin frame (camera) to local model frame
   return  std::make_shared<tracker::Keypoint>(tracker::Keypoint{
+                            origin_kp->timestamp,
                             origin_kp->xy,
                             T * origin_kp->coordinate.transpose(),
                             origin_kp->descriptor});

@@ -8,6 +8,8 @@
 namespace tracker {
 
 struct Keypoint {
+  // time (ns)
+  uint64_t timestamp;
   // 2D coordinate in image plane
   cv::Point xy;
   // 3D coordinate in camera frame
@@ -29,7 +31,7 @@ public:
 
   const Tracks& getTracks() const;
 
-  void addKeypoints(const Eigen::MatrixX2d &coordinates, const Eigen::MatrixXd &descriptors, const cv::Mat &depth, const float min_feature_distance = {}, const size_t &history = {});
+  void addKeypoints(const Eigen::MatrixX2d &coordinates, const Eigen::MatrixXd &descriptors, const uint64_t timestamp, const cv::Mat &depth, const float min_feature_distance = {}, const size_t &history = {});
 
   cv::Mat drawTracks(const cv::Mat &image, const size_t length = {}) const;
 

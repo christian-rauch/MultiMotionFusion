@@ -259,7 +259,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
   TOCK("Keypoints");
 
   TICK("Point Matching");
-  tracker.addKeypoints(coordinates[0], descriptors[0], frame.depth, 0.7f, 30);
+  tracker.addKeypoints(coordinates[0], descriptors[0], frame.timestamp, frame.depth, 0.7f, 30);
   TOCK("Point Matching");
   cv::Mat img_tracks = tracker.drawTracks(frame.rgb, 20);
   cv::imshow("tracks", img_tracks);
