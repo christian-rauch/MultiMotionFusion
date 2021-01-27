@@ -523,7 +523,7 @@ tracker::Tracks Model::computeTrackProjection(const tracker::Tracks& tracks, con
   return ltracks;
 }
 
-void Model::initGlobalTracks(const tracker::Tracks& tracks) {
+void Model::initGlobalTracks(const tracker::Tracks& tracks, const Eigen::Isometry3f &initial_pose) {
   assert(poses.size()==0);
   assert(this->tracks.size()==0);
 
@@ -532,7 +532,7 @@ void Model::initGlobalTracks(const tracker::Tracks& tracks) {
     this->tracks[track] = std::make_shared<tracker::Track>(*track);
   }
 
-  poses.emplace_back().setIdentity();
+  poses.emplace_back(initial_pose);
 }
 
 void Model::updateTracks(const tracker::Tracks& tracks_add, const tracker::Tracks& tracks_remove) {
