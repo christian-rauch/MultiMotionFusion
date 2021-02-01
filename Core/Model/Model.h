@@ -217,6 +217,8 @@ class Model {
   //    return indexMap.getUnaryConfTex()->downloadTexture();
   //}
 
+  static void exportTracksPLY(const tracker::Tracks &tracks, const std::string &path, const Eigen::Isometry3f &pose = Eigen::Isometry3f::Identity());
+
   void exportTracksPLY(const std::string &export_dir, const Eigen::Isometry3f &global_pose) const;
 
   inline cv::Mat downloadVertexConfTexture() { return indexMap.getSplatVertexConfTex()->downloadTexture(); }

@@ -1164,23 +1164,19 @@ Model::SurfelMap Model::downloadMap() {
   return result;
 }
 
-void Model::exportTracksPLY(const std::string &export_dir, const Eigen::Isometry3f &global_pose) const {
-  // pre-multiply the exported tracks with the pose of the global model (id=0, static environment)
-  // this transforms object tracks (id>0) from the start of their trajectory to the end
-  const Eigen::Isometry3f Tp = global_pose * Eigen::Isometry3f(getPose()).inverse();
-
+void Model::exportTracksPLY(const tracker::Tracks &tracks, const std::string &path, const Eigen::Isometry3f &pose) {
   std::stringstream ss_hdr, ss_vrt, ss_edg;
 
   size_t vert_id = 0;
   size_t edge_id = 0;
   std::queue<size_t> edge_ids;
-  for (const auto &[track_camera, track_local] : tracks) {
+  for (const tracker::TrackPtr &track : tracks) {
     // clear FIFO buffer
     edge_ids = {};
-    for (const tracker::KeypointPtr &kp : *track_local) {
+    for (const tracker::KeypointPtr &kp : *track) {
       // add valid points
       if (kp!=nullptr && kp->coordinate.array().isFinite().all()) {
-        ss_vrt << (Tp.cast<double>() * kp->coordinate.transpose()).transpose();
+        ss_vrt << (pose.cast<double>() * kp->coordinate.transpose()).transpose();
         ss_vrt << std::endl;
         edge_ids.push(vert_id);
         vert_id++;
@@ -1214,11 +1210,24 @@ void Model::exportTracksPLY(const std::string &export_dir, const Eigen::Isometry
   ss_hdr << "end_header" << std::endl;
 
   std::ofstream file;
-  file.open(export_dir+"/tracks-"+std::to_string(getID())+".ply");
+  file.open(path);
   file << ss_hdr.rdbuf();
   file << ss_vrt.rdbuf();
   file << ss_edg.rdbuf();
   file.close();
+}
+
+void Model::exportTracksPLY(const std::string &export_dir, const Eigen::Isometry3f &global_pose) const {
+  // pre-multiply the exported tracks with the pose of the global model (id=0, static environment)
+  // this transforms object tracks (id>0) from the start of their trajectory to the end
+  const Eigen::Isometry3f Tp = global_pose * Eigen::Isometry3f(getPose()).inverse();
+
+  tracker::Tracks local_tracks;
+  for (const auto &[track_camera, track_local] : tracks) {
+    local_tracks.push_back(track_local);
+  }
+
+  exportTracksPLY(local_tracks, export_dir+"/tracks-"+std::to_string(getID())+".ply", Tp);
 }
 
 void Model::performFillIn(GPUTexture* rawRGB, GPUTexture* rawDepth, bool frameToFrameRGB, bool lost) {
