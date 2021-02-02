@@ -154,7 +154,7 @@ class Model {
   virtual void updateTracks(const tracker::Tracks& tracks_add = {}, const tracker::Tracks &tracks_remove = {});
 
   // re-estimate all model poses given the track subset
-  virtual void refineTrackSubset(const tracker::Tracks& tracks);
+  virtual void refineTrackSubset(const tracker::Tracks& tracks, const ModelPointer &parent, const size_t &history = std::numeric_limits<size_t>::infinity());
 
   // get the transformation between the last two point sets on model tracks
   virtual Eigen::Isometry3f getLastTrackTransform() const;

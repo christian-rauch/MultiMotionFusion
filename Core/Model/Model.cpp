@@ -561,7 +561,7 @@ void Model::updateTracks(const tracker::Tracks& tracks_add, const tracker::Track
 #endif
 }
 
-void Model::refineTrackSubset(const tracker::Tracks& tracks) {
+void Model::refineTrackSubset(const tracker::Tracks& tracks, const ModelPointer &parent, const size_t &history) {
   if (tracks.empty()) { return; }
 
   // apply RANSAC on every set of track segments
@@ -569,9 +569,13 @@ void Model::refineTrackSubset(const tracker::Tracks& tracks) {
   // this assumes that the 'tracks' are already associated to the model via segments
   RigidRANSAC rrs(10, 0.03f, 0.6f);
 
-  const size_t len = (*tracks.begin())->size();
+  const size_t len = std::min((*tracks.begin())->size(), history);
+  // branch index
+  const size_t end = parent->poses.size()-1;
+  // point to which estimate the poses of new object
+  const size_t start = end-len;
   poses.resize(len);
-  poses[0].setIdentity();
+  poses[0] = parent->poses.at(start);
 
   const size_t ntracks = tracks.size();
   for (size_t ik=0, jk=1; jk < len; jk++) {
@@ -580,10 +584,10 @@ void Model::refineTrackSubset(const tracker::Tracks& tracks) {
     p1s.resize(int(ntracks), Eigen::NoChange);
 
     int nvalid = 0;
-    for (size_t it=0; it<ntracks; it++) {
-      if ((*tracks[it])[ik] && (*tracks[it])[jk]) {
-        const Eigen::RowVector3d &p0 = (*tracks[it])[ik]->coordinate;
-        const Eigen::RowVector3d &p1 = (*tracks[it])[jk]->coordinate;
+    for (const tracker::TrackPtr &track : tracks) {
+      if ((*track)[start+ik] && (*track)[start+jk]) {
+        const Eigen::RowVector3d &p0 = track->at(start+ik)->coordinate;
+        const Eigen::RowVector3d &p1 = track->at(start+jk)->coordinate;
         if (p0.array().isFinite().all() && p1.array().isFinite().all()) {
           p0s.row(nvalid) = p0.cast<float>();
           p1s.row(nvalid) = p1.cast<float>();
