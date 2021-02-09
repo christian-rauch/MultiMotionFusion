@@ -1444,13 +1444,18 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     DenseCRF2D crf(next.cols, next.rows, int(numLabels));
 //      DCRF crf(next.cols, next.rows, int(numLabels));
 
+    size_t minhist = 2;
+
+    const double threshold = 0.005;
+
     // unary: Nmodels x Npixel
     Eigen::MatrixXf unary(numLabels, next.rows * next.cols);
     // error of unkown association
     unary.fill(std::numeric_limits<float>::infinity());
     int label = 0;
     for (const ModelPointer &model : models) {
-      const tracker::Tracks ltracks = model->computeTrackProjection(tracks, cfg.history);
+      // test all global tracks
+      const tracker::Tracks ltracks = model->computeTrackProjection(tracks, minhist);
 
 //        std::cout << "mdl " << model->getID() << ": " << ltracks.size() << std::endl;
 
@@ -1475,12 +1480,12 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
 //          errs[int(it)] = e;
 
-        unary(label, c1.y*next.cols + c1.x) = (e>0.02);
+        unary(label, c1.y*next.cols + c1.x) = (e>threshold);
 
         // TODO: this will determine the "new" unary only from the last "old" model in the list,
         //       we have to consider all active models
         if (allowNew) {
-          unary(numLabels-1, c1.y*next.cols + c1.x) = (e<0.02);
+          unary(numLabels-1, c1.y*next.cols + c1.x) = (e<threshold);
         }
       }
       label++;
