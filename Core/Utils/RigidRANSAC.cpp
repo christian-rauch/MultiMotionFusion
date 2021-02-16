@@ -12,18 +12,37 @@ RigidRANSAC::RigidRANSAC(int iterations, float inlier_threshold, float inlier_fr
 }
 
 Eigen::Isometry3f
-fit(const Eigen::MatrixX3f &p0, const Eigen::MatrixX3f &p1, const Eigen::VectorXf &weights = {})
+fit(const Eigen::MatrixX3f &p0, const Eigen::MatrixX3f &p1, const RigidRANSAC::VectorXb &mask = {})
 {
-  const Eigen::RowVector3f p0m = p0.colwise().mean();
-  const Eigen::RowVector3f p1m = p1.colwise().mean();
+  assert(mask.size() == 0 || mask.size() == p0.rows());
 
-  assert(weights.size() == 0 || weights.size() == p0.rows());
+  Eigen::MatrixX3f p0sel;
+  Eigen::MatrixX3f p1sel;
 
-  const Eigen::MatrixXf W = ((weights.size()==0) ? Eigen::VectorXf::Ones(p0.rows()) : weights).asDiagonal();
+  if(mask.size()==0) {
+    p0sel = p0;
+    p1sel = p1;
+  }
+  else {
+    // copy selected rows
+    const size_t nsel = mask.count();
+    p0sel.resize(nsel, Eigen::NoChange);
+    p1sel.resize(nsel, Eigen::NoChange);
+    for(size_t i=0, j=0; i<size_t(mask.size()); i++) {
+      if(mask[i]) {
+        p0sel.row(j) = p0.row(i);
+        p1sel.row(j) = p1.row(i);
+        j++;
+      }
+    }
+  }
+
+  const Eigen::RowVector3f p0m = p0sel.colwise().mean();
+  const Eigen::RowVector3f p1m = p1sel.colwise().mean();
 
   // least-squares optimisation of rigid transformation
   // find T_01 = (R_01,t_01) such that sum_i w_i * || (R_01 * p1_i - t_01) - p0_i ||^2 is minimised
-  const Eigen::Matrix3f A = ((p1.rowwise()-p1m).transpose() * W * (p0.rowwise()-p0m)).transpose();
+  const Eigen::Matrix3f A = ((p1sel.rowwise()-p1m).transpose() * (p0sel.rowwise()-p0m)).transpose();
 
   assert(A.array().isFinite().all());
 
@@ -58,7 +77,7 @@ RigidRANSAC::estimate(const Eigen::MatrixX3f &p0, const Eigen::MatrixX3f &p1, co
   Result result;
 
   // keep track of best model and its performance
-  result.transformation = fit(p0, p1, mask.cast<float>());
+  result.transformation = fit(p0, p1, mask);
   result.error = std::numeric_limits<float>::max();
 
   for(int it=0; it<iterations; it++) {
@@ -75,7 +94,7 @@ RigidRANSAC::estimate(const Eigen::MatrixX3f &p0, const Eigen::MatrixX3f &p1, co
 
     assert(weights.count()==Nparams);
 
-    const Eigen::Isometry3f transform = fit(p0, p1, weights.cast<float>());
+    const Eigen::Isometry3f transform = fit(p0, p1, weights);
     const Eigen::VectorXf distance = apply(transform, p0, p1);
 
     VectorXb inliers = (distance.array() < inlier_threshold);
@@ -86,7 +105,7 @@ RigidRANSAC::estimate(const Eigen::MatrixX3f &p0, const Eigen::MatrixX3f &p1, co
 
     if(Ninliers > inlier_fraction*N) {
       // potential model
-      const Eigen::Isometry3f Tall = fit(p0, p1, inliers.cast<float>());
+      const Eigen::Isometry3f Tall = fit(p0, p1, inliers);
       // mean error over inliers
       const float error = inliers.select(apply(Tall, p0, p1), 0).sum() / Ninliers;
       if(error < result.error) {
