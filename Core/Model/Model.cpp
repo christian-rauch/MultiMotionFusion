@@ -585,7 +585,7 @@ void Model::refineTrackSubset(const tracker::Tracks& tracks, const ModelPointer 
   // point to which estimate the poses of new object
   const size_t start = end-len+1;
   poses.resize(len);
-  poses[0] = parent->poses.at(start);
+  poses[0].setIdentity();
   if (isLoggingPoses()) {
     poseLog.push_back(parent->poseLog[start]);
   }
@@ -635,15 +635,14 @@ void Model::refineTrackSubset(const tracker::Tracks& tracks, const ModelPointer 
     ik = jk;
   }
 
-  // the new 'initial' pose is the pose at the end of the track
-  pose = poses.back().matrix();
-
-  // update tracks
-  for (const auto &[o_track, l_track] : this->tracks) {
-    for (size_t ik=0; ik<o_track->size(); ik++) {
-      (*l_track)[ik] = project_kp((*o_track)[ik], poses.at(ik).cast<double>());
-    }
+  // transform the pose trajectory such that the end (current time) is at origin
+  for (Eigen::Isometry3f &p : poses) {
+    p = poses.back().inverse() * p;
   }
+
+  // the new 'initial' pose is the pose at the end of the track
+  overridePose(poses.back().matrix()); // this should be close to identity
+
   // the 'poseLog' is extended later via 'pose', remove the last log again
   poseLog.pop_back();
 }
