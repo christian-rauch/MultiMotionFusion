@@ -1569,20 +1569,21 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     crf.addPairwiseGaussian(3, 3, new PottsCompatibility(weightSmoothness));
 
     // feature optical flow: x, y, vx, vy
-    Eigen::MatrixXf feature(7, next.rows * next.cols);
+//    Eigen::MatrixXf feature(7, next.rows * next.cols);
+    Eigen::MatrixXf feature(4, next.rows * next.cols);
     for (int u = 0; u < flow.rows; ++u) {
       for (int v = 0; v < flow.cols; ++v) {
         const int i = u * flow.cols + v;
         // coordinates
-        feature.col(i).x() = v / 80;
-        feature.col(i).y() = u / 80;
+        feature.col(i).x() = v / 40;
+        feature.col(i).y() = u / 40;
         // optical flow
         feature.col(i).z() = flow.at<cv::Point2f>(i).x * 10;
         feature.col(i).w() = flow.at<cv::Point2f>(i).y * 10;
         // RGB
-        feature.col(i)[4] = next.at<cv::Vec3b>(i)[0] / 13;
-        feature.col(i)[5] = next.at<cv::Vec3b>(i)[1] / 13;
-        feature.col(i)[6] = next.at<cv::Vec3b>(i)[2] / 13;
+//        feature.col(i)[4] = next.at<cv::Vec3b>(i)[0] / 13;
+//        feature.col(i)[5] = next.at<cv::Vec3b>(i)[1] / 13;
+//        feature.col(i)[6] = next.at<cv::Vec3b>(i)[2] / 13;
       }
     }
 
@@ -1622,7 +1623,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     constexpr float scale_weight = 1.0/(s*s);
 
     // TODO: make configureable
-    constexpr float new_model_size = 0.2f;
+    constexpr float new_model_size = 0.05f;
 
     // ModelData(t_id, t_modelListIterator, t_lowICP, t_lowConf, t_superPixelCount, t_avgConfidence);
     for (SegmentationResult::ModelData &mod : result.modelData) {
@@ -1635,7 +1636,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
       mod.depthStd = float(dstddev[0]);
     }
 
-    result.hasNewLabel = allowNew && float(cv::countNonZero(crf_segm)) / float(crf_segm.size().area()) > new_model_size;
+    result.hasNewLabel = allowNew && float(cv::countNonZero(crf_segm==nextModelID)) / float(crf_segm.size().area()) > new_model_size;
 
     if (!result.hasNewLabel) {
       // delete last, potentially new, model
