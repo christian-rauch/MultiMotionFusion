@@ -159,8 +159,11 @@ add_library(ransac STATIC "Utils/RigidRANSAC.cpp")
 target_link_libraries(ransac Eigen3::Eigen)
 
 add_executable(ransac_test tests/ransac_test.cpp "Utils/RigidRANSAC.cpp")
+add_executable(ransac_test_points tests/ransac_test_points.cpp "Utils/RigidRANSAC.cpp")
 
 target_link_libraries(ransac_test ransac)
+target_link_libraries(ransac_test_points ransac)
+
 
 set_target_properties(${PROJECT_NAME} PROPERTIES INTERFACE_LINK_LIBRARIES "")
 
