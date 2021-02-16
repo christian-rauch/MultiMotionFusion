@@ -564,6 +564,16 @@ void Model::updateTracks(const tracker::Tracks& tracks_add, const tracker::Track
 void Model::refineTrackSubset(const tracker::Tracks& tracks, const ModelPointer &parent, const size_t &history) {
   if (tracks.empty()) { return; }
 
+  // pose to 7D (px, py, pz, qx, qy, qz, qw)
+  auto pose_7d = [](const Eigen::Isometry3f &pose) -> Eigen::Matrix<float, 7, 1> {
+    Eigen::Matrix<float, 7, 1> p7d;
+    // x, y, z
+    p7d.head<3>() = pose.translation();
+    // x, y, z, w
+    p7d.tail<4>() << Eigen::Quaternionf(pose.rotation()).coeffs();
+    return p7d;
+  };
+
   // apply RANSAC on every set of track segments
   // model must have 60% of samples within 3cm error
   // this assumes that the 'tracks' are already associated to the model via segments
@@ -573,9 +583,12 @@ void Model::refineTrackSubset(const tracker::Tracks& tracks, const ModelPointer 
   // branch index
   const size_t end = parent->poses.size()-1;
   // point to which estimate the poses of new object
-  const size_t start = end-len;
+  const size_t start = end-len+1;
   poses.resize(len);
   poses[0] = parent->poses.at(start);
+  if (isLoggingPoses()) {
+    poseLog.push_back(parent->poseLog[start]);
+  }
 
   const size_t ntracks = tracks.size();
   for (size_t ik=0, jk=1; jk < len; jk++) {
@@ -584,8 +597,10 @@ void Model::refineTrackSubset(const tracker::Tracks& tracks, const ModelPointer 
     p1s.resize(int(ntracks), Eigen::NoChange);
 
     int nvalid = 0;
+    uint64_t t1 = 0; // timestamp
     for (const tracker::TrackPtr &track : tracks) {
       if ((*track)[start+ik] && (*track)[start+jk]) {
+        t1 = track->at(start+jk)->timestamp;
         const Eigen::RowVector3d &p0 = track->at(start+ik)->coordinate;
         const Eigen::RowVector3d &p1 = track->at(start+jk)->coordinate;
         if (p0.array().isFinite().all() && p1.array().isFinite().all()) {
@@ -601,6 +616,10 @@ void Model::refineTrackSubset(const tracker::Tracks& tracks, const ModelPointer 
     // skip to the next frame if there are not enough correspondences
     if (nvalid<3) {
       poses[jk] = poses.at(ik);
+      if (isLoggingPoses()) {
+        const Eigen::Isometry3f Two = Eigen::Isometry3f(parent->getPose()) * poses[jk].inverse();
+        poseLog.push_back({int64_t(t1), pose_7d(Two)});
+      }
       continue;
     }
 
@@ -608,6 +627,10 @@ void Model::refineTrackSubset(const tracker::Tracks& tracks, const ModelPointer 
     const Eigen::Isometry3f T_01 = rrs.estimate(p0s, p1s).transformation;
     assert(T_01.matrix().array().isFinite().all());
     poses[jk] = poses.at(ik) * T_01;
+    if (isLoggingPoses()) {
+      const Eigen::Isometry3f Two = Eigen::Isometry3f(parent->getPose()) * poses[jk].inverse();
+      poseLog.push_back({int64_t(t1), pose_7d(Two)});
+    }
 
     ik = jk;
   }
@@ -621,6 +644,8 @@ void Model::refineTrackSubset(const tracker::Tracks& tracks, const ModelPointer 
       (*l_track)[ik] = project_kp((*o_track)[ik], poses.at(ik).cast<double>());
     }
   }
+  // the 'poseLog' is extended later via 'pose', remove the last log again
+  poseLog.pop_back();
 }
 
 Eigen::Isometry3f Model::getLastTrackTransform() const {
