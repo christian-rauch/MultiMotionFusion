@@ -24,6 +24,10 @@ LiveLogReader::LiveLogReader(std::string file, bool flipColors) : LogReader(file
   std::cout << "Creating live capture... ";
   std::cout.flush();
 
+  // set default values
+  Resolution::setResolution(640, 480);
+  Intrinsics::setIntrinics(528, 528, 320, 240);
+
   asus = new OpenNI2Interface(Resolution::getInstance().width(), Resolution::getInstance().height());
 
   depthReadBuffer = cv::Mat(Resolution::getInstance().height(), Resolution::getInstance().width(), CV_16UC1);
