@@ -48,9 +48,7 @@ private:
   const std::string topic_depth;
   const std::string topic_camera_info;
 
-  // raw image messages
-  sensor_msgs::CompressedImage msg_colour;
-  sensor_msgs::CompressedImage msg_depth;
+  FrameData data;
 };
 
 #endif
