@@ -12,7 +12,8 @@ public:
                const std::string topic_colour,
                const std::string topic_depth,
                const std::string topic_camera_info,
-               const bool flipColors = false, const double scale = 1.);
+               const bool flipColors = false,
+               const cv::Size target_dimensions = {});
 
   ~RosBagReader();
 
@@ -39,9 +40,10 @@ private:
   rosbag::View topic_view;
   rosbag::View::iterator iter_msg;
 
-  const double scale;
-
-  const bool do_scale;
+  const cv::Size target_dimensions;
+  cv::Rect crop_roi;
+  std::function<void(cv::Mat &)> scale_colour;
+  std::function<void(cv::Mat &)> scale_depth;
 
   // topics
   const std::string topic_colour;
