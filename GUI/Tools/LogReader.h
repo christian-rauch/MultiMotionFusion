@@ -19,24 +19,16 @@
 #pragma once
 
 #include <string>
-#include <zlib.h>
-#include <poll.h>
-#include <Utils/Img.h>
+#include <Core/FrameData.h>
 #include <Utils/Resolution.h>
-#include "../../Core/FrameData.h"
-#include "../../Core/Utils/Intrinsics.h"
-
-#include "JPEGLoader.h"
+#include <Utils/Intrinsics.h>
 
 class LogReader {
  public:
   LogReader(std::string file, bool flipColors)
       : flipColors(flipColors),
         currentFrame(0),
-        file(file),
-        width(Resolution::getInstance().width()),
-        height(Resolution::getInstance().height()),
-        numPixels(width * height) {}
+        file(file) {}
 
   virtual ~LogReader() {}
 
@@ -60,7 +52,7 @@ class LogReader {
 
   virtual FrameData getFrameData() = 0;
 
-  virtual bool hasIntrinsics() const { return calibrationFile != ""; }
+  virtual bool hasIntrinsics() const { return !calibrationFile.empty(); }
   virtual std::string getIntinsicsFile() const { return calibrationFile; }
 
   virtual bool hasMasks() const { return hasMasksGT; }
@@ -78,8 +70,6 @@ class LogReader {
   int height;
   int numPixels;
 
-  std::string calibrationFile = "";
+  std::string calibrationFile = {};
   bool hasMasksGT = false;
-
-  JPEGLoader jpeg;
 };

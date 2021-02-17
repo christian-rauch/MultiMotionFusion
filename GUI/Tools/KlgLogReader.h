@@ -18,11 +18,10 @@
 
 #pragma once
 
-#include <Utils/Resolution.h>
-#include <Utils/Stopwatch.h>
 #include <pangolin/utils/file_utils.h>
 
 #include "LogReader.h"
+#include "JPEGLoader.h"
 
 #include <cassert>
 #include <zlib.h>
@@ -60,6 +59,8 @@ class KlgLogReader : public LogReader {
  private:
   void getCore();
   FrameData data;
+
+  JPEGLoader jpeg;
 
   cv::Mat depthDecompressionBuffer;
   cv::Mat rgbDecompressionBuffer;

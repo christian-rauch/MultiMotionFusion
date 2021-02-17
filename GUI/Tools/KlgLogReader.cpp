@@ -26,12 +26,17 @@ KlgLogReader::KlgLogReader(std::string file, bool flipColors) : LogReader(file, 
 
   currentFrame = 0;
 
+  // TODO: get image dimensions from the encoded colour or depth image
+  width = Resolution::getInstance().width();
+  height = Resolution::getInstance().height();
+  numPixels = width * height;
+
   if (!fread(&numFrames, sizeof(int32_t), 1, fp)) throw std::invalid_argument("Could not open log-file: " + file);
 
-  depthBuffer = cv::Mat(Resolution::getInstance().height(), Resolution::getInstance().width(), CV_16UC1);
-  rgbBuffer = cv::Mat(Resolution::getInstance().height(), Resolution::getInstance().width(), CV_8UC3);
-  depthDecompressionBuffer = cv::Mat(Resolution::getInstance().height(), Resolution::getInstance().width(), CV_16UC1);
-  rgbDecompressionBuffer = cv::Mat(Resolution::getInstance().height(), Resolution::getInstance().width(), CV_8UC3);
+  depthBuffer = cv::Mat(height, width, CV_16UC1);
+  rgbBuffer = cv::Mat(height, width, CV_8UC3);
+  depthDecompressionBuffer = cv::Mat(height, width, CV_16UC1);
+  rgbDecompressionBuffer = cv::Mat(height, width, CV_8UC3);
 
   std::cout << "Reading log file: " << file << " which has " << numFrames << " frames. " << std::endl;
 }

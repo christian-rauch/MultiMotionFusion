@@ -17,10 +17,6 @@
 
 #pragma once
 
-#include <Utils/Resolution.h>
-#include <Utils/Stopwatch.h>
-#include <pangolin/utils/file_utils.h>
-
 #include "LogReader.h"
 
 #include <cassert>
