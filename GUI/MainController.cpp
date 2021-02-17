@@ -114,11 +114,15 @@ MainController::MainController(int argc, char* argv[])
   float s = 1;
   Parse::get().arg(argc, argv, "-scale", s);
 
-  // Asus is default camera (might change later)
-  Resolution::setResolution(s*640, s*480);
-  Intrinsics::setIntrinics(s*528, s*528, s*320, s*240);
-
-  if (calibrationFile.length()) loadCalibration(calibrationFile);
+  if (!calibrationFile.empty()) {
+    // use provided intrinsics
+    loadCalibration(calibrationFile);
+  } else {
+    // use default intrinsics to initialise raw log readers
+    // Asus is default camera (might change later)
+    Resolution::setResolution(s*640, s*480);
+    Intrinsics::setIntrinics(s*528, s*528, s*320, s*240);
+  }
 
   bool logReaderReady = false;
 
@@ -186,7 +190,10 @@ MainController::MainController(int argc, char* argv[])
     good = ((LiveLogReader*)logReader.get())->asus->ok();
   }
 
-  if (logReader->hasIntrinsics() && !calibrationFile.length()) loadCalibration(logReader->getIntinsicsFile());
+  if (logReader->hasIntrinsics()) {
+    // use intrinsics file as provided by log
+    loadCalibration(logReader->getIntinsicsFile());
+  }
 
   if (Parse::get().arg(argc, argv, "-p", poseFile) > 0) {
     groundTruthOdometry = new GroundTruthOdometry(poseFile);
