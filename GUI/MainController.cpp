@@ -36,7 +36,7 @@
     -run    Run dataset immediately (otherwise start paused).
     -q      Quit when finished a log.
     -cal    Loads a camera calibration file specified as fx fy cx cy.
-    -scale  Scale images and intrinsics
+    -dim    scale and crop image to target dimension, given as string "<width>x<height>", e.g. "640x480"
     -p      Loads ground truth poses to use instead of estimated pose.
     -d      Cutoff distance for depth processing (default 5m).
     -i      Relative ICP/RGB tracking weight (default 10).
@@ -111,8 +111,8 @@ MainController::MainController(int argc, char* argv[])
   Parse::get().arg(argc, argv, "-cal", calibrationFile);
   if (calibrationFile.size()) calibrationFile = baseDir + calibrationFile;
 
-  float s = 1;
-  Parse::get().arg(argc, argv, "-scale", s);
+  std::string target_dim_str;
+  Parse::get().arg(argc, argv, "-dim", target_dim_str);
 
   if (!calibrationFile.empty()) {
     // use provided intrinsics
@@ -120,11 +120,36 @@ MainController::MainController(int argc, char* argv[])
   } else {
     // use default intrinsics to initialise raw log readers
     // Asus is default camera (might change later)
-    Resolution::setResolution(s*640, s*480);
-    Intrinsics::setIntrinics(s*528, s*528, s*320, s*240);
+    Resolution::setResolution(640, 480);
+    Intrinsics::setIntrinics(528, 528, 320, 240);
   }
 
   bool logReaderReady = false;
+
+  cv::Size target_dim;
+  if (!target_dim_str.empty()) {
+    // expected format: <w>x<H>
+    const std::string delim = "x";
+    const size_t pos = target_dim_str.find(delim);
+    bool valid_format = false;
+    if (pos != std::string::npos) {
+      try {
+        target_dim.width = std::stoi(target_dim_str.substr(0, pos));
+        target_dim.height = std::stoi(target_dim_str.substr(pos+delim.length(), std::string::npos));
+        valid_format = true;
+      } catch (const std::invalid_argument &e) {
+        if (std::strcmp(e.what(), "stoi")==0) {
+          valid_format = false;
+        }
+      }
+    }
+
+    if (!valid_format) {
+      // invalid format, ignore
+      target_dim = {};
+      std::cerr << "invalid target dimension format: '" << target_dim_str << "' (expected <W>x<H> with <W> and <H> as integers)" << std::endl;
+    }
+  }
 
   Parse::get().arg(argc, argv, "-l", logFile);
   if (logFile.length()) {
@@ -140,7 +165,8 @@ MainController::MainController(int argc, char* argv[])
                                                  topic_img_colour,
                                                  topic_img_depth,
                                                  topic_info_camera,
-                                                 Parse::get().arg(argc, argv, "-f", empty) > -1, s);
+                                                 Parse::get().arg(argc, argv, "-f", empty) > -1,
+                                                 target_dim);
 #endif
     } else {
       logReader = std::make_unique<PangolinReader>(logFile, Parse::get().arg(argc, argv, "-f", empty) > -1);
