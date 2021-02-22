@@ -174,7 +174,7 @@ void CoFusion::computeFeedbackBuffers() {
 }
 
 bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPose, const float weightMultiplier, const bool bootstrap) {
-  if (frame.rgb.empty() || frame.depth.empty()) {
+  if (frame.depth.empty() || frame.rgb.empty() || frame.timestamp < 0) {
     std::cerr << "invalid image data" << std::endl;
     return false;
   }
