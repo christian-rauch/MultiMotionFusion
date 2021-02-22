@@ -179,17 +179,17 @@ void RosBagReader::getNext() {
     }
   }
 
-  if (data.rgb.empty())
+  if (hasMore() && data.rgb.empty())
     throw std::runtime_error("no images on colour topic '" + topic_colour + "'");
 
-  if (data.depth.empty())
+  if (hasMore() && data.depth.empty())
     throw std::runtime_error("no images on depth topic '" + topic_depth + "'");
 
   // scale and crop images in place
-  if (scale_colour) {
+  if (scale_colour && !data.rgb.empty()) {
     scale_colour(data.rgb);
   }
-  if (scale_depth) {
+  if (scale_depth && !data.depth.empty()) {
     scale_depth(data.depth);
   }
 };
