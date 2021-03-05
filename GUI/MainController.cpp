@@ -89,6 +89,7 @@
                     2. "sparse": reprojection of sparse track keypoints
     -segm_sp_size   size (edge length in pixels) of super pixel (default: 16 pixel)
     -track_init     initialise ICP with transformation between track keypoints
+    -icp_refine     refine via ICP after initialisation (only considered if 'track_init' is set)
 
     -l             Processes a log-file (*.klg/pangolin/rosbag).
     -topic_colour  ROS topic for colour images (sensor_msgs/CompressedImage)
@@ -336,7 +337,9 @@ MainController::MainController(int argc, char* argv[])
   // TODO: make configurable
   odom_cfg.history = 10; // frames
 
-  odom_cfg.track_init = Parse::get().arg(argc, argv, "-track_init", empty) > -1;;
+  odom_cfg.track_init = Parse::get().arg(argc, argv, "-track_init", empty) > -1;
+  odom_cfg.icp_refine = Parse::get().arg(argc, argv, "-icp_refine", empty) > -1;
+
 
   gui->flipColors->Ref()->Set(logReader->flipColors);
   gui->rgbOnly->Ref()->Set(false);

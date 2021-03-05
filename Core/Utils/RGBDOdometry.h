@@ -53,6 +53,9 @@ struct OdometryConfig {
 
   // initialise ICP odometry with transformation from keypoint tracks
   bool track_init;
+
+  // refine via ICP after initialisation (only considered if 'track_init' is set)
+  bool icp_refine;
 };
 
 class RGBDOdometry {

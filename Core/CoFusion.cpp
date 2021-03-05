@@ -311,11 +311,24 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       // "global" tracks in image and camera space
       const tracker::Tracks &tracks = tracker.getTracks();
 
-      // initialise by track transformation
-      if (odom_cfg.track_init) {
-        for (auto model : models) {
-          const Eigen::Isometry3f Tinit = model->getLastTrackTransform();
-          model->overridePose((model->getPose()*Tinit).matrix());
+      TICK("odom");
+      // NOTE: each model will individually store a copy of the 'last' and 'next' feature maps and keypoints on GPU
+      // TODO: use one global store for the feature maps and keypoints for the current and last observed frame
+      for (auto model : models) {
+        // initialise by track transformation
+        if (odom_cfg.track_init) {
+          // transformation between keypoints in global camera frame
+          const Eigen::Isometry3f Tinit = model->getLastTrackTransform(/*globalModel*/);
+
+          Eigen::Matrix4f Tnew;
+          if (model->getID()==0) {
+            Tnew = model->getPose() * Tinit.matrix();
+          }
+          else {
+            Tnew = Tinit.matrix() * model->getPose();
+          }
+
+          model->overridePose(Tnew);
 
           if (!frameToFrameRGB) {
             model->combinedPredict(maxDepthProcessed, lastFrameRecovery ? 0 : tick, tick, timeDelta, ModelProjection::ACTIVE);
@@ -338,15 +351,17 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
             // TODO: warp previous depth and colour image to new initialised pose
             throw std::runtime_error("ICP initialisation not supported in frame-to-frame mode");
           }
-        }
-      }
+        } // track init
 
-      TICK("odom");
-      // NOTE: each model will individually store a copy of the 'last' and 'next' feature maps and keypoints on GPU
-      // TODO: use one global store for the feature maps and keypoints for the current and last observed frame
-      for (auto model : models) {
-        model->performTracking(frameToFrameRGB, rgbOnly, icpWeight, pyramid, fastOdom, so3, maxDepthProcessed, textures[GPUTexture::RGB],
-                               textures[GPUTexture::MASK], frame.timestamp, requiresFillIn(model), features, coordinates, descriptors);
+        if (!odom_cfg.track_init || (odom_cfg.track_init && odom_cfg.icp_refine)) {
+          // refine initial pose via ICP odometry
+          model->performTracking(frameToFrameRGB, rgbOnly, icpWeight, pyramid, fastOdom, so3, maxDepthProcessed, textures[GPUTexture::RGB],
+                                 textures[GPUTexture::MASK], frame.timestamp, requiresFillIn(model), features, coordinates, descriptors);
+        }
+        else {
+          // no refinement, use initial pose directly
+          model->appendPoses(Eigen::Isometry3f(model->getPose()));
+        }
 
         // update the pose of currently associated tracks without modifying the current set of tracks
         model->updateTrackPose();

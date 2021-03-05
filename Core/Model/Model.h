@@ -275,6 +275,8 @@ class Model {
   inline bool isLoggingPoses() const { return poseLog.capacity() > 0; }
   inline std::vector<PoseLogItem>& getPoseLog() { return poseLog; }
 
+  void appendPoses(const Eigen::Isometry3f& pose) { poses.push_back(pose); };
+
  protected:
   // Current pose
   Eigen::Matrix4f pose;
