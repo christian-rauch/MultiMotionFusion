@@ -1403,21 +1403,21 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
     TOCK("segm/opt_flow");
 
-//    // show flow
-//    std::vector<cv::Mat> flow_x_y;
-//    cv::split(flow, flow_x_y);
+    // show flow
+    std::vector<cv::Mat> flow_x_y;
+    cv::split(flow, flow_x_y);
 //    cv::imshow("flow vx", cv::abs(flow_x_y[0]));
 //    cv::imshow("flow vy", cv::abs(flow_x_y[1]));
 
-//    cv::Mat mag, ang;
-//    cv::cartToPolar(flow_x_y[0], flow_x_y[1], mag, ang);
-//    std::vector<cv::Mat_<uint8_t>> hsv(3, {mag.size(), 0});
-//    hsv[0] = ang * 180./M_PI_2;
-//    cv::normalize(mag, hsv[2], 0, 255, cv::NORM_MINMAX);
-//    cv::Mat flow_vis;
-//    cv::merge(hsv, flow_vis);
-//    cv::cvtColor(flow_vis, flow_vis, cv::COLOR_HSV2BGR);
-//    cv::imshow("flow_vis", flow_vis);
+    cv::Mat mag, ang;
+    cv::cartToPolar(flow_x_y[0], flow_x_y[1], mag, ang);
+    std::vector<cv::Mat_<uint8_t>> hsv(3, {mag.size(), 0});
+    hsv[0] = ang * 180./M_PI_2;
+    cv::normalize(mag, hsv[2], 0, 255, cv::NORM_MINMAX);
+    cv::Mat flow_vis;
+    cv::merge(hsv, flow_vis);
+    cv::cvtColor(flow_vis, flow_vis, cv::COLOR_HSV2BGR);
+    cv::imshow("flow_vis", flow_vis);
   } // prev
 
 //  if (!flow.empty()) {
