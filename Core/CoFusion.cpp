@@ -472,6 +472,10 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
                 cv::circle(segm_tracks_img, track->back()->xy, 3, cv::Scalar(c.b*255, c.g*255, c.r*255), cv::FILLED);
               }
             }
+            cv::Mat gprev;
+            cv::cvtColor(frame.rgb, gprev, cv::COLOR_RGB2GRAY);
+            cv::cvtColor(gprev, gprev, cv::COLOR_GRAY2BGR);
+            cv::addWeighted(gprev, 1, segm_tracks_img, 0.5, 0, segm_tracks_img);
             cv::imshow("segm tracks", segm_tracks_img);
           }
 
