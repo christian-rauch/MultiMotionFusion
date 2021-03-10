@@ -1399,7 +1399,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
     // prev, next, flow, pyr_scale, levels, winsize, iterations, poly_n, poly_sigma, flags
 //      cv::calcOpticalFlowFarneback(prev, next, uflow, 0.5, 3, 15, 3, 5, 1.2, 0);
-    cv::calcOpticalFlowFarneback(gprev, gnext, flow, 0.5, 3, s*25, 3, 5, 1.2, 0);
+    cv::calcOpticalFlowFarneback(gprev, gnext, flow, 0.5, 3, s*50, 3, 5, 1.2, 0);
 
     TOCK("segm/opt_flow");
 
@@ -1600,7 +1600,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
     crf.setUnaryEnergy(unary);
 
-    crf.addPairwiseGaussian(3, 3, new PottsCompatibility(weightSmoothness));
+    crf.addPairwiseGaussian(3, 3, new PottsCompatibility(4*weightSmoothness));
 
     // feature optical flow: x, y, vx, vy
 //    Eigen::MatrixXf feature(7, next.rows * next.cols);
