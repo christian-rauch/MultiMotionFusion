@@ -1453,6 +1453,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     // error of unkown association
     unary.fill(std::numeric_limits<float>::infinity());
     int label = 0;
+    std::list<tracker::TrackPtr> outlier_set(tracks.begin(), tracks.end());
     for (const ModelPointer &model : models) {
       // test all global tracks
       const tracker::Tracks ltracks = model->computeTrackProjection(tracks, minhist);
@@ -1476,22 +1477,52 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
         // ignore invalid 3D point distances
         if (std::isnan(e)) { continue; }
 
+        if (e > threshold) {
+          outlier_set.remove(tracks[it]);
+        }
+
         unary(label, c1.y*next.cols + c1.x) = e;
       }
       label++;
     }
 
-    // scale error in [0,1], 0: match, 1: mis-match
-    // current active models
-    const auto u_active = unary.topRows(models.size());
-    const auto valid = u_active.array().isFinite();
-    const auto err_active = (u_active.array() > threshold).cast<float>();
-    unary.topRows(models.size()) = valid.select(err_active, u_active);
-    // outlier class, potential new model
-    if (allowNew) {
-      // assume a track matches the outlier model if it does not match any other active model
-      const auto err_outlier = 1-err_active.colwise().all();
-      unary.row(numLabels-1) = valid.colwise().all().select(err_outlier, std::numeric_limits<float>::infinity());
+    constexpr bool norm01 = true;
+
+    if (norm01) {
+      // scale error in [0,1], 0: match, 1: mis-match
+      // current active models
+      const auto u_active = unary.topRows(models.size());
+      const auto valid = u_active.array().isFinite();
+      const auto err_active = (u_active.array() > threshold).cast<float>();
+      unary.topRows(models.size()) = valid.select(err_active, u_active);
+      // outlier class, potential new model
+      if (allowNew) {
+        // assume a track matches the outlier model if it does not match any other active model
+        const auto err_outlier = 1-err_active.colwise().all();
+        unary.row(numLabels-1) = valid.colwise().all().select(err_outlier, std::numeric_limits<float>::infinity());
+      }
+    }
+    else {
+      // use original metric error
+      // and determine outlier error by transformation estimation on outlier tracks
+      if (allowNew) {
+        // get transformation estimate from outlier set
+        const tracker::Tracks outlier_vec(outlier_set.begin(), outlier_set.end());
+        const Eigen::Isometry3f Toutlier = Model::getLastTrackTransform(outlier_vec);
+
+        // re-compute new projection error on this outlier tracks for outlier model
+        for (size_t it=0; it<outlier_vec.size(); it++) {
+          const auto kp0 = outlier_vec[it]->front();
+          const auto kp1 = outlier_vec[it]->back();
+          if (kp0==nullptr || kp1==nullptr) { continue; }
+
+          const double e = ((Toutlier.cast<double>().inverse() * kp0->coordinate.transpose()).transpose() - kp1->coordinate).norm();
+          if (std::isnan(e)) { continue; }
+
+          const cv::Point &c1 = s * kp1->xy;
+          unary(numLabels-1, c1.y*next.cols + c1.x) = e;
+        }
+      }
     }
 
 //      // set default projection error for outlier
