@@ -156,6 +156,8 @@ class Model {
   // re-estimate all model poses given the track subset
   virtual void refineTrackSubset(const tracker::Tracks& tracks, const ModelPointer &parent, const size_t &history = std::numeric_limits<size_t>::infinity());
 
+  static Eigen::Isometry3f getLastTrackTransform(const tracker::Tracks &tracks);
+
   // get the transformation between the last two point sets on model tracks
   virtual Eigen::Isometry3f getLastTrackTransform() const;
 
@@ -319,7 +321,7 @@ class Model {
   RGBDOdometry::KpData kp_data;
 
   // map of original to local projected tracks
-  std::map<const tracker::TrackCPtr, tracker::TrackPtr> tracks;
+  std::map<const tracker::TrackPtr, tracker::TrackPtr> tracks;
 
   // track projection error
   Eigen::MatrixXd track_pe;

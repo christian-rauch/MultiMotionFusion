@@ -647,16 +647,16 @@ void Model::refineTrackSubset(const tracker::Tracks& tracks, const ModelPointer 
   poseLog.pop_back();
 }
 
-Eigen::Isometry3f Model::getLastTrackTransform() const {
+Eigen::Isometry3f Model::getLastTrackTransform(const tracker::Tracks &tracks) {
   const size_t ntracks = tracks.size();
   Eigen::MatrixX3f p0s, p1s;
   p0s.resize(int(ntracks), Eigen::NoChange);
   p1s.resize(int(ntracks), Eigen::NoChange);
 
   int nvalid = 0;
-  for (const auto &[track_camera, track_local] : this->tracks) {
-    tracker::KeypointPtr kp0 = track_camera->end()[-2];
-    tracker::KeypointPtr kp1 = track_camera->end()[-1];
+  for (const tracker::TrackPtr &track : tracks) {
+    tracker::KeypointPtr kp0 = track->end()[-2];
+    tracker::KeypointPtr kp1 = track->end()[-1];
     if (kp0 && kp1) {
       const Eigen::RowVector3d &p0 = kp0->coordinate;
       const Eigen::RowVector3d &p1 = kp1->coordinate;
@@ -680,6 +680,15 @@ Eigen::Isometry3f Model::getLastTrackTransform() const {
   const Eigen::Isometry3f T_01 = rrs.estimate(p0s, p1s).transformation;
   assert(T_01.matrix().array().isFinite().all());
   return T_01;
+}
+
+Eigen::Isometry3f Model::getLastTrackTransform() const {
+  tracker::Tracks tracks;
+  for (const auto &[track_camera, track_local] : this->tracks) {
+    tracks.push_back(track_camera);
+  }
+
+  return Model::getLastTrackTransform(tracks);
 }
 
 float Model::computeFusionWeight(float weightMultiplier) const {
