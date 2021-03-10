@@ -1459,8 +1459,6 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
 //        std::cout << "mdl " << model->getID() << ": " << ltracks.size() << std::endl;
 
-//        Eigen::VectorXd errs(ltracks.size());
-
       for (size_t it=0; it<ltracks.size(); it++) {
         const auto kp0 = ltracks[it]->front();
         const auto kp1 = ltracks[it]->back();
@@ -1478,17 +1476,22 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
         // ignore invalid 3D point distances
         if (std::isnan(e)) { continue; }
 
-//          errs[int(it)] = e;
-
-        unary(label, c1.y*next.cols + c1.x) = (e>threshold);
-
-        // TODO: this will determine the "new" unary only from the last "old" model in the list,
-        //       we have to consider all active models
-        if (allowNew) {
-          unary(numLabels-1, c1.y*next.cols + c1.x) = (e<threshold);
-        }
+        unary(label, c1.y*next.cols + c1.x) = e;
       }
       label++;
+    }
+
+    // scale error in [0,1], 0: match, 1: mis-match
+    // current active models
+    const auto u_active = unary.topRows(models.size());
+    const auto valid = u_active.array().isFinite();
+    const auto err_active = (u_active.array() > threshold).cast<float>();
+    unary.topRows(models.size()) = valid.select(err_active, u_active);
+    // outlier class, potential new model
+    if (allowNew) {
+      // assume a track matches the outlier model if it does not match any other active model
+      const auto err_outlier = 1-err_active.colwise().all();
+      unary.row(numLabels-1) = valid.colwise().all().select(err_outlier, std::numeric_limits<float>::infinity());
     }
 
 //      // set default projection error for outlier
