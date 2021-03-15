@@ -60,6 +60,8 @@ struct SegmentationResult {
     unsigned short bottom = std::numeric_limits<unsigned short>::min();
     unsigned short left = std::numeric_limits<unsigned short>::max();
 
+    tracker::Tracks tracks_inlier;
+
     // Required for partially supported C++14 (in g++ 4.9.4)
     ModelData(unsigned t_id);
 

@@ -1440,6 +1440,14 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 //  } // flow
 
   if (!flow.empty()) {
+    for (ModelListIterator m = models.begin(); m != models.end(); m++) {
+      result.modelData.push_back({(*m)->getID(), m, {}, {}});
+    }
+
+    if (allowNew) {
+      result.modelData.push_back({nextModelID});
+    }
+
     TICK("segm/flowCRF");
     DenseCRF2D crf(next.cols, next.rows, int(numLabels));
 //      DCRF crf(next.cols, next.rows, int(numLabels));
@@ -1481,9 +1489,18 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
           outlier_set.remove(tracks[it]);
         }
 
+        if (e < threshold) {
+          result.modelData[label].tracks_inlier.push_back(tracks[it]);
+        }
+
         unary(label, c1.y*next.cols + c1.x) = e;
       }
       label++;
+    }
+
+    if (allowNew) {
+      // outlier tracks ar the outlier model's inlier tracks
+      result.modelData.back().tracks_inlier = {outlier_set.begin(), outlier_set.end()};
     }
 
     constexpr bool norm01 = true;
@@ -1624,14 +1641,6 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     crf.addPairwiseEnergy(feature, new PottsCompatibility(weightAppearance));
 
     const Eigen::VectorXi lbl = crf.map(int(crfIterations)).cast<int>();
-
-    for (ModelListIterator m = models.begin(); m != models.end(); m++) {
-      result.modelData.push_back({(*m)->getID(), m, {}, {}});
-    }
-
-    if (allowNew) {
-      result.modelData.push_back({nextModelID});
-    }
 
     // create segmentation at CRF resolution
     cv::Mat_<uint8_t> crf_segm(next.size(), 0);
