@@ -34,6 +34,7 @@
 #include <list>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <Utils/PointTracker.hpp>
+#include "Utils/RigidRANSAC.h"
 
 #include "Buffers.h"
 
@@ -156,7 +157,7 @@ class Model {
   // re-estimate all model poses given the track subset
   virtual void refineTrackSubset(const tracker::Tracks& tracks, const ModelPointer &parent, const size_t &history = std::numeric_limits<size_t>::infinity());
 
-  static Eigen::Isometry3f getLastTrackTransform(const tracker::Tracks &tracks);
+  static Eigen::Isometry3f getLastTrackTransform(const tracker::Tracks &tracks, const RigidRANSAC::Config &config = {10, 0.03f, 0.6f});
 
   // get the transformation between the last two point sets on model tracks
   virtual Eigen::Isometry3f getLastTrackTransform() const;

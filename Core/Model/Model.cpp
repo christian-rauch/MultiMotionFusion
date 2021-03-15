@@ -647,7 +647,8 @@ void Model::refineTrackSubset(const tracker::Tracks& tracks, const ModelPointer 
   poseLog.pop_back();
 }
 
-Eigen::Isometry3f Model::getLastTrackTransform(const tracker::Tracks &tracks) {
+Eigen::Isometry3f Model::getLastTrackTransform(const tracker::Tracks &tracks,
+                                               const RigidRANSAC::Config &config) {
   const size_t ntracks = tracks.size();
   Eigen::MatrixX3f p0s, p1s;
   p0s.resize(int(ntracks), Eigen::NoChange);
@@ -676,7 +677,7 @@ Eigen::Isometry3f Model::getLastTrackTransform(const tracker::Tracks &tracks) {
   }
 
   // least squares estimate
-  RigidRANSAC rrs(10, 0.03f, 0.6f);
+  RigidRANSAC rrs(config);
   const Eigen::Isometry3f T_01 = rrs.estimate(p0s, p1s).transformation;
   assert(T_01.matrix().array().isFinite().all());
   return T_01;
