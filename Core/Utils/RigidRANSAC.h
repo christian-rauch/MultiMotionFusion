@@ -7,6 +7,12 @@ class RigidRANSAC {
 public:
   typedef Eigen::Matrix<bool, Eigen::Dynamic, 1> VectorXb;
 
+  struct Config {
+    int iterations;
+    float inlier_threshold;
+    float inlier_fraction;
+  };
+
   struct Result {
     Eigen::Isometry3f transformation;
     float error;
@@ -15,12 +21,12 @@ public:
 
   RigidRANSAC(int iterations, float inlier_threshold, float inlier_fraction);
 
+  RigidRANSAC(const Config &config);
+
   virtual Result estimate(const Eigen::MatrixX3f &p0, const Eigen::MatrixX3f &p1, const VectorXb &mask = {});
 
 private:
   std::default_random_engine generator;
 
-  int iterations;
-  float inlier_threshold;
-  float inlier_fraction;
+  const Config cfg;
 };

@@ -5,10 +5,16 @@
 // minimum number of data points to fit model (3D rigid transform)
 static const int Nparams = 3;
 
-RigidRANSAC::RigidRANSAC(int iterations, float inlier_threshold, float inlier_fraction)
-  : iterations(iterations), inlier_threshold(inlier_threshold), inlier_fraction(inlier_fraction)
+RigidRANSAC::RigidRANSAC(int iterations, float inlier_threshold, float inlier_fraction) :
+  cfg({iterations, inlier_threshold, inlier_fraction})
 {
+  //
+}
 
+RigidRANSAC::RigidRANSAC(const Config &config) :
+  cfg(config)
+{
+  //
 }
 
 Eigen::Isometry3f
@@ -80,7 +86,7 @@ RigidRANSAC::estimate(const Eigen::MatrixX3f &p0, const Eigen::MatrixX3f &p1, co
   result.transformation = fit(p0, p1, mask);
   result.error = std::numeric_limits<float>::max();
 
-  for(int it=0; it<iterations; it++) {
+  for(int it=0; it<cfg.iterations; it++) {
     // random order of indices
     std::vector<Eigen::Index> idx;
     for (Eigen::Index i = 0; i < N; ++i) { idx.push_back(i); }
@@ -97,13 +103,13 @@ RigidRANSAC::estimate(const Eigen::MatrixX3f &p0, const Eigen::MatrixX3f &p1, co
     const Eigen::Isometry3f transform = fit(p0, p1, weights);
     const Eigen::VectorXf distance = apply(transform, p0, p1);
 
-    VectorXb inliers = (distance.array() < inlier_threshold);
+    VectorXb inliers = (distance.array() < cfg.inlier_threshold);
     if (mask.size()>0) {
       inliers = inliers.array() && mask.array();
     }
     const Eigen::Index Ninliers = inliers.count();
 
-    if(Ninliers > inlier_fraction*N) {
+    if(Ninliers > cfg.inlier_fraction*N) {
       // potential model
       const Eigen::Isometry3f Tall = fit(p0, p1, inliers);
       // mean error over inliers
