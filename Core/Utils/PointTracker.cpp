@@ -47,7 +47,7 @@ PointTracker::addKeypoints(const Eigen::MatrixX2d &coordinates,
       v.setConstant(std::numeric_limits<double>::quiet_NaN());
     }
 
-    return std::make_shared<const Keypoint>(Keypoint{timestamp, xy, v, descriptor});
+    return std::make_shared<Keypoint>(Keypoint{timestamp, xy, v, descriptor});
   };
 
   assert(coordinates.rows()==descriptors.rows());

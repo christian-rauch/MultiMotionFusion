@@ -18,7 +18,7 @@ struct Keypoint {
   Eigen::RowVectorXd descriptor;
 };
 
-typedef std::shared_ptr<const Keypoint> KeypointPtr;
+typedef std::shared_ptr<Keypoint> KeypointPtr;
 
 typedef std::vector<KeypointPtr> Track;
 typedef std::shared_ptr<Track> TrackPtr;
