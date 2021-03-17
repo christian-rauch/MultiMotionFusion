@@ -514,11 +514,26 @@ tracker::Tracks Model::computeTrackProjection(const tracker::Tracks& tracks, con
 
   const size_t len_vis = (length==0) ? poses.size() : std::min(length, poses.size());
 
+  // camera intrinsics
+  const Eigen::Array2d c(Intrinsics::getInstance().cx(), Intrinsics::getInstance().cy());
+  const Eigen::Array2d f(Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy());
+
   for (size_t it=0; it<tracks.size(); it++) {
     ltracks[it] = std::make_shared<tracker::Track>();
     for (size_t ip=poses.size()-len_vis; ip<poses.size(); ip++) {
       const size_t id = tracks[it]->size() - poses.size() + ip;
-      ltracks[it]->push_back(project_kp((*tracks[it])[id], poses.at(ip).cast<double>()));
+
+      // project 3D keypoints from previous frames into current frame
+      tracker::KeypointPtr kp = project_kp((*tracks[it])[id], (poses.at(ip)*Eigen::Isometry3f(pose.inverse())).cast<double>());
+
+      if (kp) {
+        // project onto 2D image plane
+        const Eigen::Array3d p3 = kp->coordinate;
+        const Eigen::Vector2i p2 = (c + (p3 / p3.z()).head<2>() * f).array().round().cast<int>();
+        kp->xy = {p2.x(), p2.y()};
+      }
+
+      ltracks[it]->push_back(kp);
     }
   }
 
