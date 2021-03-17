@@ -137,6 +137,10 @@ tracker::KeypointPtr project_kp(const tracker::KeypointPtr &origin_kp, const Eig
                             origin_kp->descriptor});
 };
 
+static bool point_inside(const cv::Point &point, const cv::Mat &img) {
+  return point.inside({{}, img.size()});
+}
+
 Model::Model(unsigned char id, float confidenceThresh, const OdometryConfig &odom_cfg, bool enableFillIn, bool enableErrorRecording, bool enablePoseLogging,
              MatchingType matchingType, float maxDepthThesh)
     : pose(Eigen::Matrix4f::Identity()),
@@ -538,6 +542,33 @@ tracker::Tracks Model::computeTrackProjection(const tracker::Tracks& tracks, con
   }
 
   return ltracks;
+}
+
+cv::Mat Model::drawLocalTracks2D(const tracker::Tracks &tracks, const cv::Mat &img) {
+  cv::Mat img_tracks;
+  cv::cvtColor(img, img_tracks, cv::COLOR_RGB2GRAY);
+  cv::cvtColor(img_tracks, img_tracks, cv::COLOR_GRAY2RGB);
+  std::uniform_real_distribution<double> u(0,1);
+  std::default_random_engine g;
+  size_t i = 0;
+  for (const tracker::TrackPtr &track : tracks) {
+    // unique colour
+    g.seed(i++);
+    const cv::viz::Color c(u(g)*255, u(g)*255, u(g)*255);
+    tracker::KeypointPtr prev_kp;
+    for (const tracker::KeypointPtr &kp : *track) {
+      if (kp && point_inside(kp->xy, img)) {
+        if (prev_kp && point_inside(prev_kp->xy, img)) {
+          cv::line(img_tracks, kp->xy, prev_kp->xy, c, 2);
+        }
+        else {
+          cv::circle(img_tracks, kp->xy, 2, c, cv::FILLED);
+        }
+      }
+      prev_kp = kp;
+    }
+  }
+  return img_tracks;
 }
 
 void Model::initGlobalTracks(const tracker::Tracks& tracks, const Eigen::Isometry3f &initial_pose) {
