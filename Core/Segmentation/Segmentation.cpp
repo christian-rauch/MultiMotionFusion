@@ -28,6 +28,8 @@
 
 #include "../Utils/SequentialRigidRANSAC.hpp"
 
+#include <opencv2/viz/types.hpp>
+
 //#include "DCRF.hpp"
 
 #ifdef SHOW_DEBUG_VISUALISATION
@@ -1383,6 +1385,42 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     return point.inside({{}, img.size()});
   };
 
+  auto drawTrackStartEnd = [](const tracker::Tracks &tracks, const cv::Mat &img, const std::string &name) {
+    cv::Mat img_tracks[2];
+    cv::cvtColor(img, img_tracks[0], cv::COLOR_RGB2GRAY);
+    cv::cvtColor(img_tracks[0], img_tracks[0], cv::COLOR_GRAY2RGB);
+    cv::cvtColor(img, img_tracks[1], cv::COLOR_RGB2GRAY);
+    cv::cvtColor(img_tracks[1], img_tracks[1], cv::COLOR_GRAY2RGB);
+
+    std::uniform_real_distribution<double> u(0,1);
+    std::default_random_engine g;
+    size_t i = 0;
+    for (const tracker::TrackPtr &track : tracks) {
+      // unique colour
+      g.seed(i++);
+      const cv::viz::Color c(u(g)*255, u(g)*255, u(g)*255);
+      if (track->front()) {
+        cv::circle(img_tracks[0], track->front()->xy, 2, c, cv::FILLED);
+      }
+      if (track->back()) {
+        cv::circle(img_tracks[1], track->back()->xy, 2, c, cv::FILLED);
+      }
+    }
+    cv::imshow(name+" START", img_tracks[0]);
+    cv::imshow(name+" END", img_tracks[1]);
+  };
+
+//  auto show_unary = [](const Eigen::VectorXf &unary, const cv::Size &size, const std::string &name) {
+//    cv::Mat_<float> errs(size, 0);
+//    for (int u = 0; u < size.height; ++u) {
+//      for (int v = 0; v < size.width; ++v) {
+//        const int i = u * size.width + v;
+//        errs.at<float>(u,v) = unary[i];
+//      }
+//    }
+//    cv::imshow(name, errs);
+//  };
+
   // scale
   constexpr double s = 0.25;
 //    constexpr double s = 1;
@@ -1486,7 +1524,16 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
       // test all global tracks
       const tracker::Tracks ltracks = model->computeTrackProjection(tracks, minhist);
 
+      Model::exportTracksPLY(ltracks, "/tmp/global-m"+std::to_string(model->getID())+".ply");
+      cv::imshow("model tracks (local) "+std::to_string(model->getID()), Model::drawLocalTracks2D(ltracks, frame.rgb));
+
+      drawTrackStartEnd(ltracks, frame.rgb, "m"+std::to_string(model->getID()));
+
 //        std::cout << "mdl " << model->getID() << ": " << ltracks.size() << std::endl;
+
+      cv::Mat track_err;
+      cv::cvtColor(frame.rgb, track_err, cv::COLOR_RGB2GRAY);
+      cv::cvtColor(track_err, track_err, cv::COLOR_GRAY2RGB);
 
       for (size_t it=0; it<ltracks.size(); it++) {
         const auto kp0 = ltracks[it]->front();
@@ -1521,20 +1568,33 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
         if (e > threshold) {
           outlier_set.remove(tracks[it]);
+          cv::circle(track_err, kp1->xy, 3, cv::Scalar(0, 0, 255), -1); // red
         }
 
         if (e < threshold) {
           result.modelData[label].tracks_inlier.push_back(tracks[it]);
+          cv::circle(track_err, kp1->xy, 3, cv::Scalar(255, 0, 0), -1); // blue
         }
 
         unary(label, c1.y*next.cols + c1.x) = e;
       }
       label++;
+      cv::imshow("track err "+std::to_string(model->getID()), track_err);
     }
 
     if (allowNew) {
       // outlier tracks ar the outlier model's inlier tracks
       result.modelData.back().tracks_inlier = {outlier_set.begin(), outlier_set.end()};
+
+      cv::Mat track_err;
+      cv::cvtColor(frame.rgb, track_err, cv::COLOR_RGB2GRAY);
+      cv::cvtColor(track_err, track_err, cv::COLOR_GRAY2RGB);
+      for (const tracker::TrackPtr &track : result.modelData.back().tracks_inlier) {
+        if (track->back()) {
+          cv::circle(track_err, track->back()->xy, 3, cv::Scalar(0, 0, 255), -1);
+        }
+      }
+      cv::imshow("outlier", track_err);
     }
 
     constexpr bool norm01 = true;
