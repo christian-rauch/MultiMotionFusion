@@ -27,6 +27,8 @@ typedef std::vector<TrackPtr> Tracks;
 
 class PointTracker {
 public:
+  PointTracker();
+
   PointTracker(const CameraModel &intrinsics);
 
   const Tracks& getTracks() const;
@@ -36,7 +38,7 @@ public:
   cv::Mat drawTracks(const cv::Mat &image, const size_t length = {}) const;
 
 private:
-  const CameraModel intrinsics;
+  CameraModel intrinsics;
 
   Tracks tracks;
 

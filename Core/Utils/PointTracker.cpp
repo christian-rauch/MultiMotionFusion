@@ -9,6 +9,11 @@
 
 namespace tracker {
 
+PointTracker::PointTracker()
+{
+  //
+}
+
 PointTracker::PointTracker(const CameraModel &intrinsics) : intrinsics(intrinsics)
 {
   //
