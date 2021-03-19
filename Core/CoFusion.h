@@ -333,7 +333,7 @@ class CoFusion {
   const std::shared_ptr<FeatureMatchesInterface> kp_predictor;
   const OdometryConfig odom_cfg;
 
-  tracker::PointTracker tracker;
+  std::array<tracker::PointTracker, RGBDOdometry::NUM_PYRS> tracker;
 
   motion::DenseMotionMetric dmm;
 

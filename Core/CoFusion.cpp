@@ -31,7 +31,6 @@ CoFusion::CoFusion(const int timeDelta, const int countThresh, const float errTh
                    Intrinsics::getInstance().cy(), Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), 0, {}),
       kp_predictor(new SuperPoint(keypoint_predictor_path)),
       odom_cfg(odom_cfg),
-      tracker({Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), Intrinsics::getInstance().cx(), Intrinsics::getInstance().cy()}),
       dmm({Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), Intrinsics::getInstance().cx(), Intrinsics::getInstance().cy()}, 20),
       ferns(500, depthCut * 1000, photoThresh),
       tick(1),
@@ -77,6 +76,11 @@ CoFusion::CoFusion(const int timeDelta, const int countThresh, const float errTh
 
   Stopwatch::getInstance().setCustomSignature(12431231);
 
+  const CameraModel cm(Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), Intrinsics::getInstance().cx(), Intrinsics::getInstance().cy());
+  for(int i=0; i<RGBDOdometry::NUM_PYRS; i++) {
+    tracker[i] = tracker::PointTracker(cm(i));
+  }
+
   std::cout << "Initialised Multi-Object Fusion. Each model can have up to " << Model::MAX_VERTICES
             << " surfel (TEXTURE_DIMENSION: " << Model::TEXTURE_DIMENSION << "x" << Model::TEXTURE_DIMENSION << ")." << std::endl;
 }
@@ -114,7 +118,7 @@ void CoFusion::preallocateModels(unsigned count) {
 }
 
 SegmentationResult CoFusion::performSegmentation(const FrameData& frame) {
-  return labelGenerator.performSegmentation(models, frame, getNextModelID(), spawnOffset >= modelSpawnOffset, tracker.getTracks(), dmm);
+  return labelGenerator.performSegmentation(models, frame, getNextModelID(), spawnOffset >= modelSpawnOffset, tracker[0].getTracks(), dmm);
 }
 
 void CoFusion::createTextures() {
@@ -259,10 +263,17 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
   TOCK("Keypoints");
 
   TICK("Point Matching");
-  tracker.addKeypoints(coordinates[0], descriptors[0], frame.timestamp, frame.depth, 0.7f, 30);
+  for(int i=0; i<RGBDOdometry::NUM_PYRS; i++) {
+    cv::Mat depth;
+    cv::resize(frame.depth, depth, cv::Size(frame.depth.cols >> i, frame.depth.rows >> i), 0, 0, cv::INTER_NEAREST);
+    tracker[i].addKeypoints(coordinates[i], descriptors[i], frame.timestamp, depth, 0.7f, 30);
+  }
   TOCK("Point Matching");
-  cv::Mat img_tracks = tracker.drawTracks(frame.rgb, 20);
-  cv::imshow("tracks", img_tracks);
+  for(int i=0; i<RGBDOdometry::NUM_PYRS; i++) {
+    cv::Mat img;
+    cv::resize(frame.rgb, img, cv::Size(frame.rgb.cols >> i, frame.rgb.rows >> i));
+    cv::imshow("tracks L"+std::to_string(i), tracker[i].drawTracks(img, 2));
+  }
   cv::waitKey(1);
 
   TICK("Preprocess");
@@ -298,7 +309,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
     }
 
     // assign all initial tracks in camera frame to global model
-    globalModel->initGlobalTracks(tracker.getTracks());
+    globalModel->initGlobalTracks(tracker[0].getTracks());
 
     dmm.addRGBD(textures[GPUTexture::RGB]->downloadTexture(), globalModel->getFrameOdometry().getCurrVmap(), globalModel->getFrameOdometry().getCurrNmap());
   } else {
@@ -309,7 +320,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       Model::generateCUDATextures(textures[GPUTexture::DEPTH_METRIC_FILTERED], textures[GPUTexture::MASK]);
 
       // "global" tracks in image and camera space
-      const tracker::Tracks &tracks = tracker.getTracks();
+      const tracker::Tracks &tracks = tracker[0].getTracks();
 
       TICK("odom");
       // NOTE: each model will individually store a copy of the 'last' and 'next' feature maps and keypoints on GPU
