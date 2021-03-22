@@ -1496,7 +1496,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
     enum error_metric_t {METRE, PIXEL};
 
-    constexpr error_metric_t metric = PIXEL;
+    constexpr error_metric_t metric = METRE;
 
     size_t minhist;
     double threshold;
