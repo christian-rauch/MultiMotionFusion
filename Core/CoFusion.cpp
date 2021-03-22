@@ -373,12 +373,6 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
           // no refinement, use initial pose directly
           model->appendPoses(Eigen::Isometry3f(model->getPose()));
         }
-
-        // update the pose of currently associated tracks without modifying the current set of tracks
-        model->updateTrackPose();
-
-        // update projection error
-        model->computeTrackProjectionError();
       }
       TOCK("odom");
 

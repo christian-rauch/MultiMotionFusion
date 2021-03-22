@@ -456,13 +456,6 @@ void Model::performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight,
   TOCK("odom - Model: " + std::to_string(id));
 }
 
-void Model::updateTrackPose() {
-  for (const auto &[o_track, l_track] : this->tracks) {
-    l_track->push_back(project_kp(o_track->back(), Eigen::Isometry3d(pose.cast<double>())));
-    assert(o_track->size()==l_track->size());
-  }
-}
-
 std::tuple<Eigen::MatrixXd, Model::MatrixXp2, Model::MatrixXp3>
 Model::computeTrackProjectionError(const tracker::Tracks &tracks) {
   // L2 distances of local points to previous point, Ntracks x Nimages
@@ -502,14 +495,6 @@ Model::computeTrackProjectionError(const tracker::Tracks &tracks) {
   } // tracks
 
   return {track_pe, track_xy, track_p};
-}
-
-void Model::computeTrackProjectionError() {
-  tracker::Tracks local_tracks;
-  for (const auto &[o_track, l_track] : this->tracks) {
-    local_tracks.push_back(l_track);
-  }
-  std::tie(track_pe, track_xy, track_p) = computeTrackProjectionError(local_tracks);
 }
 
 tracker::Tracks Model::computeTrackProjection(const tracker::Tracks& tracks, const size_t length) {
@@ -575,10 +560,7 @@ void Model::initGlobalTracks(const tracker::Tracks& tracks, const Eigen::Isometr
   assert(poses.size()==0);
   assert(this->tracks.size()==0);
 
-  for (const tracker::TrackPtr &track : tracks) {
-    // we have to do create a deep-copy of the track
-    this->tracks[track] = std::make_shared<tracker::Track>(*track);
-  }
+  this->tracks = {tracks.begin(), tracks.end()};
 
   poses.emplace_back(initial_pose);
 }
@@ -587,24 +569,12 @@ void Model::updateTracks(const tracker::Tracks& tracks_add, const tracker::Track
   assert(!poses.empty());
 
   // add new inlier tracks with new pose estimates
-  for (const tracker::TrackPtr &track : tracks_add) {
-    this->tracks[track] = std::make_shared<tracker::Track>(track->size(), nullptr);
-    for (size_t ip=0; ip<poses.size(); ip++) {
-      const size_t id = track->size() - poses.size() + ip;
-      (*this->tracks[track])[id] = project_kp((*track)[id], poses.at(ip).cast<double>());
-    }
-  }
+  this->tracks.insert(tracks_add.begin(), tracks_add.end());
 
   // remove outlier tracks
   for (const tracker::TrackPtr &track : tracks_remove) {
     this->tracks.erase(track);
   }
-
-#ifndef NDEBUG
-  for (const auto &[o_track, l_track] : this->tracks) {
-    assert(o_track->size()==l_track->size());
-  }
-#endif
 }
 
 void Model::refineTrackSubset(const tracker::Tracks& tracks, const ModelPointer &parent, const size_t &history) {
@@ -731,9 +701,7 @@ Eigen::Isometry3f Model::getLastTrackTransform(const tracker::Tracks &tracks,
 
 Eigen::Isometry3f Model::getLastTrackTransform() const {
   tracker::Tracks tracks;
-  for (const auto &[track_camera, track_local] : this->tracks) {
-    tracks.push_back(track_camera);
-  }
+  tracks = {this->tracks.begin(), this->tracks.end()};
 
   return Model::getLastTrackTransform(tracks);
 }
@@ -1307,8 +1275,12 @@ void Model::exportTracksPLY(const std::string &export_dir, const Eigen::Isometry
   const Eigen::Isometry3f Tp = global_pose * Eigen::Isometry3f(getPose()).inverse();
 
   tracker::Tracks local_tracks;
-  for (const auto &[track_camera, track_local] : tracks) {
-    local_tracks.push_back(track_local);
+  for (const tracker::TrackPtr &track : tracks) {
+    local_tracks.push_back(std::make_shared<tracker::Track>(poses.size(), nullptr));
+    const size_t offset = track->size() - poses.size();
+    for (size_t ip=0; ip<poses.size(); ip++) {
+      (*local_tracks.back())[ip] = project_kp((*track)[offset+ip], poses.at(ip).cast<double>());
+    }
   }
 
   exportTracksPLY(local_tracks, export_dir+"/tracks-"+std::to_string(getID())+".ply", Tp);

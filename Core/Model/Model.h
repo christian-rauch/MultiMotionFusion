@@ -35,6 +35,7 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <Utils/PointTracker.hpp>
 #include "Utils/RigidRANSAC.h"
+#include <unordered_set>
 
 #include "Buffers.h"
 
@@ -137,14 +138,9 @@ class Model {
                                float maxDepthProcessed, GPUTexture* rgb, GPUTexture *last_segmentation, int64_t logTimestamp, bool tryFillIn = false,
                                const std::vector<cv::Mat> &features = {}, const std::vector<Eigen::MatrixX2d> &kp_coordinates = {}, const std::vector<Eigen::MatrixXd> &kp_descriptors = {});
 
-  // update the pose of the last track segment in the local model frame
-  virtual void updateTrackPose();
-
   // compute the projection error between keypoints on the trajectory for segmentation
   static std::tuple<Eigen::MatrixXd, Model::MatrixXp2, Model::MatrixXp3>
   computeTrackProjectionError(const tracker::Tracks &tracks);
-
-  virtual void computeTrackProjectionError();
 
   virtual tracker::Tracks computeTrackProjection(const tracker::Tracks& tracks, const size_t length = 0);
 
@@ -323,8 +319,8 @@ class Model {
 
   RGBDOdometry::KpData kp_data;
 
-  // map of original to local projected tracks
-  std::map<const tracker::TrackPtr, tracker::TrackPtr> tracks;
+  // set of associated tracks in camera frame
+  std::unordered_set<tracker::TrackPtr> tracks;
 
   // track projection error
   Eigen::MatrixXd track_pe;
