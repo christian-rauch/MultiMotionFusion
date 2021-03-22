@@ -1508,15 +1508,16 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     if (norm01) {
       // scale error in [0,1], 0: match, 1: mis-match
       // current active models
-      const auto u_active = unary.topRows(models.size());
-      const auto valid = u_active.array().isFinite();
-      const auto err_active = (u_active.array() > threshold).cast<float>();
+      typedef Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic> MatrixXb;
+      const Eigen::MatrixXf u_active = unary.topRows(models.size());
+      const MatrixXb valid = u_active.array().isFinite();
+      const Eigen::MatrixXf err_active = (u_active.array() > threshold).cast<float>();
       unary.topRows(models.size()) = valid.select(err_active, u_active);
       // outlier class, potential new model
       if (allowNew) {
         // assume a track matches the outlier model if it does not match any other active model
-        const auto err_outlier = 1-err_active.colwise().all();
-        unary.row(numLabels-1) = valid.colwise().all().select(err_outlier, std::numeric_limits<float>::infinity());
+        const Eigen::RowVectorXf err_outlier = (u_active.array() < threshold).colwise().any().cast<float>();
+        unary.row(numLabels-1) = valid.colwise().all().select(err_outlier, unary.row(numLabels-1));
       }
     }
     else {
