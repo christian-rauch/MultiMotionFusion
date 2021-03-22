@@ -1379,6 +1379,10 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
   std::tie(next, std::ignore, std::ignore) = dmm.getRGBD(0);
   std::tie(prev, std::ignore, std::ignore) = dmm.getRGBD(-1);
 
+  auto point_inside = [](const cv::Point &point, const cv::Mat &img) -> bool {
+    return point.inside({{}, img.size()});
+  };
+
   // scale
   constexpr double s = 0.25;
 //    constexpr double s = 1;
@@ -1452,9 +1456,25 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     DenseCRF2D crf(next.cols, next.rows, int(numLabels));
 //      DCRF crf(next.cols, next.rows, int(numLabels));
 
-    size_t minhist = 2;
+    enum error_metric_t {METRE, PIXEL};
 
-    const double threshold = 0.005;
+    constexpr error_metric_t metric = PIXEL;
+
+    size_t minhist;
+    double threshold;
+
+    switch (metric) {
+    case METRE:
+      minhist = 2;
+      threshold = 0.005;
+      break;
+    case PIXEL:
+//      minhist = 20;
+//      threshold = 10;
+      minhist = 2;
+      threshold = 3;
+      break;
+    }
 
     // unary: Nmodels x Npixel
     Eigen::MatrixXf unary(numLabels, next.rows * next.cols);
@@ -1475,15 +1495,29 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
         // skip invalid pairs
         if (kp0==nullptr || kp1==nullptr) { continue; }
 
+        // skip keypoints without valid depth
+        if (!kp0->coordinate.array().isFinite().all() ||
+            !kp1->coordinate.array().isFinite().all() ||
+            !point_inside(kp0->xy, frame.rgb) ||
+            !point_inside(kp1->xy, frame.rgb))
+        {
+          outlier_set.remove(tracks[it]);
+          continue;
+        }
+
         const cv::Point &c1 = s * kp1->xy;
 
         // distance between current and start point of trajectory section
-        const Eigen::RowVector3d &p0 = kp0->coordinate;
-        const Eigen::RowVector3d &px = kp1->coordinate;
-        const double e = (p0-px).norm();
+        double e;
 
-        // ignore invalid 3D point distances
-        if (std::isnan(e)) { continue; }
+        switch (metric) {
+        case METRE:
+          e = (kp0->coordinate - kp1->coordinate).norm();
+          break;
+        case PIXEL:
+          e = cv::norm(cv::Point2f(kp0->xy) - cv::Point2f(kp1->xy));
+          break;
+        }
 
         if (e > threshold) {
           outlier_set.remove(tracks[it]);
@@ -1534,7 +1568,17 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
           const auto kp1 = outlier_vec[it]->back();
           if (kp0==nullptr || kp1==nullptr) { continue; }
 
-          const double e = ((Toutlier.cast<double>().inverse() * kp0->coordinate.transpose()).transpose() - kp1->coordinate).norm();
+          double e;
+
+          switch (metric) {
+          case METRE:
+            e = ((Toutlier.cast<double>().inverse() * kp0->coordinate.transpose()).transpose() - kp1->coordinate).norm();
+            break;
+          case PIXEL:
+            // TODO: 2D track projection
+            break;
+          }
+
           if (std::isnan(e)) { continue; }
 
           const cv::Point &c1 = s * kp1->xy;
