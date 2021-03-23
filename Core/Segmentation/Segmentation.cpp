@@ -1385,30 +1385,30 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     return point.inside({{}, img.size()});
   };
 
-  auto drawTrackStartEnd = [](const tracker::Tracks &tracks, const cv::Mat &img, const std::string &name) {
-    cv::Mat img_tracks[2];
-    cv::cvtColor(img, img_tracks[0], cv::COLOR_RGB2GRAY);
-    cv::cvtColor(img_tracks[0], img_tracks[0], cv::COLOR_GRAY2RGB);
-    cv::cvtColor(img, img_tracks[1], cv::COLOR_RGB2GRAY);
-    cv::cvtColor(img_tracks[1], img_tracks[1], cv::COLOR_GRAY2RGB);
+//  auto drawTrackStartEnd = [](const tracker::Tracks &tracks, const cv::Mat &img, const std::string &name) {
+//    cv::Mat img_tracks[2];
+//    cv::cvtColor(img, img_tracks[0], cv::COLOR_RGB2GRAY);
+//    cv::cvtColor(img_tracks[0], img_tracks[0], cv::COLOR_GRAY2RGB);
+//    cv::cvtColor(img, img_tracks[1], cv::COLOR_RGB2GRAY);
+//    cv::cvtColor(img_tracks[1], img_tracks[1], cv::COLOR_GRAY2RGB);
 
-    std::uniform_real_distribution<double> u(0,1);
-    std::default_random_engine g;
-    size_t i = 0;
-    for (const tracker::TrackPtr &track : tracks) {
-      // unique colour
-      g.seed(i++);
-      const cv::viz::Color c(u(g)*255, u(g)*255, u(g)*255);
-      if (track->front()) {
-        cv::circle(img_tracks[0], track->front()->xy, 2, c, cv::FILLED);
-      }
-      if (track->back()) {
-        cv::circle(img_tracks[1], track->back()->xy, 2, c, cv::FILLED);
-      }
-    }
-    cv::imshow(name+" START", img_tracks[0]);
-    cv::imshow(name+" END", img_tracks[1]);
-  };
+//    std::uniform_real_distribution<double> u(0,1);
+//    std::default_random_engine g;
+//    size_t i = 0;
+//    for (const tracker::TrackPtr &track : tracks) {
+//      // unique colour
+//      g.seed(i++);
+//      const cv::viz::Color c(u(g)*255, u(g)*255, u(g)*255);
+//      if (track->front()) {
+//        cv::circle(img_tracks[0], track->front()->xy, 2, c, cv::FILLED);
+//      }
+//      if (track->back()) {
+//        cv::circle(img_tracks[1], track->back()->xy, 2, c, cv::FILLED);
+//      }
+//    }
+//    cv::imshow(name+" START", img_tracks[0]);
+//    cv::imshow(name+" END", img_tracks[1]);
+//  };
 
 //  auto show_unary = [](const Eigen::VectorXf &unary, const cv::Size &size, const std::string &name) {
 //    cv::Mat_<float> errs(size, 0);
@@ -1526,10 +1526,10 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 //      const tracker::Tracks ltracks = model->computeTrackProjection(tracks, minhist);
       const tracker::Tracks ltracks = model->computeTrackProjectionStartEnd(tracks, minhist);
 
-      Model::exportTracksPLY(ltracks, "/tmp/global-m"+std::to_string(model->getID())+".ply");
+//      Model::exportTracksPLY(ltracks, "/tmp/global-m"+std::to_string(model->getID())+".ply");
       cv::imshow("model tracks (local) "+std::to_string(model->getID()), Model::drawLocalTracks2D(ltracks, frame.rgb));
 
-      drawTrackStartEnd(ltracks, frame.rgb, "m"+std::to_string(model->getID()));
+//      drawTrackStartEnd(ltracks, frame.rgb, "m"+std::to_string(model->getID()));
 
 //        std::cout << "mdl " << model->getID() << ": " << ltracks.size() << std::endl;
 
