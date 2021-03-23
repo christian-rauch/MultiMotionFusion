@@ -529,6 +529,60 @@ tracker::Tracks Model::computeTrackProjection(const tracker::Tracks& tracks, con
   return ltracks;
 }
 
+tracker::Tracks Model::computeTrackProjectionStartEnd(const tracker::Tracks& tracks, const size_t length) {
+  assert(!poses.empty());
+
+  const size_t len_vis = (length==0) ? poses.size() : std::min(length, poses.size());
+
+  // camera intrinsics
+  const Eigen::Array2d c(Intrinsics::getInstance().cx(), Intrinsics::getInstance().cy());
+  const Eigen::Array2d f(Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy());
+
+  // start and end points in camera frame
+  Eigen::MatrixX3d coordinates_start(tracks.size(), 3);
+  Eigen::MatrixX3d coordinates_end(tracks.size(), 3);
+  for (size_t i = 0; i < tracks.size(); ++i) {
+    const tracker::KeypointPtr &kp0 = (*(tracks[i]->end()-len_vis));
+    const tracker::KeypointPtr &kp1 = tracks[i]->back();
+    if (kp0!=nullptr) {
+      coordinates_start.row(i) = kp0->coordinate;
+    }
+    else {
+      coordinates_start.row(i).setConstant(std::numeric_limits<double>::signaling_NaN());
+    }
+
+    if (kp1!=nullptr) {
+      coordinates_end.row(i) = kp1->coordinate;
+    }
+    else {
+      coordinates_end.row(i).setConstant(std::numeric_limits<double>::signaling_NaN());
+    }
+  }
+
+  // transform to local model frames
+  coordinates_start = (((*(poses.end()-len_vis)*Eigen::Isometry3f(pose.inverse())).cast<double>()) * coordinates_start.transpose()).transpose();
+  coordinates_end = (((poses.back()*Eigen::Isometry3f(pose.inverse())).cast<double>()) * coordinates_end.transpose()).transpose();
+
+  Eigen::MatrixX2i x_start(tracks.size(), 2);
+  Eigen::MatrixX2i x_end(tracks.size(), 2);
+
+  auto proj = [&c,&f](const Eigen::MatrixX3d &points) -> Eigen::MatrixX2d {
+    return ((points.leftCols<2>().array().colwise() / points.rightCols<1>().array()).leftCols<2>().rowwise() * f.transpose()).rowwise() + c.transpose();
+  };
+
+  x_start = proj(coordinates_start).array().round().cast<int>();
+  x_end = proj(coordinates_end).array().round().cast<int>();
+
+  tracker::Tracks ltracks(tracks.size()); // local tracks
+  for (size_t i = 0; i < ltracks.size(); ++i) {
+    ltracks[i] = std::make_shared<tracker::Track>();
+    ltracks[i]->push_back(std::make_shared<tracker::Keypoint>(tracker::Keypoint{.xy = {x_start.row(i).x(), x_start.row(i).y()}, .coordinate=coordinates_start.row(i)}));
+    ltracks[i]->push_back(std::make_shared<tracker::Keypoint>(tracker::Keypoint{.xy = {x_end.row(i).x(), x_end.row(i).y()}, .coordinate=coordinates_end.row(i)}));
+  }
+
+  return ltracks;
+}
+
 cv::Mat Model::drawLocalTracks2D(const tracker::Tracks &tracks, const cv::Mat &img) {
   cv::Mat img_tracks;
   cv::cvtColor(img, img_tracks, cv::COLOR_RGB2GRAY);

@@ -1515,6 +1515,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     }
 
     // unary: Nmodels x Npixel
+    TICK("segm/unary");
     Eigen::MatrixXf unary(numLabels, next.rows * next.cols);
     // error of unkown association
     unary.fill(std::numeric_limits<float>::infinity());
@@ -1522,7 +1523,8 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     std::list<tracker::TrackPtr> outlier_set(tracks.begin(), tracks.end());
     for (const ModelPointer &model : models) {
       // test all global tracks
-      const tracker::Tracks ltracks = model->computeTrackProjection(tracks, minhist);
+//      const tracker::Tracks ltracks = model->computeTrackProjection(tracks, minhist);
+      const tracker::Tracks ltracks = model->computeTrackProjectionStartEnd(tracks, minhist);
 
       Model::exportTracksPLY(ltracks, "/tmp/global-m"+std::to_string(model->getID())+".ply");
       cv::imshow("model tracks (local) "+std::to_string(model->getID()), Model::drawLocalTracks2D(ltracks, frame.rgb));
@@ -1646,6 +1648,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
         }
       }
     }
+    TOCK("segm/unary");
 
 //      // set default projection error for outlier
 //      std::set<int> val_tracks;

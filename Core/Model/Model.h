@@ -144,6 +144,8 @@ class Model {
 
   virtual tracker::Tracks computeTrackProjection(const tracker::Tracks& tracks, const size_t length = 0);
 
+  virtual tracker::Tracks computeTrackProjectionStartEnd(const tracker::Tracks& tracks, const size_t length);
+
   static cv::Mat drawLocalTracks2D(const tracker::Tracks &tracks, const cv::Mat &img);
 
   // initialise the first set of tracks for the global model
