@@ -461,7 +461,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
           }
 
           // New model
-          std::cout << "Found new model " << newModelData.id << std::endl;
+          std::cout << "Found new model " << newModelData.id << " (" << frame.timestamp << ")" << std::endl;
 
           spawnObjectModel();
           spawnOffset = 0;
@@ -577,7 +577,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
         for (auto& m : segmentationResult.modelData) {  // FIXME reduce count somewhere
           if (m.superPixelCount <= 0 && (*m.modelListIterator)->incrementUnseenCount() > 0) {
             if (m.id != 0) {
-              std::cout << "Lost model " << m.id << std::endl;
+              std::cout << "Lost model " << m.id << " (" << frame.timestamp << ")" << std::endl;
               inactivateModel(m.modelListIterator);
             }
           }

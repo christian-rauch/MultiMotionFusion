@@ -48,6 +48,8 @@ typedef std::chrono::high_resolution_clock Clock;
 typedef std::chrono::system_clock::time_point TimePoint;
 #endif
 
+#define DBG_VIS_PROBS 0
+
 SegmentationResult::ModelData::ModelData(unsigned t_id) : id(t_id) {}
 
 SegmentationResult::ModelData::ModelData(unsigned t_id, ModelListIterator const& t_modelListIterator, cv::Mat const& t_lowICP,
@@ -1427,9 +1429,11 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
   cv::Mat flow;
   cv::Mat gnext, gprev;
+  typedef Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajorBit> MatrixXf_r;
+  MatrixXf_r magn_flow;
   if (!prev.empty()) {
-    cv::resize(next, next, s * cv::Point(next.size()));
-    cv::resize(prev, prev, s * cv::Point(prev.size()));
+    cv::resize(next, next, s * cv::Point(next.size()), 0, 0, cv::INTER_AREA);
+    cv::resize(prev, prev, s * cv::Point(prev.size()), 0, 0, cv::INTER_AREA);
 
     cv::cvtColor(next, gnext, cv::COLOR_BGR2GRAY);
     cv::cvtColor(prev, gprev, cv::COLOR_BGR2GRAY);
@@ -1451,8 +1455,9 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 //    cv::imshow("flow vx", cv::abs(flow_x_y[0]));
 //    cv::imshow("flow vy", cv::abs(flow_x_y[1]));
 
-    cv::Mat mag, ang;
+    cv::Mat_<float> mag, ang;
     cv::cartToPolar(flow_x_y[0], flow_x_y[1], mag, ang);
+    magn_flow = Eigen::Map<MatrixXf_r>((float*)mag.data, mag.rows, mag.cols);
     std::vector<cv::Mat_<uint8_t>> hsv(3, {mag.size(), 0});
     hsv[0] = ang * 180./M_PI_2;
     cv::normalize(mag, hsv[2], 0, 255, cv::NORM_MINMAX);
@@ -1460,6 +1465,9 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     cv::merge(hsv, flow_vis);
     cv::cvtColor(flow_vis, flow_vis, cv::COLOR_HSV2BGR);
     cv::imshow("flow_vis", flow_vis);
+    cv::Mat magn_scale;
+    mag.convertTo(magn_scale, CV_8UC1, 50);
+    cv::imshow("flow magn", magn_scale);
   } // prev
 
 //  if (!flow.empty()) {
@@ -1480,6 +1488,74 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 //    drawOptFlowMap(flow, cflow, 16, 1.5, cv::Scalar(0, 255, 0));
 //    cv::imshow("flow", cflow);
 //  } // flow
+
+  // dense reprojection error
+  std::vector<cv::Mat_<float>> proj_prob;
+  cv::Mat_<float> expsum(next.size(), 0);
+  constexpr float max_err = 0.03; // metre
+  cv::Mat_<bool> invalid(frame.depth.size(), false);
+  for (const ModelPointer &model : models) {
+    const cv::Mat depth = model->getVertexConfProjection()->downloadTexture();
+    std::vector<cv::Mat> xyz;
+    cv::split(depth, xyz);
+    // signed distance
+    cv::Mat_<float> dist = cv::abs(frame.depth - xyz[2]);
+#if DBG_VIS_PROBS
+    cv::imshow("err m"+std::to_string(model->getID()), dist);
+    cv::imwrite("/tmp/mmf/err_proj_m"+std::to_string(model->getID())+"_"+std::to_string(frame.timestamp)+".png", dist/0.1*256);
+#endif
+    // mark invalid depth
+    invalid |= (frame.depth<1e-6) & (xyz[2]<1e-6);
+
+    cv::resize(dist, dist, s * cv::Point(dist.size()), 0, 0, cv::INTER_NEAREST);
+
+    // truncate distance
+    cv::threshold(dist, dist, max_err, max_err, cv::THRESH_TRUNC);
+#if DBG_VIS_PROBS
+    cv::imshow("err trunc m"+std::to_string(model->getID()), dist/max_err);
+#endif
+
+    // turn high errors into low probabilities
+//    cv::exp(-1 * dist, dist);
+    cv::exp(-1 * (dist/max_err), dist); // scale for better visualisation
+    proj_prob.push_back(dist);
+
+    expsum += dist;
+  }
+
+  cv::resize(invalid, invalid, expsum.size(), 0, 0, cv::INTER_NEAREST);
+  // normalise exponential values to get probabilities
+  for (cv::Mat_<float> &m : proj_prob) {
+    m /= expsum;
+    // equal probability for uncertain data
+    m.setTo(1.0/proj_prob.size(), expsum==0);
+    // 0 probability for invalid data
+    m.setTo(0, invalid);
+  }
+
+#if DBG_VIS_PROBS
+  // MAP
+  {
+  cv::Mat_<uint8_t> map(next.size(), 0);
+  cv::Mat_<float> max_prob(next.size(), 0);
+  for (size_t w=0; w<proj_prob.size(); w++) {
+    map.setTo(w+1, proj_prob[w]>max_prob);
+    proj_prob[w].copyTo(max_prob, proj_prob[w]>max_prob);
+  }
+  cv::Mat_<cv::Vec3b> map_rgb(next.size(), cv::Vec3b());
+  std::uniform_real_distribution<double> unif(0,1);
+  std::default_random_engine g;
+  for (int u=0; u<next.rows; u++) {
+    for (int v=0; v<next.cols; v++) {
+      // unique colour per class ID
+      g.seed(map.at<uint8_t>(u,v)+1);
+      map_rgb.at<cv::Vec3b>(u,v) = cv::Vec3b(unif(g)*255, unif(g)*255, unif(g)*255);
+    }
+  }
+  cv::imshow("map proj", map*50);
+  cv::imshow("map proj colour", map_rgb);
+  }
+#endif
 
   if (!flow.empty()) {
     for (ModelListIterator m = models.begin(); m != models.end(); m++) {
@@ -1504,7 +1580,8 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     switch (metric) {
     case METRE:
       minhist = 2;
-      threshold = 0.005;
+//      threshold = 0.005;
+      threshold = 0.01; // 1cm/s
       break;
     case PIXEL:
 //      minhist = 20;
@@ -1537,6 +1614,8 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
       cv::cvtColor(frame.rgb, track_err, cv::COLOR_RGB2GRAY);
       cv::cvtColor(track_err, track_err, cv::COLOR_GRAY2RGB);
 
+      cv::Mat track_vel = track_err.clone();
+
       for (size_t it=0; it<ltracks.size(); it++) {
         const auto kp0 = ltracks[it]->front();
         const auto kp1 = ltracks[it]->back();
@@ -1559,29 +1638,38 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
         // distance between current and start point of trajectory section
         double e;
 
+        double v;
+
         switch (metric) {
         case METRE:
           e = (kp0->coordinate - kp1->coordinate).norm();
+          v = (kp1->coordinate - kp0->coordinate).norm() / ((kp1->timestamp - kp0->timestamp) * 1e-9);
           break;
         case PIXEL:
           e = cv::norm(cv::Point2f(kp0->xy) - cv::Point2f(kp1->xy));
+          v = cv::norm(cv::Point2f(kp1->xy) - cv::Point2f(kp0->xy)) / ((kp1->timestamp - kp0->timestamp) * 1e-9);
           break;
         }
 
-        if (e > threshold) {
+        if (v > threshold) {
           outlier_set.remove(tracks[it]);
           cv::circle(track_err, kp1->xy, 3, cv::Scalar(0, 0, 255), -1); // red
         }
 
-        if (e < threshold) {
+        if (v < threshold) {
           result.modelData[label].tracks_inlier.push_back(tracks[it]);
           cv::circle(track_err, kp1->xy, 3, cv::Scalar(255, 0, 0), -1); // blue
         }
+
+        // blue: low speed, red: high speed
+        const double vn = v / 0.05; // max. 5cm/s
+        cv::circle(track_vel, kp1->xy, 3, cv::Scalar((1-vn) * 255, 0, vn * 255), -1);
 
         unary(label, c1.y*next.cols + c1.x) = e;
       }
       label++;
       cv::imshow("track err "+std::to_string(model->getID()), track_err);
+      cv::imshow("track vel "+std::to_string(model->getID()), track_vel);
     }
 
     if (allowNew) {
@@ -1748,7 +1836,99 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
     crf.addPairwiseEnergy(feature, new PottsCompatibility(weightAppearance));
 
-    const Eigen::VectorXi lbl = crf.map(int(crfIterations)).cast<int>();
+    Eigen::MatrixXf prob_flow = crf.inference(crfIterations);
+
+    Eigen::MatrixXf prob_proj(numLabels, next.rows * next.cols);
+    for (size_t i=0; i<proj_prob.size(); i++) {
+      prob_proj.row(i) = Eigen::Map<Eigen::RowVectorXf>((float*)proj_prob[i].data, 1, next.rows * next.cols);
+    }
+
+    // remove uncertain projection probabilities
+    prob_proj = (prob_proj.array()<0.6).select(0, prob_proj);
+
+#if DBG_VIS_PROBS
+    {
+      for (int i=0; i<prob_flow.rows(); i++) {
+        Eigen::RowVectorXf v = prob_flow.row(i);
+        cv::Mat_<float> prob_flow_cv(next.rows, next.cols, v.data());
+        cv::imshow("prob flow m"+std::to_string(i), prob_flow_cv);
+        cv::imwrite("/tmp/mmf/prob_flow_m"+std::to_string(i)+"_"+std::to_string(frame.timestamp)+".png", prob_flow_cv*256);
+      }
+      for (int i=0; i<prob_proj.rows(); i++) {
+        Eigen::RowVectorXf v = prob_proj.row(i);
+        cv::Mat_<float> prob_proj_cv(next.rows, next.cols, v.data());
+        cv::imshow("prob proj m"+std::to_string(i), prob_proj_cv);
+        cv::imwrite("/tmp/mmf/prob_proj_m"+std::to_string(i)+"_"+std::to_string(frame.timestamp)+".png", prob_proj_cv*256);
+      }
+    }
+
+    {
+      cv::Mat_<float> magn_flow_cv(next.rows, next.cols, magn_flow.data());
+      cv::imwrite("/tmp/mmf/magn_flow_"+std::to_string(frame.timestamp)+".png", (magn_flow_cv/5.0)*256);
+    }
+#endif
+
+    const Eigen::RowVectorXf unary_flow_magn = Eigen::Map<Eigen::RowVectorXf>(magn_flow.data(), next.rows * next.cols);
+
+    // map flow range 0.2 ... 5 to probabilities 0 ... 1
+    const float flow_min = 0.2, flow_max = 5;
+    Eigen::RowVectorXf prob_flow_magn = ((unary_flow_magn.array() - flow_min) / (flow_max - flow_min)).cwiseMax(0).cwiseMin(1);
+
+#if DBG_VIS_PROBS
+    {
+      cv::Mat_<float> prob_flow_magn_cv(next.rows, next.cols, prob_flow_magn.data());
+      cv::imshow("prob flow magn", prob_flow_magn_cv);
+      cv::imwrite("/tmp/mmf/prob_flow_magn_"+std::to_string(frame.timestamp)+".png", prob_flow_magn_cv*256);
+    }
+#endif
+
+    Eigen::MatrixXf prob_flow2 = Eigen::MatrixXf::Zero(prob_flow.rows(), prob_flow.cols());
+    for (int l=0; l<int(prob_flow.rows()); l++) {
+      prob_flow2.row(l) = prob_flow.row(l).array() * prob_flow_magn.array();
+    }
+
+#if DBG_VIS_PROBS
+    {
+      for (int i=0; i<prob_flow.rows(); i++) {
+        Eigen::RowVectorXf v = prob_flow2.row(i);
+        cv::Mat_<float> prob_flow_cv(next.rows, next.cols, v.data());
+        cv::imshow("prob flow2 (*magn) m"+std::to_string(i), prob_flow_cv);
+        cv::imwrite("/tmp/mmf/prob_flow2_m"+std::to_string(i)+"_"+std::to_string(frame.timestamp)+".png", prob_flow_cv*256);
+      }
+    }
+#endif
+
+    prob_flow = prob_flow2;
+
+    const Eigen::MatrixXf prob = 1 - ((1 - prob_flow.array()) * (1 - prob_proj.array()));
+
+#if DBG_VIS_PROBS
+    // MAP (total)
+    {
+      cv::Mat_<uint8_t> map(next.size(), 0);
+      cv::Mat_<float> max_prob(next.size(), 0);
+      for (int w=0; w<prob.rows(); w++) {
+        Eigen::RowVectorXf v = prob.row(w);
+        cv::Mat_<float> prob_cv(next.rows, next.cols, v.data());
+        cv::imshow("prob m"+std::to_string(w), prob_cv);
+        cv::imwrite("/tmp/mmf/prob_m"+std::to_string(w)+"_"+std::to_string(frame.timestamp)+".png", prob_cv*256);
+
+        map.setTo(w+1, prob_cv>max_prob);
+        prob_cv.copyTo(max_prob, prob_cv>max_prob);
+      }
+
+      cv::imshow("map total", map*50);
+    }
+#endif
+
+    const Eigen::VectorXi lbl = crf.currentMap(prob).cast<int>();
+#if DBG_VIS_PROBS
+    {
+      Eigen::Matrix<uint8_t, 1, Eigen::Dynamic> lbl2 = lbl.cast<uint8_t>();
+      cv::Mat_<uint8_t> lbl_cv(next.rows, next.cols, lbl2.data());
+      cv::imwrite("/tmp/mmf/lbl_"+std::to_string(frame.timestamp)+".png", lbl_cv*50);
+    }
+#endif
 
     // create segmentation at CRF resolution
     cv::Mat_<uint8_t> crf_segm(next.size(), 0);
@@ -1762,6 +1942,9 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
         segm_count[uid]++;
       }
     }
+#if DBG_VIS_PROBS
+    cv::imwrite("/tmp/mmf/segm_"+std::to_string(frame.timestamp)+".png", 50*crf_segm);
+#endif
 
     // resize to original image dimension
     cv::resize(crf_segm, result.fullSegmentation, frame.rgb.size(), 0, 0, cv::INTER_NEAREST);
