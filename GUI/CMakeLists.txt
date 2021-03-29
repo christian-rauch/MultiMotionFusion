@@ -91,6 +91,7 @@ if(ROSBAG)
         ${rosbag_LIBRARIES}
         ${cv_bridge_LIBRARIES})
     add_definitions(-DROSBAG)
+    add_definitions(-DROSCOMMON)
 endif()
 
 include(GNUInstallDirs)
