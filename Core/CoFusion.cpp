@@ -29,7 +29,6 @@ CoFusion::CoFusion(const int timeDelta, const int countThresh, const float errTh
       inactiveModelListeners(0),
       modelToModel(Resolution::getInstance().width(), Resolution::getInstance().height(), Intrinsics::getInstance().cx(),
                    Intrinsics::getInstance().cy(), Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), 0, {}),
-      kp_predictor(new SuperPoint(keypoint_predictor_path)),
       odom_cfg(odom_cfg),
       dmm({Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), Intrinsics::getInstance().cx(), Intrinsics::getInstance().cy()}, 20),
       ferns(500, depthCut * 1000, photoThresh),
@@ -76,9 +75,15 @@ CoFusion::CoFusion(const int timeDelta, const int countThresh, const float errTh
 
   Stopwatch::getInstance().setCustomSignature(12431231);
 
-  const CameraModel cm(Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), Intrinsics::getInstance().cx(), Intrinsics::getInstance().cy());
-  for(int i=0; i<RGBDOdometry::NUM_PYRS; i++) {
-    tracker[i] = tracker::PointTracker(cm(i));
+  if (!keypoint_predictor_path.empty()) {
+    kp_predictor = std::make_shared<SuperPoint>(keypoint_predictor_path);
+  }
+
+  if (kp_predictor) {
+    const CameraModel cm(Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), Intrinsics::getInstance().cx(), Intrinsics::getInstance().cy());
+    for(int i=0; i<RGBDOdometry::NUM_PYRS; i++) {
+      tracker[i] = tracker::PointTracker(cm(i));
+    }
   }
 
   std::cout << "Initialised Multi-Object Fusion. Each model can have up to " << Model::MAX_VERTICES
@@ -192,15 +197,33 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
   // Upload RGB to graphics card
   textures[GPUTexture::RGB]->texture->Upload(frame.rgb.data, GL_RGB, GL_UNSIGNED_BYTE);
 
-  TICK("Keypoints");
-  // get normalised keypoints and feature maps
   std::vector<Eigen::MatrixX2d> coordinates(RGBDOdometry::NUM_PYRS);
   std::vector<Eigen::MatrixXd> descriptors(RGBDOdometry::NUM_PYRS);
   std::vector<cv::Mat> features(RGBDOdometry::NUM_PYRS);
-  for(int i=0; i<RGBDOdometry::NUM_PYRS; i++) {
-    cv::Mat img;
-    cv::resize(frame.rgb, img, cv::Size(frame.rgb.cols >> i, frame.rgb.rows >> i));
-    std::tie(features[i], coordinates[i], descriptors[i]) = kp_predictor->getFeatures(img);
+  if (kp_predictor) {
+    TICK("Keypoints");
+    // get normalised keypoints and feature maps
+    for(int i=0; i<RGBDOdometry::NUM_PYRS; i++) {
+      cv::Mat img;
+      cv::resize(frame.rgb, img, cv::Size(frame.rgb.cols >> i, frame.rgb.rows >> i));
+      std::tie(features[i], coordinates[i], descriptors[i]) = kp_predictor->getFeatures(img);
+    }
+
+    TOCK("Keypoints");
+
+    TICK("Point Matching");
+    for(int i=0; i<RGBDOdometry::NUM_PYRS; i++) {
+      cv::Mat depth;
+      cv::resize(frame.depth, depth, cv::Size(frame.depth.cols >> i, frame.depth.rows >> i), 0, 0, cv::INTER_NEAREST);
+      tracker[i].addKeypoints(coordinates[i], descriptors[i], frame.timestamp, depth, 0.7f, 30);
+    }
+    TOCK("Point Matching");
+    for(int i=0; i<RGBDOdometry::NUM_PYRS; i++) {
+      cv::Mat img;
+      cv::resize(frame.rgb, img, cv::Size(frame.rgb.cols >> i, frame.rgb.rows >> i));
+      cv::imshow("tracks L"+std::to_string(i), tracker[i].drawTracks(img, 2));
+    }
+    cv::waitKey(1);
   }
 
 #if 0 // draw Canny edges, Harris corners and Voronoi separation
@@ -251,30 +274,6 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
   } // pyramid levels
   cv::waitKey(1);
 #endif
-
-//  cv::Mat img;
-//  cv::cvtColor(frame.rgb, img, cv::COLOR_RGB2GRAY);
-//  for(int i=0; i<coordinates[0].rows(); i++) {
-//      cv::circle(img, cv::Point(coordinates[0](i,0)*img.cols, coordinates[0](i,1)*img.rows), 5, cv::Scalar(255));
-//  }
-//  cv::imshow("current observation", img);
-//  cv::waitKey(1);
-
-  TOCK("Keypoints");
-
-  TICK("Point Matching");
-  for(int i=0; i<RGBDOdometry::NUM_PYRS; i++) {
-    cv::Mat depth;
-    cv::resize(frame.depth, depth, cv::Size(frame.depth.cols >> i, frame.depth.rows >> i), 0, 0, cv::INTER_NEAREST);
-    tracker[i].addKeypoints(coordinates[i], descriptors[i], frame.timestamp, depth, 0.7f, 30);
-  }
-  TOCK("Point Matching");
-  for(int i=0; i<RGBDOdometry::NUM_PYRS; i++) {
-    cv::Mat img;
-    cv::resize(frame.rgb, img, cv::Size(frame.rgb.cols >> i, frame.rgb.rows >> i));
-    cv::imshow("tracks L"+std::to_string(i), tracker[i].drawTracks(img, 2));
-  }
-  cv::waitKey(1);
 
   TICK("Preprocess");
 

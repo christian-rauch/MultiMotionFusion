@@ -330,7 +330,7 @@ class CoFusion {
 
   RGBDOdometry modelToModel;
 
-  const std::shared_ptr<FeatureMatchesInterface> kp_predictor;
+  std::shared_ptr<FeatureMatchesInterface> kp_predictor;
   const OdometryConfig odom_cfg;
 
   std::array<tracker::PointTracker, RGBDOdometry::NUM_PYRS> tracker;
