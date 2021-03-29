@@ -8,6 +8,8 @@ message(STATUS "Evaluating GUI/CMAKE")
 
 option(ROSBAG "rosbag reader" ON)
 
+option(ROSNODE "read images live as ROS node" ON)
+
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}")
 find_package(ZLIB REQUIRED)
 find_package(CUDA REQUIRED)
@@ -18,10 +20,18 @@ find_package(JPEG REQUIRED)
 
 if(ROSBAG)
     find_package(rosbag REQUIRED)
-    find_package(cv_bridge REQUIRED)
     find_package(tf2 REQUIRED)
     find_package(tf2_msgs REQUIRED)
     find_package(tf2_eigen REQUIRED)
+endif()
+
+if(ROSNODE)
+    find_package(roscpp REQUIRED)
+    find_package(image_transport REQUIRED)
+endif()
+
+if(ROSBAG OR ROSNODE)
+    find_package(cv_bridge REQUIRED)
 endif()
 
 include_directories(${ZLIB_INCLUDE_DIR})
@@ -89,19 +99,38 @@ target_include_directories(CoFusionTools PUBLIC
 if(ROSBAG)
     target_include_directories(CoFusionTools PUBLIC
         ${rosbag_INCLUDE_DIRS}
-        ${cv_bridge_INCLUDE_DIRS}
         ${tf2_INCLUDE_DIRS}
         ${tf2_msgs_INCLUDE_DIRS}
         ${tf2_eigen_INCLUDE_DIRS}
     )
     target_link_libraries(CoFusionTools
         ${rosbag_LIBRARIES}
-        ${cv_bridge_LIBRARIES}
         ${tf2_LIBRARIES}
         ${tf2_msgs_LIBRARIES}
         ${tf2_eigen_LIBRARIES}
     )
     add_definitions(-DROSBAG)
+endif()
+
+if(ROSNODE)
+    target_include_directories(CoFusionTools PUBLIC
+        ${roscpp_INCLUDE_DIRS}
+        ${image_transport_INCLUDE_DIRS}
+    )
+    target_link_libraries(CoFusionTools
+        ${roscpp_LIBRARIES}
+        ${image_transport_LIBRARIES}
+    )
+    add_definitions(-DROSNODE)
+endif()
+
+if(ROSBAG OR ROSNODE)
+    target_include_directories(CoFusionTools PUBLIC
+        ${cv_bridge_INCLUDE_DIRS}
+    )
+    target_link_libraries(CoFusionTools
+        ${cv_bridge_LIBRARIES}
+    )
     add_definitions(-DROSCOMMON)
 endif()
 

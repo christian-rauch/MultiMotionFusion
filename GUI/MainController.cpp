@@ -24,6 +24,9 @@
 #ifdef ROSBAG
 #include "Tools/RosBagReader.hpp"
 #endif
+#ifdef ROSNODE
+#include "Tools/RosNodeReader.hpp"
+#endif
 
 #include <boost/algorithm/string.hpp>
 #include <GUI/Tools/PangolinReader.h>
@@ -76,6 +79,7 @@
     -topic_colour  ROS topic for colour images (sensor_msgs/CompressedImage)
     -topic_depth   ROS topic for depth images (sensor_msgs/CompressedImage)
     -topic_info    ROS topic for camera intrinsics (sensor_msgs/CameraInfo)
+    -ros           Run as ROS node
     -dir           Processes a log-directory (Default: Color####.png + Depth####.exr [+ Mask####.png])
     -depthdir      Separate depth directory (==dir if not provided)
     -maskdir       Separate mask directory (==dir if not provided)
@@ -211,6 +215,14 @@ MainController::MainController(int argc, char* argv[])
       logReaderReady = true;
     }
   }
+
+#ifdef ROSNODE
+  if (!logReader && Parse::get().arg(argc, argv, "-ros", empty) > 0) {
+    ros::init(argc, argv, "MMF");
+    logReader = std::make_unique<RosNodeReader>(15, Parse::get().arg(argc, argv, "-f", empty) > -1, target_dim);
+    logReaderReady = true;
+  }
+#endif
 
   if (!logReaderReady) {
     logReader = std::make_unique<LiveLogReader>(logFile, Parse::get().arg(argc, argv, "-f", empty) > -1);
