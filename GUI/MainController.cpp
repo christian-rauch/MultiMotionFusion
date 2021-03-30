@@ -26,6 +26,7 @@
 #endif
 #ifdef ROSNODE
 #include "Tools/RosNodeReader.hpp"
+#include "Tools/RosStatePublisher.hpp"
 #endif
 
 #include <boost/algorithm/string.hpp>
@@ -233,10 +234,17 @@ MainController::MainController(int argc, char* argv[])
   }
 
 #ifdef ROSNODE
-  if (!logReader && Parse::get().arg(argc, argv, "-ros", empty) > 0) {
+  if (Parse::get().arg(argc, argv, "-ros", empty) > 0) {
+    // instantiate MultiMotionFusion node
     ros::init(argc, argv, "MMF");
-    logReader = std::make_unique<RosNodeReader>(15, Parse::get().arg(argc, argv, "-f", empty) > -1, target_dim);
-    logReaderReady = true;
+    // read RGB-D data
+    if (!logReader) {
+      logReader = std::make_unique<RosNodeReader>(15, Parse::get().arg(argc, argv, "-f", empty) > -1, target_dim);
+      logReaderReady = true;
+    }
+    // publish segmentation and point clouds
+    // TODO: get camera frame from input images
+    state_publisher = std::make_unique<RosStatePublisher>("rgb_camera_link");
   }
 #endif
 
@@ -614,6 +622,14 @@ void MainController::run() {
       } while (std::filesystem::exists(viewPath + ".png"));
       gui->saveColorImage(viewPath);
     }
+
+#ifdef ROSNODE
+    if (state_publisher) {
+      const int64_t time = logReader->getFrameData().timestamp;
+      state_publisher->pub_segmentation(coFusion->getTextures()[GPUTexture::MASK_COLOR]->downloadTexture(), time);
+      state_publisher->pub_models(coFusion->getModels(), time);
+    }
+#endif
 
     TOCK("GUI");
   }

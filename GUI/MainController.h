@@ -25,6 +25,10 @@
 #include "Tools/GroundTruthOdometry.h"
 #include "Tools/LogReader.h"
 
+#ifdef ROSNODE
+#include "Tools/RosStatePublisher.hpp"
+#endif
+
 class MainController {
  public:
   MainController(int argc, char* argv[]);
@@ -58,6 +62,10 @@ class MainController {
   bool exportNormals;
   bool exportPoses;
   bool exportModels;
+
+#ifdef ROSNODE
+  std::unique_ptr<RosStatePublisher> state_publisher;
+#endif
 
   float confGlobalInit, confObjectInit, icpErrThresh, covThresh, photoThresh, fernThresh;
 
