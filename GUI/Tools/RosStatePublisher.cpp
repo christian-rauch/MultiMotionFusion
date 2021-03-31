@@ -4,6 +4,7 @@
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/PointCloud.h>
 #include <cv_bridge/cv_bridge.h>
+#include <eigen_conversions/eigen_msg.h>
 
 RosStatePublisher::RosStatePublisher(const std::string &camera_frame) :
     camera_frame(camera_frame)
@@ -30,6 +31,11 @@ void RosStatePublisher::pub_models(const ModelList &models, const int64_t timest
   hdr.frame_id = camera_frame;
   hdr.stamp.fromNSec(timestamp_ns);
 
+  // object poses (id>0) with respect to the global model (id=0)
+  std::vector<geometry_msgs::TransformStamped> pose_objects;
+
+  const Eigen::Isometry3f pose_global(models.front()->getPose());
+
   for (const ModelPointer &model : models) {
     const unsigned int id = model->getID();
 
@@ -38,12 +44,21 @@ void RosStatePublisher::pub_models(const ModelList &models, const int64_t timest
       pub_model_pc[id] = n->advertise<sensor_msgs::PointCloud>("model/dense/"+std::to_string(id), 1);
     }
 
+    const Eigen::Isometry3f T_0X(model->getPose());
+
+    if (id>0) {
+      const Eigen::Isometry3f aa = pose_global * T_0X.inverse();
+      geometry_msgs::TransformStamped pose;
+      tf::transformEigenToMsg(aa.cast<double>(), pose.transform);
+      pose.header = hdr;
+      pose.child_frame_id = "model/"+std::to_string(id);
+      pose_objects.push_back(pose);
+    }
+
     sensor_msgs::PointCloud point_cloud;
     point_cloud.header = hdr;
 
     const Model::SurfelMap surfelMap = model->downloadMap();
-
-    const Eigen::Isometry3f T_0X(model->getPose());
 
     for (unsigned int i = 0; i < surfelMap.numPoints; i++) {
       Eigen::Vector4f pos4 = (*surfelMap.data)[(i * 3) + 0];
@@ -61,6 +76,10 @@ void RosStatePublisher::pub_models(const ModelList &models, const int64_t timest
     }
 
     pub_model_pc[id].publish(point_cloud);
+  }
+
+  if (!pose_objects.empty()) {
+    broadcaster.sendTransform(pose_objects);
   }
 }
 

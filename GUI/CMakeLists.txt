@@ -32,6 +32,7 @@ if(ROSNODE)
     find_package(roscpp REQUIRED)
     find_package(image_transport REQUIRED)
     find_package(tf2_ros REQUIRED)
+    find_package(eigen_conversions REQUIRED)
 endif()
 
 if(ROSBAG OR ROSNODE)
@@ -122,11 +123,13 @@ if(ROSNODE)
         ${roscpp_INCLUDE_DIRS}
         ${image_transport_INCLUDE_DIRS}
         ${tf2_ros_INCLUDE_DIRS}
+        ${eigen_conversions_INCLUDE_DIRS}
     )
     target_link_libraries(CoFusionTools
         ${roscpp_LIBRARIES}
         ${image_transport_LIBRARIES}
         ${tf2_ros_LIBRARIES}
+        ${eigen_conversions_LIBRARIES}
     )
     add_definitions(-DROSNODE)
 endif()

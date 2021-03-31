@@ -3,6 +3,7 @@
 #include <memory>
 #include <ros/ros.h>
 #include <image_transport/image_transport.h>
+#include <tf2_ros/transform_broadcaster.h>
 #include <opencv2/core.hpp>
 #include <Model/Model.h>
 
@@ -18,6 +19,7 @@ public:
 private:
     std::unique_ptr<ros::NodeHandle> n;
     std::unique_ptr<image_transport::ImageTransport> it;
+    tf2_ros::TransformBroadcaster broadcaster;
 
     image_transport::Publisher pub_segm;
     std::unordered_map<uint8_t, ros::Publisher> pub_model_pc;
