@@ -2,9 +2,31 @@
 
 #include "RosStatePublisher.hpp"
 #include <sensor_msgs/Image.h>
-#include <sensor_msgs/PointCloud.h>
+#include <sensor_msgs/PointCloud2.h>
+#include <sensor_msgs/point_cloud2_iterator.h>
 #include <cv_bridge/cv_bridge.h>
 #include <eigen_conversions/eigen_msg.h>
+
+
+struct surfel_t {
+  // point
+  Eigen::Vector3f point;  // 96 bit
+  float confidence;       // 32 bit
+
+  // colour
+  float colour;       // 32 bit
+  uint32_t unused;    // 32 bit
+  float init_time;    // 32 bit
+  float timestamp;    // 32 bit
+
+  // normal
+  Eigen::Vector3f normal; // 96 bit
+  float radius;           // 32 bit
+};
+
+// a surfel should consume 3 x 4 x 32 = 384 bit = 48 byte
+static_assert(sizeof(surfel_t) == 48, "struct surfel_t is misaligned");
+
 
 RosStatePublisher::RosStatePublisher(const std::string &camera_frame) :
     camera_frame(camera_frame)
@@ -36,46 +58,70 @@ void RosStatePublisher::pub_models(const ModelList &models, const int64_t timest
 
   const Eigen::Isometry3f pose_global(models.front()->getPose());
 
+  // reserve a single point cloud and its modifier
+  sensor_msgs::PointCloud2 point_cloud;
+  point_cloud.header = hdr;
+  // unordered point cloud
+  point_cloud.height = 1;
+  point_cloud.is_dense = true;
+
+  sensor_msgs::PointCloud2Modifier pc_modifier(point_cloud);
+  pc_modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
+
   for (const ModelPointer &model : models) {
     const unsigned int id = model->getID();
 
     if (!pub_model_pc.count(id)) {
       // create new publisher for model
-      pub_model_pc[id] = n->advertise<sensor_msgs::PointCloud>("model/dense/"+std::to_string(id), 1);
+      pub_model_pc[id] = n->advertise<sensor_msgs::PointCloud2>("model/dense/"+std::to_string(id), 1);
     }
 
     const Eigen::Isometry3f T_0X(model->getPose());
 
     if (id>0) {
-      const Eigen::Isometry3f aa = pose_global * T_0X.inverse();
+      // object pose in camera frame
+      const Eigen::Isometry3f T_cm = pose_global * T_0X.inverse();
       geometry_msgs::TransformStamped pose;
-      tf::transformEigenToMsg(aa.cast<double>(), pose.transform);
+      tf::transformEigenToMsg(T_cm.cast<double>(), pose.transform);
       pose.header = hdr;
       pose.child_frame_id = "model/"+std::to_string(id);
       pose_objects.push_back(pose);
     }
 
-    sensor_msgs::PointCloud point_cloud;
-    point_cloud.header = hdr;
+    Model::SurfelMap surfel_map = model->downloadMap();
+    // memory layout of 'surfel_map.data'
+    // the surfel map is list of surfels consisting of point, colour, normal:
+    // (p0, c0, n0) | (p1, c1, n1) | ... | (pN, cN, nN)
 
-    const Model::SurfelMap surfelMap = model->downloadMap();
+    const surfel_t *surfel = reinterpret_cast<const surfel_t *>(surfel_map.data->data());
 
-    for (unsigned int i = 0; i < surfelMap.numPoints; i++) {
-      Eigen::Vector4f pos4 = (*surfelMap.data)[(i * 3) + 0];
-      const float conf = pos4[3];
+    surfel_map.countValid(model->getConfidenceThreshold());
 
-      if (conf > model->getConfidenceThreshold()) {
-        Eigen::Vector3f pos(pos4.x(), pos4.y(), pos4.z());
-        pos = T_0X.inverse() * pos;
-        geometry_msgs::Point32 p;
-        p.x = pos.x();
-        p.y = pos.y();
-        p.z = pos.z();
-        point_cloud.points.push_back(p);
+    point_cloud.width = surfel_map.numValid;
+    pc_modifier.resize(surfel_map.numValid);
+
+    // NOTE: iterators have to be created after resizing the point cloud
+    // create a single iterator for a 3D float vector
+    sensor_msgs::PointCloud2Iterator<Eigen::Vector3f>iter_xyz(point_cloud, "x");
+    sensor_msgs::PointCloud2Iterator<uint8_t>iter_rgb(point_cloud, "rgb");
+
+    for (unsigned int i = 0; i < surfel_map.numPoints; i++) {
+      if (surfel[i].confidence > model->getConfidenceThreshold()) {
+        *iter_xyz = T_0X.inverse() * surfel[i].point;
+        ++iter_xyz;
+
+        // NOTE: the 'float' colour is NOT the memory representation of an uint32,
+        //       that float value has to be cast to an integere explicitely
+        const uint32_t c = uint32_t(surfel[i].colour);
+
+        std::memcpy(&(*iter_rgb), &c, 3 * sizeof(uint8_t));
+        ++iter_rgb;
       }
     }
 
     pub_model_pc[id].publish(point_cloud);
+
+    pc_modifier.clear();
   }
 
   if (!pose_objects.empty()) {
