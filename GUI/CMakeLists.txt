@@ -60,7 +60,7 @@ target_link_libraries(CoFusion
                       ${JPEG_LIBRARIES}
 )
 
-add_library(CoFusionTools ${tools_srcs})
+add_library(CoFusionTools SHARED ${tools_srcs})
 
 target_link_libraries(CoFusionTools
                       ${ZLIB_LIBRARY}
@@ -95,6 +95,11 @@ if(ROSBAG)
 endif()
 
 include(GNUInstallDirs)
+
+install(TARGETS CoFusionTools
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
 
 # install executable
 install(TARGETS CoFusion EXPORT cofusion
