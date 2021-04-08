@@ -206,7 +206,7 @@ class GUI {
 
     enableMultiModel = new pangolin::Var<bool>("oi.Enable multiple models", true, true);
     enableSmartDelete = new pangolin::Var<bool>("oi.Delete deactivated", true, true);
-    minRelSizeNew = new pangolin::Var<float>("oi.Min-size new", 0.015, 0, 0.5);
+    minRelSizeNew = new pangolin::Var<float>("oi.Min-size new", 0.005, 0, 0.5);
     maxRelSizeNew = new pangolin::Var<float>("oi.Max-size new", 0.4, 0.3, 1);
     modelSpawnOffset = new pangolin::Var<unsigned>("oi.Model spawn offset", 22, 0, 100);
     modelDeactivateCnt = new pangolin::Var<unsigned>("oi.Deactivate model count", 10, 0, 100);
