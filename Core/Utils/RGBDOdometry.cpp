@@ -581,36 +581,38 @@ void RGBDOdometry::getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::M
   }
 
   // get keypoint correspondences
-  // compute on CPU (matches), upload to GPU (matchID)
-  for (int l = 0; l < NUM_PYRS; l++) {
-    cv::Mat mask;
-    cv::resize(last_segmentation==maskID, mask, cv::Size(lastDepth[l].cols(), lastDepth[l].rows()));
-    if (next_keypoints[l].rows()>0) {
-      matches[l] = pairwise_matches(last_keypoints[l], next_keypoints[l], mask);
-//      cv::Mat img_matches = draw_matches(last_keypoints[l], next_keypoints[l], matches[l], mask);
-//      cv::resize(img_matches, img_matches, cv::Size(2*lastDepth[0].cols()/2, lastDepth[0].rows()/2));
-//      cv::imshow("matches "+std::to_string(maskID)+" L"+std::to_string(l), img_matches);
-//      cv::waitKey(1);
+  if (!cfg.mode_est.empty()) {
+    // compute on CPU (matches), upload to GPU (matchID)
+    for (int l = 0; l < NUM_PYRS; l++) {
+      cv::Mat mask;
+      cv::resize(last_segmentation==maskID, mask, cv::Size(lastDepth[l].cols(), lastDepth[l].rows()));
+      if (next_keypoints[l].rows()>0) {
+        matches[l] = pairwise_matches(last_keypoints[l], next_keypoints[l], mask);
+  //      cv::Mat img_matches = draw_matches(last_keypoints[l], next_keypoints[l], matches[l], mask);
+  //      cv::resize(img_matches, img_matches, cv::Size(2*lastDepth[0].cols()/2, lastDepth[0].rows()/2));
+  //      cv::imshow("matches "+std::to_string(maskID)+" L"+std::to_string(l), img_matches);
+  //      cv::waitKey(1);
 
-      // upload indices
-      if (!matches[l].empty()) {
-        const int M = matches[l].size();
-        Eigen::Matrix<int, Eigen::Dynamic, 2, Eigen::RowMajor> matches_norm(M, 2);
-        for(int i=0; i<M; i++)
-            matches_norm.row(i) = Eigen::Vector2i{std::get<0>(matches[l][i]), std::get<1>(matches[l][i])};
-        upload_eigen(matches_norm, matchID[l]);
-        Eigen::RowVectorXf scores = Eigen::RowVectorXf::Zero(M);
-        for(int i=0; i<M; i++)
-          scores[i] = std::get<2>(matches[l][i]);
-        upload_eigen(scores, matchScores[l]);
-      }
-      else {
-        // reset old buffers
-        matchID[l].create(0,0);
-        matchScores[l].create(0,0);
-      }
-    } // next_keypoints
-  } // NUM_PYRS
+        // upload indices
+        if (!matches[l].empty()) {
+          const int M = matches[l].size();
+          Eigen::Matrix<int, Eigen::Dynamic, 2, Eigen::RowMajor> matches_norm(M, 2);
+          for(int i=0; i<M; i++)
+              matches_norm.row(i) = Eigen::Vector2i{std::get<0>(matches[l][i]), std::get<1>(matches[l][i])};
+          upload_eigen(matches_norm, matchID[l]);
+          Eigen::RowVectorXf scores = Eigen::RowVectorXf::Zero(M);
+          for(int i=0; i<M; i++)
+            scores[i] = std::get<2>(matches[l][i]);
+          upload_eigen(scores, matchScores[l]);
+        }
+        else {
+          // reset old buffers
+          matchID[l].create(0,0);
+          matchScores[l].create(0,0);
+        }
+      } // next_keypoints
+    } // NUM_PYRS
+  } // mode_est
 
   Eigen::Matrix<double, 3, 3, Eigen::RowMajor> resultR = Eigen::Matrix<double, 3, 3, Eigen::RowMajor>::Identity();
 
