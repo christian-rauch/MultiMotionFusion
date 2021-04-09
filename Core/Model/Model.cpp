@@ -1237,7 +1237,7 @@ ModelDetectionResult Model::detectInRegion(const FrameData& frame, const cv::Rec
   return ModelDetectionResult({Eigen::Matrix4f(), false});
 }
 
-Model::SurfelMap Model::downloadMap() {
+Model::SurfelMap Model::downloadMap() const {
   SurfelMap result;
   result.numPoints = count;
   result.data = std::make_unique<std::vector<Eigen::Vector4f>>();
@@ -1338,6 +1338,102 @@ void Model::exportTracksPLY(const std::string &export_dir, const Eigen::Isometry
   }
 
   exportTracksPLY(local_tracks, export_dir+"/tracks-"+std::to_string(getID())+".ply", Tp);
+}
+
+void Model::exportModelPLY(const std::string &export_dir, const Eigen::Isometry3f &global_pose) const {
+  const std::string filename = export_dir + "cloud-" + std::to_string(getID()) + ".ply";
+
+  // Open file
+  std::ofstream fs;
+  fs.open(filename.c_str());
+
+  SurfelMap surfelMap = downloadMap();
+  surfelMap.countValid(getConfidenceThreshold());
+
+  // Write header
+  fs << "ply";
+  fs << "\nformat "
+     << "binary_little_endian"
+     << " 1.0";
+
+  // Vertices
+  fs << "\nelement vertex " << surfelMap.numValid;
+  fs << "\nproperty float x"
+        "\nproperty float y"
+        "\nproperty float z";
+
+  fs << "\nproperty uchar red"
+        "\nproperty uchar green"
+        "\nproperty uchar blue";
+
+  fs << "\nproperty float nx"
+        "\nproperty float ny"
+        "\nproperty float nz";
+
+  fs << "\nproperty float radius";
+
+  fs << "\nend_header\n";
+
+  // Close the file
+  fs.close();
+
+  // Open file in binary appendable
+  std::ofstream fpout(filename.c_str(), std::ios::app | std::ios::binary);
+
+  Eigen::Matrix4f Tp = global_pose.matrix() * getPose().inverse();
+  Eigen::Matrix4f Tn = Tn.inverse().transpose();
+
+  for (unsigned int i = 0; i < surfelMap.numPoints; i++) {
+    Eigen::Vector4f pos = (*surfelMap.data)[(i * 3) + 0];
+    float conf = pos[3];
+    pos[3] = 1;
+
+    if (conf > getConfidenceThreshold()) {
+      Eigen::Vector4f col = (*surfelMap.data)[(i * 3) + 1];
+      Eigen::Vector4f nor = (*surfelMap.data)[(i * 3) + 2];
+      pos = Tp * pos;
+      float radius = nor[3];
+      nor[3] = 0;
+      nor = Tn * nor;
+
+      nor[0] *= -1;
+      nor[1] *= -1;
+      nor[2] *= -1;
+
+      float value;
+      memcpy(&value, &pos[0], sizeof(float));
+      fpout.write(reinterpret_cast<const char*>(&value), sizeof(float));
+
+      memcpy(&value, &pos[1], sizeof(float));
+      fpout.write(reinterpret_cast<const char*>(&value), sizeof(float));
+
+      memcpy(&value, &pos[2], sizeof(float));
+      fpout.write(reinterpret_cast<const char*>(&value), sizeof(float));
+
+      unsigned char r = int(col[0]) >> 16 & 0xFF;
+      unsigned char g = int(col[0]) >> 8 & 0xFF;
+      unsigned char b = int(col[0]) & 0xFF;
+
+      fpout.write(reinterpret_cast<const char*>(&r), sizeof(unsigned char));
+      fpout.write(reinterpret_cast<const char*>(&g), sizeof(unsigned char));
+      fpout.write(reinterpret_cast<const char*>(&b), sizeof(unsigned char));
+
+      memcpy(&value, &nor[0], sizeof(float));
+      fpout.write(reinterpret_cast<const char*>(&value), sizeof(float));
+
+      memcpy(&value, &nor[1], sizeof(float));
+      fpout.write(reinterpret_cast<const char*>(&value), sizeof(float));
+
+      memcpy(&value, &nor[2], sizeof(float));
+      fpout.write(reinterpret_cast<const char*>(&value), sizeof(float));
+
+      memcpy(&value, &radius, sizeof(float));
+      fpout.write(reinterpret_cast<const char*>(&value), sizeof(float));
+    }
+  }
+
+  // Close file
+  fs.close();
 }
 
 void Model::performFillIn(GPUTexture* rawRGB, GPUTexture* rawDepth, bool frameToFrameRGB, bool lost) {
