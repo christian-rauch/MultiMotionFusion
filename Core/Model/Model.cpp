@@ -1458,3 +1458,27 @@ void Model::performFillIn(GPUTexture* rawRGB, GPUTexture* rawDepth, bool frameTo
     TOCK("FillIn");
   }
 }
+
+void Model::store(const fs::path &model_db_path, const Eigen::Isometry3f &pose) {
+  const fs::path model_dir = model_db_path / fs::path("model-"+std::to_string(getID()));
+  if (!fs::exists(model_dir)) {
+    fs::create_directories(model_dir);
+  }
+
+  // project camera tracks to local frames
+  // this will only store the tracks (keypoint views) since the last model instantiation,
+  // i.e. this will override the keypoint views from the previous "sessions",
+  // so that only the latest keypoint views will be available for re-detection
+  // TODO: append to previous local tracks
+  tracks_local = computeTrackProjectionFirstFrame();
+
+  // export dense and sparse representation to disk
+  SurfelMap surfelMap = downloadMap();
+  surfelMap.countValid(getConfidenceThreshold());
+  exportModelPLY(surfelMap, getConfidenceThreshold(), model_dir / fs::path("cloud.ply"), pose);
+
+  exportTracksPLY(tracks_local, model_dir / fs::path("tracks.ply"), pose);
+
+  // clear camera tracks
+  tracks.clear();
+}

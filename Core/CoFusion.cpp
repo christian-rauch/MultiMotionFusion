@@ -845,8 +845,14 @@ ModelListIterator CoFusion::inactivateModel(const ModelListIterator& it) {
   std::cout << "Deactivating model " << m->getID() << " ... ";
   if (!enableSmartModelDelete || (m->lastCount() >= modelKeepMinSurfels && m->getConfidenceThreshold() > modelKeepConfThreshold)) {
     std::cout << "keeping data";
-    // [Removed code]
     inactiveModels.push_back(m);
+
+    // deactivate the model for later re-detection
+    const auto model_db_path = fs::path(exportDir) / "model_db";
+    if (!fs::exists(model_db_path)) {
+      fs::create_directories(model_db_path);
+    }
+    m->store(model_db_path, Eigen::Isometry3f{globalModel->getPose() * m->getPose().inverse()});
   } else {
     std::cout << "deleting data";
   }

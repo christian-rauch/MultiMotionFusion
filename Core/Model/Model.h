@@ -36,8 +36,11 @@
 #include <Utils/PointTracker.hpp>
 #include "Utils/RigidRANSAC.h"
 #include <unordered_set>
+#include <filesystem>
 
 #include "Buffers.h"
+
+namespace fs = std::filesystem;
 
 class IModelMatcher;
 class Model;
@@ -291,6 +294,10 @@ class Model {
     poses.push_back(pose);
   };
 
+  // ----- Save & Load ----- //
+
+  void store(const fs::path &model_db_path, const Eigen::Isometry3f &pose);
+
  protected:
   // Current pose
   Eigen::Matrix4f pose;
@@ -336,6 +343,10 @@ class Model {
 
   // set of associated tracks in camera frame
   std::unordered_set<tracker::TrackPtr> tracks;
+
+  // local projected tracks, stored when the model is deactivated
+  // keypoints are synchronous with poses
+  tracker::Tracks tracks_local;
 
   // track projection error
   Eigen::MatrixXd track_pe;
