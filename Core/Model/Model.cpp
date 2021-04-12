@@ -451,6 +451,7 @@ void Model::performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight,
   pose.topRightCorner(3, 1) = transObject;
   pose.topLeftCorner(3, 3) = rotObject;
 
+  timestamp_ns.push_back(logTimestamp);
   poses.emplace_back(pose);
 
   TOCK("odom - Model: " + std::to_string(id));
@@ -530,6 +531,7 @@ tracker::Tracks Model::computeTrackProjectionLastFrame(const tracker::Tracks& tr
 }
 
 tracker::Tracks Model::computeTrackProjectionFirstFrame() const {
+  assert(poses.size() == timestamp_ns.size());
   tracker::Tracks local_tracks;
   for (const tracker::TrackPtr &track : tracks) {
     local_tracks.push_back(std::make_shared<tracker::Track>(poses.size(), nullptr));
@@ -622,12 +624,13 @@ cv::Mat Model::drawLocalTracks2D(const tracker::Tracks &tracks, const cv::Mat &i
   return img_tracks;
 }
 
-void Model::initGlobalTracks(const tracker::Tracks& tracks, const Eigen::Isometry3f &initial_pose) {
+void Model::initGlobalTracks(const tracker::Tracks& tracks, const Eigen::Isometry3f &initial_pose, const uint64_t &time) {
   assert(poses.size()==0);
   assert(this->tracks.size()==0);
 
   this->tracks = {tracks.begin(), tracks.end()};
 
+  timestamp_ns.push_back(time);
   poses.emplace_back(initial_pose);
 }
 
@@ -666,10 +669,12 @@ void Model::refineTrackSubset(const tracker::Tracks& tracks, const ModelPointer 
   const size_t end = parent->poses.size()-1;
   // point to which estimate the poses of new object
   const size_t start = end-len+1;
+  timestamp_ns.resize(len);
   poses.resize(len);
   poses[0].setIdentity();
   if (isLoggingPoses()) {
     poseLog.push_back(parent->poseLog[start]);
+    timestamp_ns[0] = parent->poseLog[start].ts;
   }
 
   const size_t ntracks = tracks.size();
@@ -694,6 +699,8 @@ void Model::refineTrackSubset(const tracker::Tracks& tracks, const ModelPointer 
     }
     p0s.conservativeResize(nvalid, Eigen::NoChange);
     p1s.conservativeResize(nvalid, Eigen::NoChange);
+
+    timestamp_ns[jk] = t1;
 
     // skip to the next frame if there are not enough correspondences
     if (nvalid<3) {

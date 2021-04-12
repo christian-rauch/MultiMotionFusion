@@ -153,7 +153,7 @@ class Model {
   static cv::Mat drawLocalTracks2D(const tracker::Tracks &tracks, const cv::Mat &img);
 
   // initialise the first set of tracks for the global model
-  virtual void initGlobalTracks(const tracker::Tracks& tracks, const Eigen::Isometry3f &initial_pose = Eigen::Isometry3f::Identity());
+  virtual void initGlobalTracks(const tracker::Tracks& tracks, const Eigen::Isometry3f &initial_pose = Eigen::Isometry3f::Identity(), const uint64_t &time = 0);
 
   // add/remove tracks
   virtual void updateTracks(const tracker::Tracks& tracks_add = {}, const tracker::Tracks &tracks_remove = {});
@@ -286,13 +286,18 @@ class Model {
   inline bool isLoggingPoses() const { return poseLog.capacity() > 0; }
   inline std::vector<PoseLogItem>& getPoseLog() { return poseLog; }
 
-  void appendPoses(const Eigen::Isometry3f& pose) { poses.push_back(pose); };
+  void appendPoses(const Eigen::Isometry3f& pose, const uint64_t &time) {
+    timestamp_ns.push_back(time);
+    poses.push_back(pose);
+  };
 
  protected:
   // Current pose
   Eigen::Matrix4f pose;
   Eigen::Matrix4f lastPose;
 
+  // poses and timestamps in nanoseconds
+  std::vector<uint64_t> timestamp_ns;
   std::vector<Eigen::Isometry3f> poses;
 
   std::vector<PoseLogItem> poseLog;  // optional, for testing

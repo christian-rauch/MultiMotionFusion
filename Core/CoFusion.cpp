@@ -308,7 +308,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
     }
 
     // assign all initial tracks in camera frame to global model
-    globalModel->initGlobalTracks(tracker[0].getTracks());
+    globalModel->initGlobalTracks(tracker[0].getTracks(), Eigen::Isometry3f::Identity(), frame.timestamp);
 
     dmm.addRGBD(textures[GPUTexture::RGB]->downloadTexture(), globalModel->getFrameOdometry().getCurrVmap(), globalModel->getFrameOdometry().getCurrNmap());
   } else {
@@ -370,7 +370,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
         }
         else {
           // no refinement, use initial pose directly
-          model->appendPoses(Eigen::Isometry3f(model->getPose()));
+          model->appendPoses(Eigen::Isometry3f(model->getPose()), frame.timestamp);
         }
       }
       TOCK("odom");
