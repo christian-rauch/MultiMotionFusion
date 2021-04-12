@@ -394,7 +394,7 @@ class CoFusion {
   bool frameToFrameRGB;
   float depthCutoff;
   unsigned modelDeactivateCount = 10;   // deactivate model, when not seen for this many frames FIXME unused
-  unsigned modelKeepMinSurfels = 4000;  // Only keep deactivated models with at least this many surfels
+  unsigned modelKeepMinSurfels = 500;  // Only keep deactivated models with at least this many surfels
   float modelKeepConfThreshold = 0.3;
   unsigned modelSpawnOffset;  // setting
   unsigned spawnOffset = 0;   // current value
