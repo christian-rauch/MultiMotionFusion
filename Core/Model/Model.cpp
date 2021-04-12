@@ -1345,15 +1345,10 @@ void Model::exportTracksPLY(const std::string &export_dir, const Eigen::Isometry
   exportTracksPLY(local_tracks, export_dir+"/tracks-"+std::to_string(getID())+".ply", Tp);
 }
 
-void Model::exportModelPLY(const std::string &export_dir, const Eigen::Isometry3f &global_pose) const {
-  const std::string filename = export_dir + "cloud-" + std::to_string(getID()) + ".ply";
-
+void Model::exportModelPLY(const SurfelMap &surfels, const float conf_threshold, const std::string &path, const Eigen::Isometry3f &pose) {
   // Open file
   std::ofstream fs;
-  fs.open(filename.c_str());
-
-  SurfelMap surfelMap = downloadMap();
-  surfelMap.countValid(getConfidenceThreshold());
+  fs.open(path.c_str());
 
   // Write header
   fs << "ply";
@@ -1362,7 +1357,7 @@ void Model::exportModelPLY(const std::string &export_dir, const Eigen::Isometry3
      << " 1.0";
 
   // Vertices
-  fs << "\nelement vertex " << surfelMap.numValid;
+  fs << "\nelement vertex " << surfels.numValid;
   fs << "\nproperty float x"
         "\nproperty float y"
         "\nproperty float z";
@@ -1383,20 +1378,19 @@ void Model::exportModelPLY(const std::string &export_dir, const Eigen::Isometry3
   fs.close();
 
   // Open file in binary appendable
-  std::ofstream fpout(filename.c_str(), std::ios::app | std::ios::binary);
+  std::ofstream fpout(path.c_str(), std::ios::app | std::ios::binary);
 
-  Eigen::Matrix4f Tp = global_pose.matrix() * getPose().inverse();
   Eigen::Matrix4f Tn = Tn.inverse().transpose();
 
-  for (unsigned int i = 0; i < surfelMap.numPoints; i++) {
-    Eigen::Vector4f pos = (*surfelMap.data)[(i * 3) + 0];
+  for (unsigned int i = 0; i < surfels.numPoints; i++) {
+    Eigen::Vector4f pos = (*surfels.data)[(i * 3) + 0];
     float conf = pos[3];
     pos[3] = 1;
 
-    if (conf > getConfidenceThreshold()) {
-      Eigen::Vector4f col = (*surfelMap.data)[(i * 3) + 1];
-      Eigen::Vector4f nor = (*surfelMap.data)[(i * 3) + 2];
-      pos = Tp * pos;
+    if (conf > conf_threshold) {
+      Eigen::Vector4f col = (*surfels.data)[(i * 3) + 1];
+      Eigen::Vector4f nor = (*surfels.data)[(i * 3) + 2];
+      pos = pose * pos;
       float radius = nor[3];
       nor[3] = 0;
       nor = Tn * nor;
@@ -1439,6 +1433,13 @@ void Model::exportModelPLY(const std::string &export_dir, const Eigen::Isometry3
 
   // Close file
   fs.close();
+}
+
+void Model::exportModelPLY(const std::string &export_dir, const Eigen::Isometry3f &global_pose) const {
+  SurfelMap surfelMap = downloadMap();
+  surfelMap.countValid(getConfidenceThreshold());
+
+  exportModelPLY(surfelMap, getConfidenceThreshold(), export_dir + "cloud-"+std::to_string(getID())+".ply", Eigen::Isometry3f(global_pose.matrix() * getPose().inverse()));
 }
 
 void Model::performFillIn(GPUTexture* rawRGB, GPUTexture* rawDepth, bool frameToFrameRGB, bool lost) {

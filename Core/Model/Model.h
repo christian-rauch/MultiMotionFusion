@@ -228,6 +228,8 @@ class Model {
 
   void exportTracksPLY(const std::string &export_dir, const Eigen::Isometry3f &global_pose) const;
 
+  static void exportModelPLY(const SurfelMap &surfels, const float conf_threshold, const std::string &path, const Eigen::Isometry3f &pose = Eigen::Isometry3f::Identity());
+
   void exportModelPLY(const std::string &export_dir, const Eigen::Isometry3f &global_pose) const;
 
   inline cv::Mat downloadVertexConfTexture() { return indexMap.getSplatVertexConfTex()->downloadTexture(); }
