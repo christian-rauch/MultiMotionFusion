@@ -497,7 +497,7 @@ Model::computeTrackProjectionError(const tracker::Tracks &tracks) {
   return {track_pe, track_xy, track_p};
 }
 
-tracker::Tracks Model::computeTrackProjection(const tracker::Tracks& tracks, const size_t length) {
+tracker::Tracks Model::computeTrackProjectionLastFrame(const tracker::Tracks& tracks, const size_t length) const {
   assert(!poses.empty());
   tracker::Tracks ltracks(tracks.size()); // local tracks
 
@@ -527,6 +527,18 @@ tracker::Tracks Model::computeTrackProjection(const tracker::Tracks& tracks, con
   }
 
   return ltracks;
+}
+
+tracker::Tracks Model::computeTrackProjectionFirstFrame() const {
+  tracker::Tracks local_tracks;
+  for (const tracker::TrackPtr &track : tracks) {
+    local_tracks.push_back(std::make_shared<tracker::Track>(poses.size(), nullptr));
+    const size_t offset = track->size() - poses.size();
+    for (size_t ip=0; ip<poses.size(); ip++) {
+      (*local_tracks.back())[ip] = project_kp((*track)[offset+ip], poses.at(ip).cast<double>());
+    }
+  }
+  return local_tracks;
 }
 
 tracker::Tracks Model::computeTrackProjectionStartEnd(const tracker::Tracks& tracks, const size_t length) {
@@ -1328,14 +1340,7 @@ void Model::exportTracksPLY(const std::string &export_dir, const Eigen::Isometry
   // this transforms object tracks (id>0) from the start of their trajectory to the end
   const Eigen::Isometry3f Tp = global_pose * Eigen::Isometry3f(getPose()).inverse();
 
-  tracker::Tracks local_tracks;
-  for (const tracker::TrackPtr &track : tracks) {
-    local_tracks.push_back(std::make_shared<tracker::Track>(poses.size(), nullptr));
-    const size_t offset = track->size() - poses.size();
-    for (size_t ip=0; ip<poses.size(); ip++) {
-      (*local_tracks.back())[ip] = project_kp((*track)[offset+ip], poses.at(ip).cast<double>());
-    }
-  }
+  const tracker::Tracks local_tracks = computeTrackProjectionFirstFrame();
 
   exportTracksPLY(local_tracks, export_dir+"/tracks-"+std::to_string(getID())+".ply", Tp);
 }

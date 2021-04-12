@@ -142,7 +142,11 @@ class Model {
   static std::tuple<Eigen::MatrixXd, Model::MatrixXp2, Model::MatrixXp3>
   computeTrackProjectionError(const tracker::Tracks &tracks);
 
-  virtual tracker::Tracks computeTrackProjection(const tracker::Tracks& tracks, const size_t length = 0);
+  // project all 2D and 3D keypoints into the last frame of the model trajectory
+  virtual tracker::Tracks computeTrackProjectionLastFrame(const tracker::Tracks& tracks, const size_t length = 0) const;
+
+  // project all 3D keypoints into the first (initial) model frame
+  virtual tracker::Tracks computeTrackProjectionFirstFrame() const;
 
   virtual tracker::Tracks computeTrackProjectionStartEnd(const tracker::Tracks& tracks, const size_t length);
 

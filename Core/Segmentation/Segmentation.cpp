@@ -219,7 +219,7 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
         static const double threshold = 0.05;
 
         // project the last (newest) keypoints of the tracks in the camera frame to tracks in the local frame
-        const tracker::Tracks ltracks = m->computeTrackProjection(tracks, size_t(len_vis_max));
+        const tracker::Tracks ltracks = m->computeTrackProjectionLastFrame(tracks, size_t(len_vis_max));
 
         for (size_t it=0; it<ltracks.size(); it++) {
           for (size_t ik=0; ik<(ltracks[it]->size()-1); ik++) {
@@ -277,7 +277,7 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
       // separate tracks of current model
       static const double threshold = 0.02;
       tracker::Tracks inlier;
-      const tracker::Tracks ltracks = m->computeTrackProjection(tracks, size_t(20));
+      const tracker::Tracks ltracks = m->computeTrackProjectionLastFrame(tracks, size_t(20));
 
       cv::Mat track_err;
       cv::cvtColor(frame.rgb, track_err, cv::COLOR_RGB2GRAY);
@@ -350,7 +350,7 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
       icp = slic.downsample<float>(icpFull);
     }
     else if (cfg.mode == "triangle_projection") {
-      const tracker::Tracks ltracks = m->computeTrackProjection(tracks, size_t(20));
+      const tracker::Tracks ltracks = m->computeTrackProjectionLastFrame(tracks, size_t(20));
 
       const std::vector<motion::Triangle> triangles = motion::triangulate(ltracks);
 
@@ -458,7 +458,7 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
 
     int i=0;
     for (const auto &model : models) {
-      const tracker::Tracks ltracks = model->computeTrackProjection(tracks_visible, cfg.history);
+      const tracker::Tracks ltracks = model->computeTrackProjectionLastFrame(tracks_visible, cfg.history);
       for (size_t it=0; it<ltracks.size(); it++) {
         if (ltracks[it]->front() != nullptr && ltracks[it]->back() != nullptr) {
           const Eigen::RowVector3d &p0 = ltracks[it]->front()->coordinate;
@@ -611,7 +611,7 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
       // error of unkown association
       unary.fill(std::numeric_limits<float>::infinity());
       for (const ModelPointer &model : models) {
-        const tracker::Tracks ltracks = model->computeTrackProjection(tracks, cfg.history);
+        const tracker::Tracks ltracks = model->computeTrackProjectionLastFrame(tracks, cfg.history);
 
 //        std::cout << "mdl " << model->getID() << ": " << ltracks.size() << std::endl;
 
