@@ -19,11 +19,13 @@
 
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
-#include <boost/filesystem.hpp>
+#include <filesystem>
 #include <boost/algorithm/algorithm.hpp>
 #include <boost/algorithm/string.hpp>
 #include <stdexcept>
 #include <iomanip>
+
+namespace fs = std::filesystem;
 
 static std::string cvTypeToString(int type) {
   std::string r;
@@ -69,7 +71,6 @@ ImageLogReader::ImageLogReader(std::string colorDirectory, std::string depthDire
       depthPre(depthPrefix),
       maskPre(maskPrefix),
       indexW(indexWidth) {
-  using namespace boost::filesystem;
   using namespace boost::algorithm;
 
   const std::vector<std::string> rgbExtensions = {".jpg", ".png", ".ppm"};
@@ -88,7 +89,7 @@ ImageLogReader::ImageLogReader(std::string colorDirectory, std::string depthDire
                             std::string& outExt) -> unsigned {
     unsigned result = 0;
     outExt = "";
-    for (auto it = directory_iterator(path); it != directory_iterator(); ++it) {
+    for (auto it = fs::directory_iterator(path); it != fs::directory_iterator(); ++it) {
       if (is_regular_file(it->status())) {
         std::string ext = it->path().extension().string();
         std::string name = it->path().stem().string();
@@ -132,7 +133,7 @@ ImageLogReader::ImageLogReader(std::string colorDirectory, std::string depthDire
     std::stringstream ss;
     ss << std::setw(indexW) << std::setfill('0') << index;
     std::string path = colorDirectory + colorPre + ss.str() + colorExt;
-    if (exists(path)) {
+    if (fs::exists(path)) {
       startIndex = index;
       break;
     }
@@ -145,7 +146,7 @@ ImageLogReader::ImageLogReader(std::string colorDirectory, std::string depthDire
 
   // Try to find calibration file in color directory
   const std::string calibrationFile = colorDirectory + "/calibration.txt";
-  if (exists(calibrationFile)) LogReader::calibrationFile = calibrationFile;
+  if (fs::exists(calibrationFile)) LogReader::calibrationFile = calibrationFile;
 
   currentFrame = -1;
   frames.resize(numFrames);
@@ -223,14 +224,14 @@ FrameData ImageLogReader::loadFrameFromDrive(const size_t& index) {
   std::string indexStr = ss.str();
 
   std::string depthImagePath = depthImagesDir + depthPre + indexStr + depthExt;
-  if (!boost::filesystem::exists(depthImagePath)) throw std::invalid_argument("Could not read depth-image file:" + depthImagePath);
+  if (!fs::exists(depthImagePath)) throw std::invalid_argument("Could not read depth-image file:" + depthImagePath);
 
   std::string rgbImagePath = file + colorPre + indexStr + colorExt;
-  if (!boost::filesystem::exists(rgbImagePath)) throw std::invalid_argument("Could not read rgb-image file:" + rgbImagePath);
+  if (!fs::exists(rgbImagePath)) throw std::invalid_argument("Could not read rgb-image file:" + rgbImagePath);
 
   std::string maskImagePath = maskImagesDir + maskPre + indexStr + maskExt;
   if (hasMasksGT) {
-    if (!boost::filesystem::exists(maskImagePath)) throw std::invalid_argument("Could not read mask-image file:" + maskImagePath);
+    if (!fs::exists(maskImagePath)) throw std::invalid_argument("Could not read mask-image file:" + maskImagePath);
   }
 
   FrameData result;
