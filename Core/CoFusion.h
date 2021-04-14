@@ -39,6 +39,7 @@
 #include <list>
 #include <iomanip>
 #include <memory>
+#include <atomic>
 
 // TODO: load implementation dynamically
 #include <super_point_inference.hpp>
@@ -249,6 +250,7 @@ class CoFusion {
   void setNewModelMinRelativeSize(const float& val);
   void setNewModelMaxRelativeSize(const float& val);
   void setEnableMultipleModels(bool val) { enableMultipleModels = val; }
+  void setEnableRedetection(bool val) { enableRedetection = val; }
   void setEnableSmartModelDelete(bool val) { enableSmartModelDelete = val; }
   // void setCrfUnaryWeightErrorBackground(const float& val);
   // void setCrfUnaryWeightConfBackground(const float& val);
@@ -379,7 +381,7 @@ class CoFusion {
 
   bool enableMultipleModels = true;
   bool enableSmartModelDelete = true;
-  bool enableRedetection = false;
+  std::atomic<bool> enableRedetection = true;
   bool enableModelMerging = false;
   bool enableSpawnSubtraction = true;
   bool enablePoseLogging = true;

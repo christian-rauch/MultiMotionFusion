@@ -205,6 +205,7 @@ class GUI {
     outlierCoefficient = new pangolin::Var<float>("ui.Outlier Rejection", 3, 0, 10);
 
     enableMultiModel = new pangolin::Var<bool>("oi.Enable multiple models", true, true);
+    enableRedetection = new pangolin::Var<bool>("oi.re-detect models", false, true);
     enableSmartDelete = new pangolin::Var<bool>("oi.Delete deactivated", true, true);
     minRelSizeNew = new pangolin::Var<float>("oi.Min-size new", 0.005, 0, 0.5);
     maxRelSizeNew = new pangolin::Var<float>("oi.Max-size new", 0.4, 0.3, 1);
@@ -301,6 +302,7 @@ class GUI {
     delete pyramid;
     delete rgbOnly;
     delete enableMultiModel;
+    delete enableRedetection;
     delete enableSmartDelete;
     delete totalFernDefs;
     delete drawFerns;
@@ -613,7 +615,8 @@ class GUI {
       //* saveDepth,
       *reset, *flipColors, *rgbOnly, *enableMultiModel, *enableSmartDelete, *pyramid, *so3, *frameToFrameRGB, *fastOdom, *followPose,
       *drawRawCloud, *drawFilteredCloud, *drawNormals, *autoSettings, *drawDefGraph, *drawColors, *drawPoseLog, *drawLabelColors, *showModProj, *drawFxaa,
-      *drawGlobalModel, *drawObjectModels, *drawUnstable, *drawPoints, *drawTimes, *drawFerns, *drawDeforms, *drawWindow;
+      *drawGlobalModel, *drawObjectModels, *drawUnstable, *drawPoints, *drawTimes, *drawFerns, *drawDeforms, *drawWindow,
+      *enableRedetection;
   pangolin::Var<int>* gpuMem;
   pangolin::Var<std::string> *totalPoints, *totalNodes, *totalFerns, *totalDefs, *totalFernDefs, *trackInliers, *trackRes, *logProgress;
 

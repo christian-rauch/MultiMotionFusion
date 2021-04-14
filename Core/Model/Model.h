@@ -169,6 +169,8 @@ class Model {
   // get the transformation between the last two point sets on model tracks
   virtual Eigen::Isometry3f getLastTrackTransform() const;
 
+  virtual RigidRANSAC::Result getBestMatch(const std::vector<tracker::KeypointPtr> &keypoints, const RigidRANSAC::Config &config) const;
+
   // Compute fusion-weight based on velocity
   virtual float computeFusionWeight(float weightMultiplier) const;
 

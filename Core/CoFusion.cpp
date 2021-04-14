@@ -399,6 +399,48 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
           // cv::imwrite(exportDir + "RGB" + std::to_string(tick) + ".png", rgb);
         }
 
+        // associate tracks to segments via their last keypoint location
+        const cv::Mat &segm = segmentationResult.fullSegmentation;
+        std::unordered_map<uint8_t, tracker::Tracks> segm_tracks;
+        for (const tracker::TrackPtr &track : tracks) {
+          if (track->back()!=nullptr) {
+            // visible tracks, associated by segments
+            const cv::Point &p = track->back()->xy;
+            if (cv::Rect(cv::Point(), segm.size()).contains(p)) {
+              segm_tracks[segm.at<uint8_t>(p)].push_back(track);
+            }
+          }
+        }
+
+        // visualise segmentation and last keypoint location
+        if (!segm_tracks.empty()) {
+          cv::Mat segm_tracks_img(segm.size(), CV_8UC3);
+          pangolin::ColourWheel colour_spacing;
+          // segments
+          for (const auto &[id, tracks] : segm_tracks) {
+            const pangolin::Colour c = colour_spacing.GetColourBin(id);
+            segm_tracks_img.setTo(cv::Scalar(c.b*255, c.g*255, c.r*255), segm==id);
+          }
+          cv::Mat gprev;
+          cv::cvtColor(frame.rgb, gprev, cv::COLOR_RGB2GRAY);
+          cv::cvtColor(gprev, gprev, cv::COLOR_GRAY2BGR);
+          cv::addWeighted(gprev, 1, segm_tracks_img, 0.5, 0, segm_tracks_img);
+
+          // tracks
+          for (const auto &[id, tracks] : segm_tracks) {
+            const pangolin::Colour c = colour_spacing.GetColourBin(id);
+            for (const tracker::TrackPtr &track : tracks) {
+              if (track->back()!=nullptr) {
+                // only show currently visible track
+                cv::circle(segm_tracks_img, track->back()->xy, 4, cv::Scalar(), 1);
+                cv::circle(segm_tracks_img, track->back()->xy, 3, cv::Scalar(c.b*255, c.g*255, c.r*255), cv::FILLED);
+              }
+            }
+          }
+
+          cv::imshow("segm tracks", segm_tracks_img);
+        }
+
         // Spawn new model
         if (segmentationResult.hasNewLabel) {
           const SegmentationResult::ModelData& newModelData = segmentationResult.modelData.back();
@@ -416,6 +458,66 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
           spawnOffset = 0;
 
           newModel->setMaxDepth(getMaxDepth(newModelData));
+        }
+
+        // redetection via keypoints
+        if (enableRedetection) {
+          TICK("re-detect");
+          // match all inactive models at every timestamp to new model
+          constexpr size_t min_tracks = 3;
+          for (auto &[segm_label, segm_tracks] : segm_tracks) {
+            // skip the environment segment
+            if (segm_label == 0 || segm_label == 255) { continue; }
+
+            // keypoints at last track position within segment
+            std::vector<tracker::KeypointPtr> keypoints;
+            for (const tracker::TrackPtr &track : segm_tracks) {
+              if (track->back()) {
+                keypoints.push_back(track->back());
+              }
+            }
+
+            // skip too small segments
+            if (keypoints.size() < min_tracks) { continue; }
+
+            std::list<ModelPointer> model_inact_rm;
+            for (const ModelPointer &model : inactiveModels) {
+              // try to match last keypoints against inactive models tracks
+              const RigidRANSAC::Config cfg{.iterations = 10, .inlier_threshold = 0.03, .inlier_fraction = 0.8};
+              const RigidRANSAC::Result best = model->getBestMatch(keypoints, cfg);
+              // need at least 10 matches and less than 1cm errors
+              if (best.error < 0.01 && best.inlier.count() > 10) {
+                std::cout << "replace current model " << int(segm_label) << " with previous model " << model->getID() << std::endl;
+
+                if (segmentationResult.hasNewLabel) {
+                  segmentationResult.hasNewLabel = false;
+                }
+
+                // find current model
+                // current active model to be removed
+                ModelPointer model_act_rm = nullptr;
+                for (const ModelPointer &model_curr : models) {
+                  if (model_curr->getID() == segm_label) {
+                    model_act_rm = model_curr;
+                    break;
+                  }
+                }
+                if (model_act_rm) {
+                  models.remove(model_act_rm);
+                }
+                models.push_back(model);
+                // reset pose
+                model->overridePose(best.transformation.inverse().matrix());
+                model_inact_rm.push_back(model);
+              }
+            }
+
+            // remove model that become active
+            for (const ModelPointer &model : model_inact_rm) {
+              inactiveModels.remove(model);
+            }
+          }
+          TOCK("re-detect");
         }
 
         // Set max-depth
@@ -441,70 +543,27 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
           moveNewModelToList();
         }
 
-        {
-          // associate tracks to segments via their last keypoint location
-          const cv::Mat &segm = segmentationResult.fullSegmentation;
-          std::unordered_map<uint8_t, tracker::Tracks> segm_tracks;
-          for (const tracker::TrackPtr &track : tracks) {
-            if (track->back()!=nullptr) {
-              // visible tracks, associated by segments
-              const cv::Point &p = track->back()->xy;
-              if (cv::Rect(cv::Point(), segm.size()).contains(p)) {
-                segm_tracks[segm.at<uint8_t>(p)].push_back(track);
-              }
-            }
-          }
-
-          if (!segm_tracks.empty()) {
-            cv::Mat segm_tracks_img(segm.size(), CV_8UC3);
-            pangolin::ColourWheel colour_spacing;
-            // segments
+        // update model-specific set of tracks for currently visible models
+        for (const auto &model : models) {
+          const uint8_t uid = uint8_t(model->getID());
+          if (segm_tracks.count(uid)) {
+            // gather tracks that are not associated to the segment
+            tracker::Tracks tracks_remove;
             for (const auto &[id, tracks] : segm_tracks) {
-              const pangolin::Colour c = colour_spacing.GetColourBin(id);
-              segm_tracks_img.setTo(cv::Scalar(c.b*255, c.g*255, c.r*255), segm==id);
-            }
-            cv::Mat gprev;
-            cv::cvtColor(frame.rgb, gprev, cv::COLOR_RGB2GRAY);
-            cv::cvtColor(gprev, gprev, cv::COLOR_GRAY2BGR);
-            cv::addWeighted(gprev, 1, segm_tracks_img, 0.5, 0, segm_tracks_img);
-
-            // tracks
-            for (const auto &[id, tracks] : segm_tracks) {
-              const pangolin::Colour c = colour_spacing.GetColourBin(id);
-              for (const tracker::TrackPtr &track : tracks) {
-                if (track->back()!=nullptr) {
-                  // only show currently visible track
-                  cv::circle(segm_tracks_img, track->back()->xy, 4, cv::Scalar(), 1);
-                  cv::circle(segm_tracks_img, track->back()->xy, 3, cv::Scalar(c.b*255, c.g*255, c.r*255), cv::FILLED);
-                }
+              if (id!=uid) {
+                tracks_remove.insert(tracks_remove.end(), tracks.begin(), tracks.end());
               }
             }
 
-            cv::imshow("segm tracks", segm_tracks_img);
+            // initialise the poses of a new model
+            if (segmentationResult.hasNewLabel && model->getID()==segmentationResult.modelData.back().id) {
+              model->refineTrackSubset(segm_tracks[uid], globalModel, 2);
+            }
+
+            // update the model-specific tracks
+            model->updateTracks(segm_tracks[uid], tracks_remove);
           }
-
-          // update model-specific set of tracks for currently visible models
-          for (const auto &model : models) {
-            const uint8_t uid = uint8_t(model->getID());
-            if (segm_tracks.count(uid)) {
-              // gather tracks that are not associated to the segment
-              tracker::Tracks tracks_remove;
-              for (const auto &[id, tracks] : segm_tracks) {
-                if (id!=uid) {
-                  tracks_remove.insert(tracks_remove.end(), tracks.begin(), tracks.end());
-                }
-              }
-
-              // initialise the poses of a new model
-              if (segmentationResult.hasNewLabel && model->getID()==segmentationResult.modelData.back().id) {
-                model->refineTrackSubset(segm_tracks[uid], globalModel, 2);
-              }
-
-              // update the model-specific tracks
-              model->updateTracks(segm_tracks[uid], tracks_remove);
-            }
-          } // models
-        }
+        } // models
 
         for (auto& m : segmentationResult.modelData) {  // FIXME reduce count somewhere
           if (m.superPixelCount <= 0 && (*m.modelListIterator)->incrementUnseenCount() > 0) {

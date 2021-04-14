@@ -20,6 +20,7 @@
 #include "ModelMatching.h"
 
 #include <opencv2/opencv.hpp>
+#include <opencv2/core/eigen.hpp>
 
 #include "Utils/RigidRANSAC.h"
 
@@ -777,6 +778,91 @@ Eigen::Isometry3f Model::getLastTrackTransform() const {
   tracks = {this->tracks.begin(), this->tracks.end()};
 
   return Model::getLastTrackTransform(tracks);
+}
+
+RigidRANSAC::Result Model::getBestMatch(const std::vector<tracker::KeypointPtr> &keypoints, const RigidRANSAC::Config &config) const {
+  // no previously stored model
+  if (tracks_local.empty()) {
+    std::cout << "model " << getID() << " has no stored tracks" << std::endl;
+    return {};
+  }
+
+  const size_t nd = keypoints.front()->descriptor.size();
+
+  cv::Mat_<float> query(keypoints.size(), nd);
+  for (size_t i=0; i<keypoints.size(); i++) {
+    cv::eigen2cv(keypoints[i]->descriptor, query.row(i));
+  }
+
+  std::vector<Eigen::MatrixXf> model_descriptors(tracks_local.front()->size());
+  std::vector<Eigen::MatrixX3f> model_coordinates(tracks_local.front()->size());
+
+  for (size_t i=0; i<tracks_local.front()->size(); i++) {
+    size_t nkp_valid = 0;
+    for (size_t j=0; j<tracks_local.size(); j++) {
+      if (model_descriptors[i].size()==0) {
+        model_descriptors[i].resize(tracks_local.size(), nd);
+        model_coordinates[i].resize(tracks_local.size(), Eigen::NoChange);
+      }
+
+      const tracker::KeypointPtr &kpi = (*tracks_local[j])[i];
+      if (kpi) {
+        model_descriptors[i].row(nkp_valid) = kpi->descriptor.cast<float>();
+        model_coordinates[i].row(nkp_valid) = kpi->coordinate.cast<float>();
+        nkp_valid++;
+      }
+    }
+
+    // only keep valid points
+    model_descriptors[i].conservativeResize(nkp_valid, Eigen::NoChange);
+  }
+
+  // convert Eigen to OpenCV matrix, skip time indices with empty data
+  std::vector<cv::Mat_<float>> model_descriptors_cv;
+  // map matches to time indices
+  std::unordered_map<size_t, size_t> match_ids;
+  size_t match_id = 0;
+  for (size_t i=0; i<model_descriptors.size(); i++) {
+    if (model_descriptors[i].rows()>0) {
+      model_descriptors_cv.emplace_back();
+      cv::eigen2cv(model_descriptors[i], model_descriptors_cv.back());
+      match_ids[match_id] = i;
+      match_id++;
+    }
+  }
+
+  // pairwise matching of query discriptors from current model/segment
+  // against all views of previous models
+  std::unordered_map<size_t, std::list<std::tuple<size_t, size_t>>> matches_views;
+  for (size_t i=0; i<model_descriptors_cv.size(); i++) {
+    cv::BFMatcher matcher(cv::NORM_L2, true);
+    std::vector<cv::DMatch> matches;
+    matcher.match(query, model_descriptors_cv[i], matches);
+    for (const cv::DMatch &match : matches) {
+      matches_views[i].push_back({match.queryIdx, match.trainIdx});
+    }
+  }
+
+  // RANSAC on all matches
+  RigidRANSAC ransac(config);
+  std::vector<RigidRANSAC::Result> estimates;
+  for (const auto &[id_view, matches] : matches_views) {
+    Eigen::MatrixX3f query(matches.size(), 3);
+    Eigen::MatrixX3f train(matches.size(), 3);
+    size_t imatch = 0;
+    for (const auto &[id_query, id_train] : matches) {
+      query.row(imatch) = keypoints[id_query]->coordinate.cast<float>();
+      train.row(imatch) = model_coordinates[match_ids.at(id_view)].row(id_train);
+      imatch++;
+    }
+    estimates.push_back(ransac.estimate(query, train));
+  }
+
+  // find estimate with smallest error
+  auto min_ransac = [](const RigidRANSAC::Result &a, const RigidRANSAC::Result &b) {
+    return a.error < b.error;
+  };
+  return *std::min_element(estimates.begin(), estimates.end(), min_ransac);
 }
 
 float Model::computeFusionWeight(float weightMultiplier) const {

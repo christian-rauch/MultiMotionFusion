@@ -70,6 +70,7 @@
     -vxf    Use together with visionx point cloud reader option. Provide the name for the file.
 
     -static        Disable multi-model fusion.
+    -redetection   Re-detect previously modelled objects.
     -confO         Initial surfel confidence threshold for objects (default 0.01).
     -confG         Initial surfel confidence threshold for scene (default 10.00).
     -segMinNew     Min size of new object segments (relative to image size)
@@ -353,6 +354,9 @@ MainController::MainController(int argc, char* argv[])
   gui->flipColors->Ref()->Set(logReader->flipColors);
   gui->rgbOnly->Ref()->Set(false);
   gui->enableMultiModel->Ref()->Set(Parse::get().arg(argc, argv, "-static", empty) <= -1);
+  if (Parse::get().arg(argc, argv, "-redetection", empty) > 0) {
+    gui->enableRedetection->Ref()->Set(true);
+  }
   gui->enableSmartDelete->Ref()->Set(Parse::get().arg(argc, argv, "-keep", empty) <= -1);
   gui->pyramid->Ref()->Set(true);
   gui->fastOdom->Ref()->Set(fastOdom);
@@ -572,6 +576,7 @@ void MainController::run() {
     // SET PARAMETERS / SETTINGS
     logReader->flipColors = gui->flipColors->Get();
     coFusion->setEnableMultipleModels(gui->enableMultiModel->Get());
+    coFusion->setEnableRedetection(gui->enableRedetection->Get());
     coFusion->setEnableSmartModelDelete(gui->enableSmartDelete->Get());
     coFusion->setRgbOnly(gui->rgbOnly->Get());
     coFusion->setPyramid(gui->pyramid->Get());
