@@ -6,6 +6,7 @@
 #include <sensor_msgs/point_cloud2_iterator.h>
 #include <cv_bridge/cv_bridge.h>
 #include <eigen_conversions/eigen_msg.h>
+#include <opencv2/imgcodecs.hpp>
 
 
 struct surfel_t {
@@ -27,6 +28,20 @@ struct surfel_t {
 // a surfel should consume 3 x 4 x 32 = 384 bit = 48 byte
 static_assert(sizeof(surfel_t) == 48, "struct surfel_t is misaligned");
 
+static sensor_msgs::CameraInfo
+get_camera_info()
+{
+  sensor_msgs::CameraInfo ci;
+  ci.width = Resolution::getInstance().width();
+  ci.height = Resolution::getInstance().height();
+  ci.K[0] = ci.P[0] = Intrinsics::getInstance().fx();
+  ci.K[2] = ci.P[2] = Intrinsics::getInstance().cx();
+  ci.K[4] = ci.P[5] = Intrinsics::getInstance().fy();
+  ci.K[5] = ci.P[6] = Intrinsics::getInstance().cy();
+  ci.K[8] = ci.P[10] = 1;
+  return ci;
+}
+
 
 RosStatePublisher::RosStatePublisher(const std::string &camera_frame) :
     camera_frame(camera_frame)
@@ -36,6 +51,8 @@ RosStatePublisher::RosStatePublisher(const std::string &camera_frame) :
   it = std::make_unique<image_transport::ImageTransport>(*n);
 
   pub_segm = it->advertise("segmentation", 1);
+
+  pub_camera_info = n->advertise<sensor_msgs::CameraInfo>("camera_info", 1);
 }
 
 void RosStatePublisher::pub_segmentation(const cv::Mat &segmentation, const int64_t timestamp_ns)
@@ -123,6 +140,45 @@ void RosStatePublisher::pub_models(const ModelList &models, const int64_t timest
 
     pc_modifier.clear();
   }
+
+  sensor_msgs::CameraInfo ci = get_camera_info();
+  ci.header = hdr;
+
+  for (const ModelPointer &model : models) {
+    const unsigned int id = model->getID();
+    // get model projection
+    const cv::Mat colour = model->getRGBProjection()->downloadTexture();
+    const cv::Mat points = model->getVertexConfProjection()->downloadTexture();
+    // convert metric points to depth in millimetre
+    std::vector<cv::Mat> xyz;
+    cv::split(points, xyz);
+    cv::Mat depth_mm;
+    xyz[2].convertTo(depth_mm, CV_16UC1, 1e3);
+
+    if (!pub_model_proj_colour.count(id)) {
+      pub_model_proj_colour[id] = n->advertise<sensor_msgs::CompressedImage>("model/colour/"+std::to_string(id)+"/compressed", 1);
+      pub_camera_info_colour[id] = n->advertise<sensor_msgs::CameraInfo>("model/colour/camera_info", 1);
+    }
+    if (!pub_model_proj_depth.count(id)) {
+      pub_model_proj_depth[id] = n->advertise<sensor_msgs::CompressedImage>("model/depth/"+std::to_string(id)+"/compressed", 1);
+      pub_camera_info_depth[id] = n->advertise<sensor_msgs::CameraInfo>("model/depth/camera_info", 1);
+    }
+
+    pub_model_proj_colour[id].publish(cv_bridge::CvImage(hdr, "rgb8", colour).toCompressedImageMsg());
+
+    // we have to manually compress the 16 bit PNG image
+    sensor_msgs::CompressedImage msg_depth;
+    cv::imencode(".png", depth_mm, msg_depth.data);
+    msg_depth.header = hdr;
+    msg_depth.format = "16UC1; png compressed ";
+
+    pub_model_proj_depth[id].publish(msg_depth);
+
+    pub_camera_info_colour[id].publish(ci);
+    pub_camera_info_depth[id].publish(ci);
+  }
+
+  pub_camera_info.publish(ci);
 
   if (!pose_objects.empty()) {
     broadcaster.sendTransform(pose_objects);

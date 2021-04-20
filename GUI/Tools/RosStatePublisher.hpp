@@ -22,7 +22,11 @@ private:
     tf2_ros::TransformBroadcaster broadcaster;
 
     image_transport::Publisher pub_segm;
+    ros::Publisher pub_camera_info;
+    std::unordered_map<uint8_t, ros::Publisher> pub_camera_info_colour, pub_camera_info_depth;
     std::unordered_map<uint8_t, ros::Publisher> pub_model_pc;
+    std::unordered_map<uint8_t, ros::Publisher> pub_model_proj_colour;
+    std::unordered_map<uint8_t, ros::Publisher> pub_model_proj_depth;
 
     const std::string camera_frame;
 };
