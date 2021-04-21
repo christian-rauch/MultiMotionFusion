@@ -27,6 +27,7 @@
 
 #ifdef ROSNODE
 #include "Tools/RosStatePublisher.hpp"
+#include "Tools/RosInterface.hpp"
 #endif
 
 class MainController {
@@ -65,6 +66,7 @@ class MainController {
 
 #ifdef ROSNODE
   std::unique_ptr<RosStatePublisher> state_publisher;
+  std::unique_ptr<RosInterface> ui_control;
 #endif
 
   float confGlobalInit, confObjectInit, icpErrThresh, covThresh, photoThresh, fernThresh;
