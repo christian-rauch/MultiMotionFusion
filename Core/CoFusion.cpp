@@ -169,6 +169,11 @@ void CoFusion::computeFeedbackBuffers() {
 }
 
 bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPose, const float weightMultiplier, const bool bootstrap) {
+  if (frame.rgb.empty() || frame.depth.empty()) {
+    std::cerr << "invalid image data" << std::endl;
+    return false;
+  }
+
   assert(frame.depth.type() == CV_32FC1);
   assert(frame.rgb.type() == CV_8UC3);
   assert(frame.timestamp >= 0);
