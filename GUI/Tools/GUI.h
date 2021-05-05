@@ -67,7 +67,7 @@ class GUI {
 
     width += widthPanel;
 
-    pangolin::CreateWindowAndBind("Co-Fusion", width, height);
+    pangolin::CreateWindowAndBind("Multi-Motion-Fusion", width, height);
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
