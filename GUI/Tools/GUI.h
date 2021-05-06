@@ -200,7 +200,7 @@ class GUI {
     fastOdom = new pangolin::Var<bool>("ui.Fast Odometry", false, true);
     rgbOnly = new pangolin::Var<bool>("ui.RGB only tracking", false, true);
     // confidenceThreshold = new pangolin::Var<float>("ui.Confidence threshold", 10.0, 0.0, 24.0);
-    depthCutoff = new pangolin::Var<float>("ui.Depth cutoff", 5.0, 0.0, 20.0);
+    depthCutoff = new pangolin::Var<float>("ui.Depth cutoff", 15.0, 0.0, 20.0);
     icpWeight = new pangolin::Var<float>("ui.ICP weight", 10.0, 0.0, 100.0);
     outlierCoefficient = new pangolin::Var<float>("ui.Outlier Rejection", 3, 0, 10);
 
