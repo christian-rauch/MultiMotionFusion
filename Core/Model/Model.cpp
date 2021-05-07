@@ -1545,7 +1545,7 @@ void Model::performFillIn(GPUTexture* rawRGB, GPUTexture* rawDepth, bool frameTo
   }
 }
 
-void Model::store(const fs::path &model_db_path, const Eigen::Isometry3f &pose) {
+void Model::store(const fs::path &model_db_path, const Eigen::Isometry3f &pose, bool clear) {
   const fs::path model_dir = model_db_path / fs::path("model-"+std::to_string(getID()));
   if (!fs::exists(model_dir)) {
     fs::create_directories(model_dir);
@@ -1566,5 +1566,6 @@ void Model::store(const fs::path &model_db_path, const Eigen::Isometry3f &pose) 
   exportTracksPLY(tracks_local, model_dir / fs::path("tracks.ply"), pose);
 
   // clear camera tracks
-  tracks.clear();
+  if (clear)
+    tracks.clear();
 }

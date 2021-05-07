@@ -298,7 +298,7 @@ class Model {
 
   // ----- Save & Load ----- //
 
-  void store(const fs::path &model_db_path, const Eigen::Isometry3f &pose);
+  void store(const fs::path &model_db_path, const Eigen::Isometry3f &pose, bool clear = true);
 
  protected:
   // Current pose

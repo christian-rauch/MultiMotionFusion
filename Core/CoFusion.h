@@ -403,4 +403,5 @@ class CoFusion {
 
   bool exportSegmentation;
   std::string exportDir;
+  fs::path model_db_path;
 };

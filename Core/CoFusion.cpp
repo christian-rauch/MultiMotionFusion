@@ -86,6 +86,12 @@ CoFusion::CoFusion(const int timeDelta, const int countThresh, const float errTh
     }
   }
 
+  model_db_path = fs::path(exportDir) / "model_db";
+
+  if (!fs::exists(model_db_path)) {
+    fs::create_directories(model_db_path);
+  }
+
   std::cout << "Initialised Multi-Object Fusion. Each model can have up to " << Model::MAX_VERTICES
             << " surfel (TEXTURE_DIMENSION: " << Model::TEXTURE_DIMENSION << "x" << Model::TEXTURE_DIMENSION << ")." << std::endl;
 }
@@ -907,10 +913,6 @@ ModelListIterator CoFusion::inactivateModel(const ModelListIterator& it) {
     inactiveModels.push_back(m);
 
     // deactivate the model for later re-detection
-    const auto model_db_path = fs::path(exportDir) / "model_db";
-    if (!fs::exists(model_db_path)) {
-      fs::create_directories(model_db_path);
-    }
     m->store(model_db_path, Eigen::Isometry3f{globalModel->getPose() * m->getPose().inverse()});
   } else {
     std::cout << "deleting data";
@@ -944,11 +946,18 @@ void CoFusion::savePly() {
 
   const Eigen::Isometry3f global_pose(globalModel->getPose());
 
-  for (auto& m : models) m->exportModelPLY(exportDir, global_pose);
-  for (auto& m : inactiveModels) m->exportModelPLY(exportDir, global_pose);
+  auto export_all = [this, &global_pose](const ModelList &models) {
+    for (auto &m : models) {
+      // store dense and sparse model for visualisation
+      m->exportModelPLY(exportDir, global_pose);
+      m->exportTracksPLY(exportDir, global_pose);
+      // store full model for re-detection
+      m->store(model_db_path, Eigen::Isometry3f{global_pose * m->getPose().inverse()}, false);
+    }
+  };
 
-  for (auto& m : models) m->exportTracksPLY(exportDir, global_pose);
-  for (auto& m : inactiveModels) m->exportTracksPLY(exportDir, global_pose);
+  export_all(models);
+  export_all(inactiveModels);
 }
 
 void CoFusion::exportPoses() {
