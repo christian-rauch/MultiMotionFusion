@@ -1375,20 +1375,37 @@ Model::SurfelMap Model::downloadMap() const {
   return result;
 }
 
-void Model::exportTracksPLY(const tracker::Tracks &tracks, const std::string &path, const Eigen::Isometry3f &pose) {
+void Model::exportTracksPLY(const tracker::Tracks &tracks, const std::string &path, const Eigen::Isometry3f &pose, bool with_descriptor, bool binary) {
   std::stringstream ss_hdr, ss_vrt, ss_edg;
 
-  size_t vert_id = 0;
-  size_t edge_id = 0;
-  std::queue<size_t> edge_ids;
+  uint32_t vert_id = 0;
+  uint32_t edge_id = 0;
+  std::queue<uint32_t> edge_ids;
   for (const tracker::TrackPtr &track : tracks) {
     // clear FIFO buffer
     edge_ids = {};
     for (const tracker::KeypointPtr &kp : *track) {
       // add valid points
       if (kp!=nullptr && kp->coordinate.array().isFinite().all()) {
-        ss_vrt << (pose.cast<double>() * kp->coordinate.transpose()).transpose();
-        ss_vrt << std::endl;
+        const Eigen::RowVector3f vertices = pose * kp->coordinate.cast<float>().transpose();
+        const Eigen::RowVectorXf descriptor = kp->descriptor.cast<float>();
+        assert(descriptor.size() <= std::numeric_limits<uint16_t>::max());
+        const uint16_t nd = descriptor.size();
+        if (binary) {
+          ss_vrt.write(reinterpret_cast<const char*>(vertices.data()), vertices.size() * sizeof(float));
+          if (with_descriptor) {
+            ss_vrt.write(reinterpret_cast<const char*>(&nd), sizeof(uint16_t));
+            ss_vrt.write(reinterpret_cast<const char*>(descriptor.data()), nd * sizeof(float));
+          }
+        }
+        else {
+          ss_vrt << vertices;
+          if (with_descriptor) {
+            ss_vrt << " " << nd << " " << descriptor;
+          }
+          ss_vrt << std::endl;
+        }
+
         edge_ids.push(vert_id);
         vert_id++;
       }
@@ -1399,8 +1416,14 @@ void Model::exportTracksPLY(const tracker::Tracks &tracks, const std::string &pa
 
       // add track edge
       if (edge_ids.size()==2) {
-        ss_edg << edge_ids.front() << " " << edge_ids.back();
-        ss_edg << std::endl;
+        if (binary) {
+          ss_edg.write(reinterpret_cast<const char*>(&edge_ids.front()), sizeof(uint32_t));
+          ss_edg.write(reinterpret_cast<const char*>(&edge_ids.back()), sizeof(uint32_t));
+        }
+        else {
+          ss_edg << edge_ids.front() << " " << edge_ids.back();
+          ss_edg << std::endl;
+        }
         edge_id++;
         edge_ids.pop();
       }
@@ -1408,34 +1431,46 @@ void Model::exportTracksPLY(const tracker::Tracks &tracks, const std::string &pa
   }
 
   // PLY header
-  ss_hdr << "ply" << std::endl << "format ascii 1.0" << std::endl;
+  const std::string fmt = binary ? "binary_little_endian" : "ascii";
+  ss_hdr << "ply" << std::endl << "format " << fmt << " 1.0" << std::endl;
 
   ss_hdr << "element vertex " << vert_id << std::endl;
-  for(const std::string &c : {"x", "y", "z"})
-    ss_hdr << "property float " << c << std::endl;
+  for(const std::string &c : {"x", "y", "z"}) {
+    ss_hdr << "property float32 " << c << std::endl;
+  }
+  if (with_descriptor) {
+    ss_hdr << "property list uint16 float32 descriptor"  << std::endl;
+  }
 
   ss_hdr << "element edge " << edge_id << std::endl;
-  ss_hdr << "property int vertex1" << std::endl;
-  ss_hdr << "property int vertex2" << std::endl;
+  ss_hdr << "property uint32 vertex1" << std::endl;
+  ss_hdr << "property uint32 vertex2" << std::endl;
 
   ss_hdr << "end_header" << std::endl;
 
   std::ofstream file;
   file.open(path);
   file << ss_hdr.rdbuf();
+  file.close();
+
+  std::ios::openmode mode = std::ios::app;
+  if (binary)
+    mode |= std::ios::binary;
+
+  file.open(path, mode);
   file << ss_vrt.rdbuf();
   file << ss_edg.rdbuf();
   file.close();
 }
 
-void Model::exportTracksPLY(const std::string &export_dir, const Eigen::Isometry3f &global_pose) const {
+void Model::exportTracksPLY(const std::string &export_dir, const Eigen::Isometry3f &global_pose, bool binary) const {
   // pre-multiply the exported tracks with the pose of the global model (id=0, static environment)
   // this transforms object tracks (id>0) from the start of their trajectory to the end
   const Eigen::Isometry3f Tp = global_pose * Eigen::Isometry3f(getPose()).inverse();
 
   const tracker::Tracks local_tracks = computeTrackProjectionFirstFrame();
 
-  exportTracksPLY(local_tracks, export_dir+"/tracks-"+std::to_string(getID())+".ply", Tp);
+  exportTracksPLY(local_tracks, export_dir+"/tracks-"+std::to_string(getID())+".ply", Tp, false, binary);
 }
 
 void Model::exportModelPLY(const SurfelMap &surfels, const float conf_threshold, const std::string &path, const Eigen::Isometry3f &pose) {
@@ -1563,7 +1598,7 @@ void Model::store(const fs::path &model_db_path, const Eigen::Isometry3f &pose, 
   surfelMap.countValid(getConfidenceThreshold());
   exportModelPLY(surfelMap, getConfidenceThreshold(), model_dir / fs::path("cloud.ply"), pose);
 
-  exportTracksPLY(tracks_local, model_dir / fs::path("tracks.ply"), pose);
+  exportTracksPLY(tracks_local, model_dir / fs::path("tracks.ply"), pose, true, true);
 
   // clear camera tracks
   if (clear)
