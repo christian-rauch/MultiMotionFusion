@@ -1405,14 +1405,18 @@ Model::SurfelMap Model::downloadMap() const {
 }
 
 void Model::exportTracksPLY(const tracker::Tracks &tracks, const std::string &path, const Eigen::Isometry3f &pose, bool with_descriptor, bool binary) {
-  std::stringstream ss_hdr, ss_vrt, ss_edg;
+  std::stringstream ss_hdr, ss_vrt, ss_edg, ss_trk;
 
   uint32_t vert_id = 0;
   uint32_t edge_id = 0;
-  std::queue<uint32_t> edge_ids;
+  uint32_t trak_id = 0;
+  std::queue<uint32_t> edge_ids;  // store consecutive keypoint neighbour connections
+  std::vector<uint32_t> trak_ids; // store all keypoint IDs of a track
+  static constexpr uint32_t uint32_max = std::numeric_limits<uint32_t>::max();
   for (const tracker::TrackPtr &track : tracks) {
     // clear FIFO buffer
     edge_ids = {};
+    trak_ids = {};
     for (const tracker::KeypointPtr &kp : *track) {
       // add valid points
       if (kp!=nullptr && kp->coordinate.array().isFinite().all()) {
@@ -1436,11 +1440,15 @@ void Model::exportTracksPLY(const tracker::Tracks &tracks, const std::string &pa
         }
 
         edge_ids.push(vert_id);
+        trak_ids.push_back(vert_id);
         vert_id++;
       }
       else {
         // if we encounter an invalid point, reset the track connection
         while (edge_ids.size()!=0) { edge_ids.pop(); }
+
+        // mark an invalid keypoint by setting the maximum ID
+        trak_ids.push_back(uint32_max);
       }
 
       // add track edge
@@ -1457,6 +1465,20 @@ void Model::exportTracksPLY(const tracker::Tracks &tracks, const std::string &pa
         edge_ids.pop();
       }
     }
+
+    const uint32_t nk = trak_ids.size();
+    if (binary) {
+      ss_trk.write(reinterpret_cast<const char*>(&nk), sizeof(uint32_t));
+      ss_trk.write(reinterpret_cast<const char*>(trak_ids.data()), nk * sizeof(uint32_t));
+    }
+    else {
+      ss_trk << nk;
+      for (size_t i = 0; i < trak_ids.size(); i++) {
+        ss_trk << " " << trak_ids[i];
+      }
+      ss_trk << std::endl;
+    }
+    trak_id++;
   }
 
   // PLY header
@@ -1475,6 +1497,9 @@ void Model::exportTracksPLY(const tracker::Tracks &tracks, const std::string &pa
   ss_hdr << "property uint32 vertex1" << std::endl;
   ss_hdr << "property uint32 vertex2" << std::endl;
 
+  ss_hdr << "element track " << trak_id << std::endl;
+  ss_hdr << "property list uint32 uint32 vertex_index"  << std::endl;
+
   ss_hdr << "end_header" << std::endl;
 
   std::ofstream file;
@@ -1489,6 +1514,7 @@ void Model::exportTracksPLY(const tracker::Tracks &tracks, const std::string &pa
   file.open(path, mode);
   file << ss_vrt.rdbuf();
   file << ss_edg.rdbuf();
+  file << ss_trk.rdbuf();
   file.close();
 }
 
