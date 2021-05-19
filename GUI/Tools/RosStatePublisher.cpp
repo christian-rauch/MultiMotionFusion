@@ -90,7 +90,7 @@ void RosStatePublisher::pub_models(const ModelList &models, const int64_t timest
 
     if (!pub_model_pc.count(id)) {
       // create new publisher for model
-      pub_model_pc[id] = n->advertise<sensor_msgs::PointCloud2>("model/dense/"+std::to_string(id), 1);
+      pub_model_pc[id] = n->advertise<sensor_msgs::PointCloud2>("model/"+std::to_string(id)+"/dense", 1);
     }
 
     const Eigen::Isometry3f T_0X(model->getPose());
@@ -156,12 +156,11 @@ void RosStatePublisher::pub_models(const ModelList &models, const int64_t timest
     xyz[2].convertTo(depth_mm, CV_16UC1, 1e3);
 
     if (!pub_model_proj_colour.count(id)) {
-      pub_model_proj_colour[id] = n->advertise<sensor_msgs::CompressedImage>("model/colour/"+std::to_string(id)+"/compressed", 1);
-      pub_camera_info_colour[id] = n->advertise<sensor_msgs::CameraInfo>("model/colour/camera_info", 1);
+      pub_model_proj_colour[id] = n->advertise<sensor_msgs::CompressedImage>("model/"+std::to_string(id)+"/colour/compressed", 1);
     }
     if (!pub_model_proj_depth.count(id)) {
-      pub_model_proj_depth[id] = n->advertise<sensor_msgs::CompressedImage>("model/depth/"+std::to_string(id)+"/compressed", 1);
-      pub_camera_info_depth[id] = n->advertise<sensor_msgs::CameraInfo>("model/depth/camera_info", 1);
+      pub_model_proj_depth[id] = n->advertise<sensor_msgs::CompressedImage>("model/"+std::to_string(id)+"/depth/compressed", 1);
+      pub_camera_info_depth[id] = n->advertise<sensor_msgs::CameraInfo>("model/"+std::to_string(id)+"/camera_info", 1);
     }
 
     pub_model_proj_colour[id].publish(cv_bridge::CvImage(hdr, "rgb8", colour).toCompressedImageMsg());
@@ -174,7 +173,6 @@ void RosStatePublisher::pub_models(const ModelList &models, const int64_t timest
 
     pub_model_proj_depth[id].publish(msg_depth);
 
-    pub_camera_info_colour[id].publish(ci);
     pub_camera_info_depth[id].publish(ci);
   }
 
