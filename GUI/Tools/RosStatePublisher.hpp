@@ -16,6 +16,8 @@ public:
 
     void pub_models(const ModelList &models, const int64_t timestamp_ns);
 
+    void reset();
+
 private:
     std::unique_ptr<ros::NodeHandle> n;
     std::unique_ptr<image_transport::ImageTransport> it;

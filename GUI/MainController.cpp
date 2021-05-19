@@ -449,6 +449,12 @@ void MainController::launch() {
         cudaCheckError();
       }
 
+#ifdef ROSNODE
+    if (state_publisher) {
+      state_publisher->reset();
+    }
+#endif
+
       coFusion = new CoFusion(openLoop ? std::numeric_limits<int>::max() / 2 : timeDelta, icpCountThresh, icpErrThresh, covThresh,
                               !openLoop, iclnuim, reloc, photoThresh, confGlobalInit, confObjectInit, gui->depthCutoff->Get(),
                               gui->icpWeight->Get(), fastOdom, fernThresh, so3, frameToFrameRGB, gui->modelSpawnOffset->Get(),
