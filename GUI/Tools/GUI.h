@@ -207,6 +207,7 @@ class GUI {
     enableMultiModel = new pangolin::Var<bool>("oi.Enable multiple models", true, true);
     enableRedetection = new pangolin::Var<bool>("oi.re-detect models", false, true);
     enableSmartDelete = new pangolin::Var<bool>("oi.Delete deactivated", true, true);
+    inhibitModels = new pangolin::Var<bool>("oi.inhibit new models", false, true);
     minRelSizeNew = new pangolin::Var<float>("oi.Min-size new", 0.005, 0, 0.5);
     maxRelSizeNew = new pangolin::Var<float>("oi.Max-size new", 0.4, 0.3, 1);
     modelSpawnOffset = new pangolin::Var<unsigned>("oi.Model spawn offset", 22, 0, 100);
@@ -304,6 +305,7 @@ class GUI {
     delete enableMultiModel;
     delete enableRedetection;
     delete enableSmartDelete;
+    delete inhibitModels;
     delete totalFernDefs;
     delete drawFerns;
     delete followPose;
@@ -613,7 +615,7 @@ class GUI {
 
   pangolin::Var<bool> *pause, *step, *skip, *savePoses, *saveView, *saveCloud,
       //* saveDepth,
-      *reset, *flipColors, *rgbOnly, *enableMultiModel, *enableSmartDelete, *pyramid, *so3, *frameToFrameRGB, *fastOdom, *followPose,
+      *reset, *flipColors, *rgbOnly, *enableMultiModel, *enableSmartDelete, *inhibitModels, *pyramid, *so3, *frameToFrameRGB, *fastOdom, *followPose,
       *drawRawCloud, *drawFilteredCloud, *drawNormals, *autoSettings, *drawDefGraph, *drawColors, *drawPoseLog, *drawLabelColors, *showModProj, *drawFxaa,
       *drawGlobalModel, *drawObjectModels, *drawUnstable, *drawPoints, *drawTimes, *drawFerns, *drawDeforms, *drawWindow,
       *enableRedetection;

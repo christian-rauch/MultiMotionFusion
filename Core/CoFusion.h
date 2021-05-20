@@ -251,6 +251,7 @@ class CoFusion {
   void setNewModelMaxRelativeSize(const float& val);
   void setEnableMultipleModels(bool val) { enableMultipleModels = val; }
   void setEnableRedetection(bool val) { enableRedetection = val; }
+  void setSetInhibit(bool val) { inhibitModels = val; }
   void setEnableSmartModelDelete(bool val) { enableSmartModelDelete = val; }
   // void setCrfUnaryWeightErrorBackground(const float& val);
   // void setCrfUnaryWeightConfBackground(const float& val);
@@ -382,6 +383,7 @@ class CoFusion {
   bool enableMultipleModels = true;
   bool enableSmartModelDelete = true;
   std::atomic<bool> enableRedetection = true;
+  std::atomic<bool> inhibitModels = false;
   bool enableModelMerging = false;
   bool enableSpawnSubtraction = true;
   bool enablePoseLogging = true;

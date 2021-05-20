@@ -583,6 +583,7 @@ void MainController::run() {
     logReader->flipColors = gui->flipColors->Get();
     coFusion->setEnableMultipleModels(gui->enableMultiModel->Get());
     coFusion->setEnableRedetection(gui->enableRedetection->Get());
+    coFusion->setSetInhibit(gui->inhibitModels->Get());
     coFusion->setEnableSmartModelDelete(gui->enableSmartDelete->Get());
     coFusion->setRgbOnly(gui->rgbOnly->Get());
     coFusion->setPyramid(gui->pyramid->Get());

@@ -396,6 +396,9 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
         if (spawnOffset < modelSpawnOffset) spawnOffset++;
 
         SegmentationResult segmentationResult = performSegmentation(frame);
+        if (inhibitModels) {
+          segmentationResult.hasNewLabel = false;
+        }
         textures[GPUTexture::MASK]->texture->Upload(segmentationResult.fullSegmentation.data, GL_LUMINANCE_INTEGER_EXT, GL_UNSIGNED_BYTE);
 
         if (exportSegmentation) {
