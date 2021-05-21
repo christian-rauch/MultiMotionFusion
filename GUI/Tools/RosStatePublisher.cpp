@@ -186,10 +186,13 @@ void RosStatePublisher::pub_models(const ModelList &models, const int64_t timest
 void RosStatePublisher::reset()
 {
   // delete all model specific publisher
+  // TODO: disconnecting and later reconnecting the subscribers will cause communication delays
+#if 0
   pub_camera_info_depth.clear();
   pub_model_pc.clear();
   pub_model_proj_colour.clear();
   pub_model_proj_depth.clear();
+#endif
 }
 
 #endif
