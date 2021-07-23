@@ -556,11 +556,14 @@ tracker::Tracks Model::computeTrackProjectionStartEnd(const tracker::Tracks& tra
   // start and end points in camera frame
   Eigen::MatrixX3d coordinates_start(tracks.size(), 3);
   Eigen::MatrixX3d coordinates_end(tracks.size(), 3);
+  std::vector<uint64_t> ts_start(tracks.size(), 0);
+  std::vector<uint64_t> ts_end(tracks.size(), 0);
   for (size_t i = 0; i < tracks.size(); ++i) {
     const tracker::KeypointPtr &kp0 = (*(tracks[i]->end()-len_vis));
     const tracker::KeypointPtr &kp1 = tracks[i]->back();
     if (kp0!=nullptr) {
       coordinates_start.row(i) = kp0->coordinate;
+      ts_start[i] = kp0->timestamp;
     }
     else {
       coordinates_start.row(i).setConstant(std::numeric_limits<double>::signaling_NaN());
@@ -568,6 +571,7 @@ tracker::Tracks Model::computeTrackProjectionStartEnd(const tracker::Tracks& tra
 
     if (kp1!=nullptr) {
       coordinates_end.row(i) = kp1->coordinate;
+      ts_end[i] = kp1->timestamp;
     }
     else {
       coordinates_end.row(i).setConstant(std::numeric_limits<double>::signaling_NaN());
@@ -591,8 +595,8 @@ tracker::Tracks Model::computeTrackProjectionStartEnd(const tracker::Tracks& tra
   tracker::Tracks ltracks(tracks.size()); // local tracks
   for (size_t i = 0; i < ltracks.size(); ++i) {
     ltracks[i] = std::make_shared<tracker::Track>();
-    ltracks[i]->push_back(std::make_shared<tracker::Keypoint>(tracker::Keypoint{.xy = {x_start.row(i).x(), x_start.row(i).y()}, .coordinate=coordinates_start.row(i)}));
-    ltracks[i]->push_back(std::make_shared<tracker::Keypoint>(tracker::Keypoint{.xy = {x_end.row(i).x(), x_end.row(i).y()}, .coordinate=coordinates_end.row(i)}));
+    ltracks[i]->push_back(std::make_shared<tracker::Keypoint>(tracker::Keypoint{.timestamp = ts_start[i], .xy = {x_start.row(i).x(), x_start.row(i).y()}, .coordinate=coordinates_start.row(i)}));
+    ltracks[i]->push_back(std::make_shared<tracker::Keypoint>(tracker::Keypoint{.timestamp = ts_end[i], .xy = {x_end.row(i).x(), x_end.row(i).y()}, .coordinate=coordinates_end.row(i)}));
   }
 
   return ltracks;
