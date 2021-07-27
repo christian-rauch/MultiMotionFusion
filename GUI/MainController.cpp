@@ -551,13 +551,6 @@ void MainController::run() {
     } else if (pangolin::Pushed(*gui->skip)) {
       coFusion->setTick(coFusion->getTick() + 1);
       logReader->fastForward(logReader->currentFrame + 1);
-    } else {
-      coFusion->predict();
-
-      // TODO Only if relevant setting changed (Deactivate when writing (debug/visualisation) images to hd
-      if (logReader->getFrameData().timestamp && (logReader->getFrameData().rgb.size().area()!=0)) {
-        coFusion->performSegmentation(logReader->getFrameData());
-      }
     }
 
     TICK("GUI");
