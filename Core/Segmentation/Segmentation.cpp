@@ -1960,6 +1960,28 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     cv::imwrite("/tmp/mmf/segm_"+std::to_string(frame.timestamp)+".png", 50*crf_segm);
 #endif
 
+    // find largest blob
+    cv::Mat_<uint8_t> crf_segm_cont(crf_segm.size(), 0);
+    for (int i=0; i<=lbl.maxCoeff(); i++) {
+      std::vector<std::vector<cv::Point>> contours;
+      cv::findContours(crf_segm==i, contours, {}, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_NONE);
+      double max_a = 0;
+      size_t max_i = 0;
+      for (size_t j=0; j<contours.size(); j++) {
+        const double a = cv::contourArea(contours[j]);
+        if (a>max_a) {
+          max_a = a;
+          max_i = j;
+        }
+      }
+      cv::drawContours(crf_segm_cont, contours, max_i, i, cv::FILLED);
+    }
+#if DBG_VIS_PROBS
+    cv::imshow("segm CRF (largest)", crf_segm_cont*50);
+#endif
+
+    crf_segm = crf_segm_cont;
+
     // resize to original image dimension
     cv::resize(crf_segm, result.fullSegmentation, frame.rgb.size(), 0, 0, cv::INTER_NEAREST);
 
@@ -1993,18 +2015,11 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
     // DBG
     {
-      cv::Mat lbls(crf_size, CV_8UC3, cv::Scalar(0,0,0));
-      for (int u = 0; u < crf_size.height; ++u) {
-        for (int v = 0; v < crf_size.width; ++v) {
-          const int i = u * crf_size.width + v;
-          // TODO: show all segments in unique colour
-          if (lbl[i]==0) {
-            lbls.at<cv::Vec3b>(u,v)[0] = 255;
-          }
-          else {
-            lbls.at<cv::Vec3b>(u,v)[2] = 255;
-          }
-        }
+      cv::Mat lbls(crf_size, CV_8UC3);
+      for (int i=0; i<=lbl.maxCoeff(); i++) {
+        // TODO: show all segments in unique colour
+        const cv::Scalar c = (i==0) ? cv::viz::Color::blue() : cv::viz::Color::red();
+        lbls.setTo(c, crf_segm==i);
       }
       cv::resize(gprev, gprev, lbls.size());
       cv::cvtColor(gprev, gprev, cv::COLOR_GRAY2BGR);
