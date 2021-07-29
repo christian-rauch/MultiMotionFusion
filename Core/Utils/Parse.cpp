@@ -71,7 +71,7 @@ std::string Parse::baseDir() const {
 }
 
 int Parse::findArg(int argc, char** argv, const char* argument_name) const {
-  for (int i = 1; i < argc; ++i) {
+  for (int i = argc-1; i > 0; i--) {
     // Search for the string
     if (strcmp(argv[i], argument_name) == 0) {
       return i;
