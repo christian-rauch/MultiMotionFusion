@@ -1423,17 +1423,24 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 //    cv::imshow(name, errs);
 //  };
 
-  // scale
+  // CRF scale
   constexpr double s = 0.25;
 //    constexpr double s = 1;
+  // optical flow scale
+  constexpr double flow_s = 0.25;
+  const cv::Size src_size = next.size();
+  const cv::Size crf_size = s * cv::Point(src_size);
+  const cv::Size flw_size = flow_s * cv::Point(src_size);
 
   cv::Mat flow;
   cv::Mat gnext, gprev;
   typedef Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajorBit> MatrixXf_r;
   MatrixXf_r magn_flow;
   if (!prev.empty()) {
-    cv::resize(next, next, s * cv::Point(next.size()), 0, 0, cv::INTER_AREA);
-    cv::resize(prev, prev, s * cv::Point(prev.size()), 0, 0, cv::INTER_AREA);
+    if (flow_s!=1) {
+      cv::resize(next, next, flw_size, 0, 0, cv::INTER_AREA);
+      cv::resize(prev, prev, flw_size, 0, 0, cv::INTER_AREA);
+    }
 
     cv::cvtColor(next, gnext, cv::COLOR_BGR2GRAY);
     cv::cvtColor(prev, gprev, cv::COLOR_BGR2GRAY);
@@ -1445,9 +1452,14 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
     // prev, next, flow, pyr_scale, levels, winsize, iterations, poly_n, poly_sigma, flags
 //      cv::calcOpticalFlowFarneback(prev, next, uflow, 0.5, 3, 15, 3, 5, 1.2, 0);
-    cv::calcOpticalFlowFarneback(gprev, gnext, flow, 0.5, 3, s*50, 3, 5, 1.2, 0);
+//    cv::calcOpticalFlowFarneback(gprev, gnext, flow, 0.5, 3, s*50, 3, 5, 1.2, 0);
+
+    // empirically tested
+    cv::calcOpticalFlowFarneback(gprev, gnext, flow, 0.2, 1, 20, 2, 5, 15/50.0, 0);
 
     TOCK("segm/opt_flow");
+
+    cv::resize(flow, flow, crf_size, cv::INTER_LINEAR);
 
     // show flow
     std::vector<cv::Mat> flow_x_y;
@@ -1491,7 +1503,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
   // dense reprojection error
   std::vector<cv::Mat_<float>> proj_prob;
-  cv::Mat_<float> expsum(next.size(), 0);
+  cv::Mat_<float> expsum(crf_size, 0);
   constexpr float max_err = 0.03; // metre
   cv::Mat_<bool> invalid(frame.depth.size(), false);
   for (const ModelPointer &model : models) {
@@ -1507,7 +1519,9 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     // mark invalid depth
     invalid |= (frame.depth<1e-6) & (xyz[2]<1e-6);
 
-    cv::resize(dist, dist, s * cv::Point(dist.size()), 0, 0, cv::INTER_NEAREST);
+    if (s!=1) {
+      cv::resize(dist, dist, crf_size, 0, 0, cv::INTER_NEAREST);
+    }
 
     // truncate distance
     cv::threshold(dist, dist, max_err, max_err, cv::THRESH_TRUNC);
@@ -1536,17 +1550,17 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 #if DBG_VIS_PROBS
   // MAP
   {
-  cv::Mat_<uint8_t> map(next.size(), 0);
-  cv::Mat_<float> max_prob(next.size(), 0);
+  cv::Mat_<uint8_t> map(crf_size, 0);
+  cv::Mat_<float> max_prob(crf_size, 0);
   for (size_t w=0; w<proj_prob.size(); w++) {
     map.setTo(w+1, proj_prob[w]>max_prob);
     proj_prob[w].copyTo(max_prob, proj_prob[w]>max_prob);
   }
-  cv::Mat_<cv::Vec3b> map_rgb(next.size(), cv::Vec3b());
+  cv::Mat_<cv::Vec3b> map_rgb(crf_size, cv::Vec3b());
   std::uniform_real_distribution<double> unif(0,1);
   std::default_random_engine g;
-  for (int u=0; u<next.rows; u++) {
-    for (int v=0; v<next.cols; v++) {
+  for (int u=0; u<crf_size.height; u++) {
+    for (int v=0; v<crf_size.width; v++) {
       // unique colour per class ID
       g.seed(map.at<uint8_t>(u,v)+1);
       map_rgb.at<cv::Vec3b>(u,v) = cv::Vec3b(unif(g)*255, unif(g)*255, unif(g)*255);
@@ -1567,7 +1581,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     }
 
     TICK("segm/flowCRF");
-    DenseCRF2D crf(next.cols, next.rows, int(numLabels));
+    DenseCRF2D crf(crf_size.width, crf_size.height, int(numLabels));
 //      DCRF crf(next.cols, next.rows, int(numLabels));
 
     enum error_metric_t {METRE, PIXEL};
@@ -1593,7 +1607,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
     // unary: Nmodels x Npixel
     TICK("segm/unary");
-    Eigen::MatrixXf unary(numLabels, next.rows * next.cols);
+    Eigen::MatrixXf unary(numLabels, crf_size.area());
     // error of unkown association
     unary.fill(std::numeric_limits<float>::infinity());
     int label = 0;
@@ -1665,7 +1679,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
         const double vn = v / 0.05; // max. 5cm/s
         cv::circle(track_vel, kp1->xy, 3, cv::Scalar((1-vn) * 255, 0, vn * 255), -1);
 
-        unary(label, c1.y*next.cols + c1.x) = e;
+        unary(label, c1.y*crf_size.width + c1.x) = e;
       }
       label++;
       cv::imshow("track err "+std::to_string(model->getID()), track_err);
@@ -1732,7 +1746,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
           if (std::isnan(e)) { continue; }
 
           const cv::Point &c1 = s * kp1->xy;
-          unary(numLabels-1, c1.y*next.cols + c1.x) = e;
+          unary(numLabels-1, c1.y*crf_size.width + c1.x) = e;
         }
       }
     }
@@ -1756,7 +1770,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
     // DBG
     {
-      std::vector<cv::Mat_<float>> errs(numLabels, {next.size(), 0});
+      std::vector<cv::Mat_<float>> errs(numLabels, {crf_size, 0});
       for (size_t l = 0; l < numLabels; ++l) {
         for (int u = 0; u < flow.rows; ++u) {
           for (int v = 0; v < flow.cols; ++v) {
@@ -1795,7 +1809,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
     // DBG
     {
-      std::vector<cv::Mat_<float>> probs(numLabels, {next.size(), 0});
+      std::vector<cv::Mat_<float>> probs(numLabels, {crf_size, 0});
       for (size_t l = 0; l < numLabels; ++l) {
         for (int u = 0; u < flow.rows; ++u) {
           for (int v = 0; v < flow.cols; ++v) {
@@ -1817,7 +1831,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
     // feature optical flow: x, y, vx, vy
 //    Eigen::MatrixXf feature(7, next.rows * next.cols);
-    Eigen::MatrixXf feature(4, next.rows * next.cols);
+    Eigen::MatrixXf feature(4, crf_size.area());
     for (int u = 0; u < flow.rows; ++u) {
       for (int v = 0; v < flow.cols; ++v) {
         const int i = u * flow.cols + v;
@@ -1838,9 +1852,9 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
     Eigen::MatrixXf prob_flow = crf.inference(crfIterations);
 
-    Eigen::MatrixXf prob_proj(numLabels, next.rows * next.cols);
+    Eigen::MatrixXf prob_proj(numLabels, crf_size.area());
     for (size_t i=0; i<proj_prob.size(); i++) {
-      prob_proj.row(i) = Eigen::Map<Eigen::RowVectorXf>((float*)proj_prob[i].data, 1, next.rows * next.cols);
+      prob_proj.row(i) = Eigen::Map<Eigen::RowVectorXf>((float*)proj_prob[i].data, 1, crf_size.area());
     }
 
     // remove uncertain projection probabilities
@@ -1850,25 +1864,25 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     {
       for (int i=0; i<prob_flow.rows(); i++) {
         Eigen::RowVectorXf v = prob_flow.row(i);
-        cv::Mat_<float> prob_flow_cv(next.rows, next.cols, v.data());
+        cv::Mat_<float> prob_flow_cv(crf_size.height, crf_size.width, v.data());
         cv::imshow("prob flow m"+std::to_string(i), prob_flow_cv);
         cv::imwrite("/tmp/mmf/prob_flow_m"+std::to_string(i)+"_"+std::to_string(frame.timestamp)+".png", prob_flow_cv*256);
       }
       for (int i=0; i<prob_proj.rows(); i++) {
         Eigen::RowVectorXf v = prob_proj.row(i);
-        cv::Mat_<float> prob_proj_cv(next.rows, next.cols, v.data());
+        cv::Mat_<float> prob_proj_cv(crf_size.height, crf_size.width, v.data());
         cv::imshow("prob proj m"+std::to_string(i), prob_proj_cv);
         cv::imwrite("/tmp/mmf/prob_proj_m"+std::to_string(i)+"_"+std::to_string(frame.timestamp)+".png", prob_proj_cv*256);
       }
     }
 
     {
-      cv::Mat_<float> magn_flow_cv(next.rows, next.cols, magn_flow.data());
+      cv::Mat_<float> magn_flow_cv(crf_size.height, crf_size.width, magn_flow.data());
       cv::imwrite("/tmp/mmf/magn_flow_"+std::to_string(frame.timestamp)+".png", (magn_flow_cv/5.0)*256);
     }
 #endif
 
-    const Eigen::RowVectorXf unary_flow_magn = Eigen::Map<Eigen::RowVectorXf>(magn_flow.data(), next.rows * next.cols);
+    const Eigen::RowVectorXf unary_flow_magn = Eigen::Map<Eigen::RowVectorXf>(magn_flow.data(), crf_size.area());
 
     // map flow range 0.2 ... 5 to probabilities 0 ... 1
     const float flow_min = 0.2, flow_max = 5;
@@ -1876,7 +1890,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
 #if DBG_VIS_PROBS
     {
-      cv::Mat_<float> prob_flow_magn_cv(next.rows, next.cols, prob_flow_magn.data());
+      cv::Mat_<float> prob_flow_magn_cv(crf_size.height, crf_size.width, prob_flow_magn.data());
       cv::imshow("prob flow magn", prob_flow_magn_cv);
       cv::imwrite("/tmp/mmf/prob_flow_magn_"+std::to_string(frame.timestamp)+".png", prob_flow_magn_cv*256);
     }
@@ -1891,7 +1905,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     {
       for (int i=0; i<prob_flow.rows(); i++) {
         Eigen::RowVectorXf v = prob_flow2.row(i);
-        cv::Mat_<float> prob_flow_cv(next.rows, next.cols, v.data());
+        cv::Mat_<float> prob_flow_cv(crf_size.height, crf_size.width, v.data());
         cv::imshow("prob flow2 (*magn) m"+std::to_string(i), prob_flow_cv);
         cv::imwrite("/tmp/mmf/prob_flow2_m"+std::to_string(i)+"_"+std::to_string(frame.timestamp)+".png", prob_flow_cv*256);
       }
@@ -1905,11 +1919,11 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 #if DBG_VIS_PROBS
     // MAP (total)
     {
-      cv::Mat_<uint8_t> map(next.size(), 0);
-      cv::Mat_<float> max_prob(next.size(), 0);
+      cv::Mat_<uint8_t> map(crf_size, 0);
+      cv::Mat_<float> max_prob(crf_size, 0);
       for (int w=0; w<prob.rows(); w++) {
         Eigen::RowVectorXf v = prob.row(w);
-        cv::Mat_<float> prob_cv(next.rows, next.cols, v.data());
+        cv::Mat_<float> prob_cv(crf_size.height, crf_size.width, v.data());
         cv::imshow("prob m"+std::to_string(w), prob_cv);
         cv::imwrite("/tmp/mmf/prob_m"+std::to_string(w)+"_"+std::to_string(frame.timestamp)+".png", prob_cv*256);
 
@@ -1931,7 +1945,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 #endif
 
     // create segmentation at CRF resolution
-    cv::Mat_<uint8_t> crf_segm(next.size(), 0);
+    cv::Mat_<uint8_t> crf_segm(crf_size, 0);
     std::array<uint32_t, 256> segm_count;
 
     for (int u = 0; u < flow.rows; ++u) {
@@ -1979,10 +1993,10 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
     // DBG
     {
-      cv::Mat lbls(next.size(), CV_8UC3, cv::Scalar(0,0,0));
-      for (int u = 0; u < flow.rows; ++u) {
-        for (int v = 0; v < flow.cols; ++v) {
-          const int i = u * flow.cols + v;
+      cv::Mat lbls(crf_size, CV_8UC3, cv::Scalar(0,0,0));
+      for (int u = 0; u < crf_size.height; ++u) {
+        for (int v = 0; v < crf_size.width; ++v) {
+          const int i = u * crf_size.width + v;
           // TODO: show all segments in unique colour
           if (lbl[i]==0) {
             lbls.at<cv::Vec3b>(u,v)[0] = 255;
@@ -1992,6 +2006,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
           }
         }
       }
+      cv::resize(gprev, gprev, lbls.size());
       cv::cvtColor(gprev, gprev, cv::COLOR_GRAY2BGR);
       cv::addWeighted(gprev, 1, lbls, 0.5, 0, lbls);
       cv::imshow("segm", lbls);
