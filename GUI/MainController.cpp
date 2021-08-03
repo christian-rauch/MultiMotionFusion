@@ -30,6 +30,7 @@
 
 #include <filesystem>
 
+
 /*
  * Parameters:
 
@@ -222,7 +223,15 @@ MainController::MainController(int argc, char* argv[])
   }
 
   if (Parse::get().arg(argc, argv, "-p", poseFile) > 0) {
-    groundTruthOdometry = new GroundTruthOdometry(poseFile);
+    if (std::filesystem::exists(poseFile)) {
+      groundTruthOdometry = new GroundTruthOdometry(poseFile);
+      gt_odom = dynamic_cast<GroundTruthOdometryInterface *>(groundTruthOdometry);
+    }
+    else {
+      gt_odom = dynamic_cast<GroundTruthOdometryInterface *>(logReader.get());
+      if (!gt_odom)
+        throw std::invalid_argument("log reader does not provide ground truth poses");
+    }
   }
 
   confObjectInit = 0.01f;
@@ -435,10 +444,10 @@ void MainController::run() {
 
         Eigen::Matrix4f* currentPose = 0;
 
-        if (groundTruthOdometry) {
+        if (gt_odom) {
           currentPose = new Eigen::Matrix4f;
           currentPose->setIdentity();
-          *currentPose = groundTruthOdometry->getIncrementalTransformation(logReader->getFrameData().timestamp);
+          *currentPose = gt_odom->getIncrementalTransformation(logReader->getFrameData().timestamp);
         }
 
         if (coFusion->processFrame(logReader->getFrameData(), currentPose, weightMultiplier) && !showcaseMode) {

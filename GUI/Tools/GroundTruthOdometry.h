@@ -28,14 +28,15 @@
 #include <fstream>
 #include <map>
 #include <Utils/OdometryProvider.h>
+#include <Utils/GroundTruthOdometryInterface.hpp>
 
-class GroundTruthOdometry {
+class GroundTruthOdometry : public GroundTruthOdometryInterface {
  public:
   GroundTruthOdometry(const std::string& filename);
 
   virtual ~GroundTruthOdometry();
 
-  Eigen::Matrix4f getIncrementalTransformation(uint64_t timestamp);
+  Eigen::Matrix4f getIncrementalTransformation(uint64_t timestamp) override;
 
   Eigen::MatrixXd getCovariance();
 

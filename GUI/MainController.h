@@ -45,6 +45,7 @@ class MainController {
   GUI* gui;
   bool showcaseMode;
   GroundTruthOdometry* groundTruthOdometry;
+  GroundTruthOdometryInterface *gt_odom = nullptr;
   std::unique_ptr<LogReader> logReader;
 
   bool iclnuim;
