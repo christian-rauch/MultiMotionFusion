@@ -64,6 +64,9 @@
   <exec_depend>libopenni2-dev</exec_depend>
 
   <depend>rosbag</depend>
+  <depend>tf2</depend>
+  <depend>tf2_msgs</depend>
+  <depend>tf2_eigen</depend>
 
   <export>
     <build_type>cmake</build_type>

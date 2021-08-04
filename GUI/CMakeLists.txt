@@ -19,6 +19,9 @@ find_package(JPEG REQUIRED)
 if(ROSBAG)
     find_package(rosbag REQUIRED)
     find_package(cv_bridge REQUIRED)
+    find_package(tf2 REQUIRED)
+    find_package(tf2_msgs REQUIRED)
+    find_package(tf2_eigen REQUIRED)
 endif()
 
 include_directories(${ZLIB_INCLUDE_DIR})
@@ -86,10 +89,18 @@ target_include_directories(CoFusionTools PUBLIC
 if(ROSBAG)
     target_include_directories(CoFusionTools PUBLIC
         ${rosbag_INCLUDE_DIRS}
-        ${cv_bridge_INCLUDE_DIRS})
+        ${cv_bridge_INCLUDE_DIRS}
+        ${tf2_INCLUDE_DIRS}
+        ${tf2_msgs_INCLUDE_DIRS}
+        ${tf2_eigen_INCLUDE_DIRS}
+    )
     target_link_libraries(CoFusionTools
         ${rosbag_LIBRARIES}
-        ${cv_bridge_LIBRARIES})
+        ${cv_bridge_LIBRARIES}
+        ${tf2_LIBRARIES}
+        ${tf2_msgs_LIBRARIES}
+        ${tf2_eigen_LIBRARIES}
+    )
     add_definitions(-DROSBAG)
     add_definitions(-DROSCOMMON)
 endif()
