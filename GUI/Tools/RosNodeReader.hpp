@@ -6,12 +6,16 @@
 #include <ros/ros.h>
 #include <image_transport/subscriber_filter.h>
 #include <message_filters/sync_policies/approximate_time.h>
+#include <Utils/GroundTruthOdometryInterface.hpp>
+#include <Eigen/Geometry>
+#include <tf2_ros/transform_listener.h>
 
 
-class RosNodeReader : public LogReader {
+class RosNodeReader : public LogReader, public GroundTruthOdometryInterface {
 public:
   RosNodeReader(const uint32_t synchroniser_queue_size,
-                const bool flipColors = false, const cv::Size &target_dimensions = {});
+                const bool flipColors = false, const cv::Size &target_dimensions = {},
+                const std::string frame_gt_camera = {});
 
   ~RosNodeReader();
 
@@ -35,6 +39,8 @@ public:
 
   FrameData getFrameData() override;
 
+  Eigen::Matrix4f getIncrementalTransformation(uint64_t timestamp) override;
+
 private:
   typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image> ApproximateTimePolicy;
 
@@ -42,6 +48,13 @@ private:
   std::unique_ptr<ros::NodeHandle> n;
   std::unique_ptr<image_transport::ImageTransport> it;
   std::unique_ptr<ros::AsyncSpinner> spinner;
+
+  // ground truth camera poses in root frame
+  std::string frame_gt_root;
+  std::string frame_gt_camera;
+  tf2::BufferCore tf_buffer;
+  std::unique_ptr<tf2_ros::TransformListener> tf_listener;
+  Eigen::Isometry3d ref_pose;
 
   // topics
   image_transport::SubscriberFilter sub_colour;
