@@ -58,12 +58,9 @@ RosBagReader::RosBagReader(const std::string bagfile_path,
   if (!frame_gt_camera.empty() && !tf_buffer._frameExists(frame_gt_camera))
     throw std::runtime_error("provided ground truth camera frame '" + frame_gt_camera + "' does not exist");
 
-  topic_view.addQuery(bag, rosbag::TopicQuery({topic_colour, topic_depth}));
+  sync();
 
-  if (topic_view.size() == 0)
-    throw std::runtime_error("None of the requested topics contain messages.");
-
-  iter_msg = topic_view.begin();
+  iter_sync = matches.cbegin();
 }
 
 RosBagReader::~RosBagReader() {
@@ -77,74 +74,73 @@ void RosBagReader::getNext() {
   std_msgs::Header hdr_colour;
   std_msgs::Header hdr_depth;
 
-  for(bool has_colour = false, has_depth = false;
-      !(has_colour & has_depth) & hasMore();
-      iter_msg++)
-  {
-    if(iter_msg->getTopic()==topic_colour) {
-      if (const auto m = iter_msg->instantiate<sensor_msgs::CompressedImage>()) {
-        hdr_colour = m->header;
-        data.rgb = cv_bridge::toCvCopy(m, "rgb8")->image;
-      }
-      else if (const auto m = iter_msg->instantiate<sensor_msgs::Image>()) {
-        hdr_colour = m->header;
-        data.rgb = cv_bridge::toCvCopy(m, "rgb8")->image;
-      }
-      else {
-        throw std::runtime_error("colour topic '" + topic_colour + "' must only contain messages of type 'sensor_msgs/Image' or 'sensor_msgs/CompressedImage'");
-      }
+  while (hasMore()) {
+    const ros::Time &cmsgtime = std::get<1>(*iter_sync);
+    const ros::Time &dmsgtime = std::get<2>(*iter_sync);
+    rosbag::View cv(bag, cmsgtime, cmsgtime);
+    rosbag::View dv(bag, dmsgtime, dmsgtime);
 
-      data.timestamp = int64_t(hdr_colour.stamp.toNSec());
-
-      if (has_tf) {
-        // use provided ground truth camera frame or colour optical frame from images
-        if (frame_gt_camera.empty())
-          frame_gt_camera = hdr_colour.frame_id;
-
-        // find root frame
-        if (frame_gt_root.empty()) {
-          std::string parent = frame_gt_camera;
-          while (tf_buffer._getParent(parent, {}, parent));
-          frame_gt_root = parent;
+    // the log timestamp might not be unique, iterate over all messages of that
+    // timestamp and find the correct image message from the colour / depth topic
+    for (const rosbag::MessageInstance &m : cv) {
+      if (m.getTopic() == topic_colour) {
+        if (const auto im = m.instantiate<sensor_msgs::CompressedImage>()) {
+          hdr_colour = im->header;
+          data.rgb = cv_bridge::toCvCopy(im, "rgb8")->image;
         }
-
-        try {
-          poses[data.timestamp] = tf2::transformToEigen(tf_buffer.lookupTransform(frame_gt_root, frame_gt_camera, hdr_colour.stamp));
-          has_colour = true;
-        } catch (tf2::ExtrapolationException &) {
-          // we have to wait for a colour frame with a matching ground truth transformation
-          has_colour = false;
+        else if (const auto im = m.instantiate<sensor_msgs::Image>()) {
+          hdr_colour = im->header;
+          data.rgb = cv_bridge::toCvCopy(im, "rgb8")->image;
         }
-      }
-      else {
-        has_colour = true;
       }
     }
-    else if(iter_msg->getTopic()==topic_depth) {
-      if (const auto m = iter_msg->instantiate<sensor_msgs::CompressedImage>()) {
-        hdr_depth = m->header;
-        data.depth = cv_bridge::toCvCopy(m)->image;
+
+    for (const rosbag::MessageInstance &m : dv) {
+      if (m.getTopic() == topic_depth) {
+        if (const auto im = m.instantiate<sensor_msgs::CompressedImage>()) {
+          hdr_depth = im->header;
+          data.depth = cv_bridge::toCvCopy(im)->image;
+        }
+        else if (const auto im = m.instantiate<sensor_msgs::Image>()) {
+          hdr_depth = im->header;
+          data.depth = cv_bridge::toCvCopy(im)->image;
+        }
       }
-      else if (const auto m = iter_msg->instantiate<sensor_msgs::Image>()) {
-        hdr_depth = m->header;
-        data.depth = cv_bridge::toCvCopy(m)->image;
+    }
+
+    if (data.depth.type() == CV_16U) {
+      // convert from 16 bit integer millimeter to 32 bit float meter
+      data.depth.convertTo(data.depth, CV_32F, 1e-3);
+    }
+
+    data.timestamp = int64_t(hdr_colour.stamp.toNSec());
+
+    iter_sync++;
+
+    if (has_tf) {
+      // use provided ground truth camera frame or colour optical frame from images
+      if (frame_gt_camera.empty())
+        frame_gt_camera = hdr_colour.frame_id;
+
+      // find root frame
+      if (frame_gt_root.empty()) {
+        std::string parent = frame_gt_camera;
+        while (tf_buffer._getParent(parent, {}, parent));
+        frame_gt_root = parent;
       }
-      else {
-        throw std::runtime_error("depth topic '" + topic_depth + "' must only contain messages of type 'sensor_msgs/Image' or 'sensor_msgs/CompressedImage'");
+
+      try {
+        poses[data.timestamp] = tf2::transformToEigen(tf_buffer.lookupTransform(frame_gt_root, frame_gt_camera, hdr_colour.stamp));
+        break;
+      } catch (tf2::ExtrapolationException &e) {
+        // we have to iterate over synchronised message pairs until we find a colour message with a matching transformation
+        data = {};
       }
-      if (!data.depth.empty() && data.depth.type() == CV_16U) {
-        // convert from 16 bit integer millimeter to 32 bit float meter
-        data.depth.convertTo(data.depth, CV_32F, 1e-3);
-      }
-      has_depth = true;
+    }
+    else {
+      break;
     }
   }
-
-  if (hasMore() && data.rgb.empty())
-    throw std::runtime_error("no images on colour topic '" + topic_colour + "'");
-
-  if (hasMore() && data.depth.empty())
-    throw std::runtime_error("no images on depth topic '" + topic_depth + "'");
 
   if (hasMore() && (hdr_colour.frame_id != hdr_depth.frame_id))
     throw std::runtime_error("colour and depth images are not registered into the same frame");
@@ -159,16 +155,16 @@ void RosBagReader::getNext() {
 };
 
 int RosBagReader::getNumFrames() {
-  // get number of colour image frames
-  return int(rosbag::View(bag, rosbag::TopicQuery(topic_colour)).size());
+  // get number of colour and depth image pairs
+  return matches.size();
 };
 
 bool RosBagReader::hasMore() {
-  return iter_msg != topic_view.end();
+  return iter_sync != matches.cend();
 };
 
 bool RosBagReader::rewind() {
-  iter_msg = topic_view.begin();
+  iter_sync = matches.cbegin();
   return true;
 };
 
@@ -216,6 +212,61 @@ bool RosBagReader::add_all_tf_msgs(const std::string &topic, const bool tf_stati
     }
   }
   return nvalid>0;
+}
+
+void RosBagReader::sync() {
+  // store tuples of message header time and logged timestamp
+  // the message header will be used to match colour and depth image
+  // the logged timestamp will be used to access logged messages directly
+  std::map<ros::Time, ros::Time> index_colour;
+  std::map<ros::Time, ros::Time> index_depth;
+  for (const rosbag::MessageInstance &m : rosbag::View(bag, rosbag::TopicQuery({topic_colour, topic_depth}))) {
+    std_msgs::Header hdr;
+    if (const auto &im = m.instantiate<sensor_msgs::CompressedImage>())
+      hdr = im->header;
+    else if (const auto &im = m.instantiate<sensor_msgs::Image>())
+      hdr = im->header;
+
+    if (m.getTopic()==topic_colour)
+      index_colour[hdr.stamp] = m.getTime();
+    else if (m.getTopic()==topic_depth)
+      index_depth[hdr.stamp] = m.getTime();
+  }
+
+  std::cout << "colour images: " << index_colour.size() << std::endl;
+  std::cout << "depth images: " << index_depth.size() << std::endl;
+
+  if (index_colour.empty())
+    throw std::runtime_error("no images on colour topic '" + topic_colour + "'");
+
+  if (index_depth.empty())
+    throw std::runtime_error("no images on depth topic '" + topic_depth + "'");
+
+  // sort by all colour - depth distances
+  typedef std::tuple<int64_t, ros::Time, ros::Time> time_tuple_t;
+  std::vector<time_tuple_t> time_diff;
+  for (const auto &[ctime, chash] : index_colour) {
+    for (const auto &[dtime, dhash] : index_depth) {
+      time_diff.emplace_back(abs((ctime-dtime).toNSec()), ctime, dtime);
+    }
+  }
+  std::sort(time_diff.begin(), time_diff.end(),
+            [](const time_tuple_t &a, const time_tuple_t &b) { return std::get<0>(a) < std::get<0>(b); });
+
+  // sort by colour timestamp
+  for (const auto &[diff, ctime, dtime] : time_diff) {
+    // keep first match with smallest time distance
+    if (index_colour.count(ctime) && index_depth.count(dtime)) {
+      matches.emplace_back(ctime, index_colour.at(ctime), index_depth.at(dtime));
+    }
+    // remove all other associations with larger time distances
+    index_colour.erase(ctime);
+    index_depth.erase(dtime);
+  }
+  std::sort(matches.begin(), matches.end(),
+            [](const sync_tuple_t &a, const sync_tuple_t &b) { return std::get<0>(a) < std::get<0>(b); });
+
+  std::cout << "synchronised " << matches.size() << " image pairs" << std::endl;
 }
 
 #endif

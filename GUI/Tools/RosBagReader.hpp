@@ -42,9 +42,9 @@ public:
   Eigen::Matrix4f getIncrementalTransformation(uint64_t timestamp) override;
 
 private:
+  typedef std::tuple<ros::Time, ros::Time, ros::Time> sync_tuple_t;
+
   rosbag::Bag bag;
-  rosbag::View topic_view;
-  rosbag::View::iterator iter_msg;
 
   const cv::Size target_dimensions;
   cv::Rect crop_roi;
@@ -55,6 +55,10 @@ private:
   const std::string topic_colour;
   const std::string topic_depth;
   const std::string topic_camera_info;
+
+  // synchronised (time, colour, depth) tuples
+  std::vector<sync_tuple_t> matches;
+  std::vector<sync_tuple_t>::const_iterator iter_sync;
 
   // ground truth camera poses in root frame
   std::string frame_gt_root;
@@ -67,6 +71,8 @@ private:
   FrameData data;
 
   bool add_all_tf_msgs(const std::string &topic, const bool tf_static);
+
+  void sync();
 };
 
 #endif
