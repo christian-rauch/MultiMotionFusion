@@ -51,8 +51,13 @@ struct OdometryConfig {
 
   size_t history;
 
-  // initialise ICP odometry with transformation from keypoint tracks
-  bool track_init;
+  // initialise ICP odometry
+  // - (empty): do not initialise, effectively sets initial transformation to identity
+  // - "kp": transformation between keypoint tracks
+  // - "tf": transformation from log file
+  std::string init;
+  // frame name as "tf" initialisation source (default: colour optical frame)
+  std::string init_frame;
 
   // refine via ICP after initialisation (only considered if 'track_init' is set)
   bool icp_refine;

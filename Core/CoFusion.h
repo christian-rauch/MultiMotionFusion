@@ -23,6 +23,7 @@
 #include "Utils/Resolution.h"
 #include "Utils/Intrinsics.h"
 #include "Utils/Stopwatch.h"
+#include "Utils/GroundTruthOdometryInterface.hpp"
 #include "Callbacks.h"
 #include "Shaders/Shaders.h"
 #include "Shaders/ComputePack.h"
@@ -72,6 +73,7 @@ class CoFusion {
        * @return returns true if a pause might be interesting, can be ignored without hesitation
        */
   bool processFrame(const FrameData& frame, const Eigen::Matrix4f* inPose = 0, const float weightMultiplier = 1.f,
+                    GroundTruthOdometryInterface* const gt_pose = nullptr,
                     const bool bootstrap = false);
 
   /**

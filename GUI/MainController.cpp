@@ -90,7 +90,11 @@
                     1. "dense": reprojection of dense  depth (default)
                     2. "sparse": reprojection of sparse track keypoints
     -segm_sp_size   size (edge length in pixels) of super pixel (default: 16 pixel)
-    -track_init     initialise ICP with transformation between track keypoints
+    -init           initialise ICP odometry
+                    - (empty): do not initialise, effectively sets initial transformation to identity
+                    - "kp": transformation between keypoint tracks
+                    - "tf": transformation from log file
+    -init_frame     frame name as "tf" initialisation source (default: colour optical frame)
     -icp_refine     refine via ICP after initialisation (only considered if 'track_init' is set)
 
     -l             Processes a log-file (*.klg/pangolin/rosbag).
@@ -174,6 +178,13 @@ MainController::MainController(int argc, char* argv[])
     }
   }
 
+  // TODO: make configurable
+  odom_cfg.history = 10; // frames
+
+  Parse::get().arg(argc, argv, "-init", odom_cfg.init);
+  Parse::get().arg(argc, argv, "-init_frame", odom_cfg.init_frame);
+  odom_cfg.icp_refine = Parse::get().arg(argc, argv, "-icp_refine", empty) > -1;
+
   Parse::get().arg(argc, argv, "-l", logFile);
   if (logFile.length()) {
     if (std::filesystem::exists(logFile) && boost::algorithm::ends_with(logFile, ".klg")) {
@@ -189,7 +200,8 @@ MainController::MainController(int argc, char* argv[])
                                                  topic_img_depth,
                                                  topic_info_camera,
                                                  Parse::get().arg(argc, argv, "-f", empty) > -1,
-                                                 target_dim);
+                                                 target_dim,
+                                                 odom_cfg.init_frame);
 #endif
     } else {
       logReader = std::make_unique<PangolinReader>(logFile, Parse::get().arg(argc, argv, "-f", empty) > -1);
@@ -260,7 +272,7 @@ MainController::MainController(int argc, char* argv[])
     loadCalibration(logReader->getIntinsicsFile());
   }
 
-  if (Parse::get().arg(argc, argv, "-p", poseFile) > 0) {
+  if (Parse::get().arg(argc, argv, "-p", poseFile) > 0 || odom_cfg.init == "tf") {
     if (std::filesystem::exists(poseFile)) {
       groundTruthOdometry = new GroundTruthOdometry(poseFile);
       gt_odom = dynamic_cast<GroundTruthOdometryInterface *>(groundTruthOdometry);
@@ -269,6 +281,10 @@ MainController::MainController(int argc, char* argv[])
       gt_odom = dynamic_cast<GroundTruthOdometryInterface *>(logReader.get());
       if (!gt_odom)
         throw std::invalid_argument("log reader does not provide ground truth poses");
+    }
+    if (odom_cfg.init == "tf") {
+      gt_init = gt_odom;
+      gt_odom = nullptr;
     }
   }
 
@@ -343,12 +359,6 @@ MainController::MainController(int argc, char* argv[])
   Parse::get().arg(argc, argv, "-segm_mode", segm_cfg.mode);
 
   Parse::get().arg(argc, argv, "-segm_sp_size", segm_cfg.sp_size);
-
-  // TODO: make configurable
-  odom_cfg.history = 10; // frames
-
-  odom_cfg.track_init = Parse::get().arg(argc, argv, "-track_init", empty) > -1;
-  odom_cfg.icp_refine = Parse::get().arg(argc, argv, "-icp_refine", empty) > -1;
 
 
   gui->flipColors->Ref()->Set(logReader->flipColors);
@@ -517,7 +527,7 @@ void MainController::run() {
           *currentPose = gt_odom->getIncrementalTransformation(logReader->getFrameData().timestamp);
         }
 
-        if (coFusion->processFrame(logReader->getFrameData(), currentPose, weightMultiplier) && !showcaseMode) {
+        if (coFusion->processFrame(logReader->getFrameData(), currentPose, weightMultiplier, gt_init) && !showcaseMode) {
           gui->pause->Ref()->Set(true);
         }
         if (Stopwatch::getInstance().getTimings().count("Run")) {

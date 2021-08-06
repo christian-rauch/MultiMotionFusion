@@ -188,7 +188,8 @@ void CoFusion::computeFeedbackBuffers() {
   TOCK("feedbackBuffers");
 }
 
-bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPose, const float weightMultiplier, const bool bootstrap) {
+bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPose, const float weightMultiplier,
+                            GroundTruthOdometryInterface* const gt_pose, const bool bootstrap) {
   if (frame.depth.empty() || frame.rgb.empty() || frame.timestamp < 0) {
     std::cerr << "invalid image data" << std::endl;
     return false;
@@ -332,16 +333,42 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       // TODO: use one global store for the feature maps and keypoints for the current and last observed frame
       for (auto model : models) {
         // initialise by track transformation
-        if (odom_cfg.track_init) {
-          // transformation between keypoints in global camera frame
-          const Eigen::Isometry3f Tinit = model->getLastTrackTransform(/*globalModel*/);
+        bool do_icp = true;
+        if (!odom_cfg.init.empty()) {
+          do_icp = odom_cfg.icp_refine;
 
           Eigen::Matrix4f Tnew;
-          if (model->getID()==0) {
-            Tnew = model->getPose() * Tinit.matrix();
+
+          if (odom_cfg.init == "kp") {
+            // transformation between keypoints in global camera frame
+            const Eigen::Isometry3f Tinit = model->getLastTrackTransform();
+
+            if (Tinit.matrix().isIdentity()) {
+              std::cout << "model " << model->getID() << " keypoint initialisation failed (" << frame.timestamp << ")" << std::endl;
+            }
+
+            if (model->getID()==0) {
+              Tnew = model->getPose() * Tinit.matrix();
+            }
+            else {
+              Tnew = Tinit.matrix() * model->getPose();
+            }
+          }
+          else if (odom_cfg.init == "tf") {
+            // use log ground truth pose
+            if (model->getID()==0) {
+              // currently, only the camera pose can be used for ground truth
+              Tnew = gt_pose->getIncrementalTransformation(frame.timestamp);
+            }
+            else {
+              // logs do not provide ground truth for any other poses than the camera (id: 0)
+              // use regular ICP without initialisation
+              Tnew = model->getPose();
+              do_icp = true;
+            }
           }
           else {
-            Tnew = Tinit.matrix() * model->getPose();
+            throw std::invalid_argument("invalid initialisation method: " + odom_cfg.init);
           }
 
           model->overridePose(Tnew);
@@ -369,7 +396,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
           }
         } // track init
 
-        if (!odom_cfg.track_init || (odom_cfg.track_init && odom_cfg.icp_refine)) {
+        if (do_icp) {
           // refine initial pose via ICP odometry
           model->performTracking(frameToFrameRGB, rgbOnly, icpWeight, pyramid, fastOdom, so3, maxDepthProcessed, textures[GPUTexture::RGB],
                                  textures[GPUTexture::MASK], frame.timestamp, requiresFillIn(model), features, coordinates, descriptors);
