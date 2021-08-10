@@ -1584,24 +1584,27 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     DenseCRF2D crf(crf_size.width, crf_size.height, int(numLabels));
 //      DCRF crf(next.cols, next.rows, int(numLabels));
 
-    enum error_metric_t {METRE, PIXEL};
+    enum error_metric_t {METRE, PIXEL, METRE_S, PIXEL_S};
 
-    constexpr error_metric_t metric = METRE;
+    constexpr error_metric_t metric = PIXEL_S;
 
     size_t minhist;
     double threshold;
 
+    minhist = 2;
+
     switch (metric) {
     case METRE:
-      minhist = 2;
-//      threshold = 0.005;
+      threshold = 0.005;
+      break;
+    case METRE_S:
       threshold = 0.01; // 1cm/s
       break;
     case PIXEL:
-//      minhist = 20;
-//      threshold = 10;
-      minhist = 2;
       threshold = 3;
+      break;
+    case PIXEL_S:
+      threshold = 20; // p/s
       break;
     }
 
@@ -1649,37 +1652,39 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
         const cv::Point &c1 = s * kp1->xy;
 
-        // distance between current and start point of trajectory section
-        double e;
-
+        // metric
         double v;
-
         switch (metric) {
         case METRE:
-          e = (kp0->coordinate - kp1->coordinate).norm();
+          v = (kp0->coordinate - kp1->coordinate).norm();
+          break;
+        case METRE_S:
           v = (kp1->coordinate - kp0->coordinate).norm() / ((kp1->timestamp - kp0->timestamp) * 1e-9);
           break;
         case PIXEL:
-          e = cv::norm(cv::Point2f(kp0->xy) - cv::Point2f(kp1->xy));
+          v = cv::norm(cv::Point2f(kp0->xy) - cv::Point2f(kp1->xy));
+          break;
+        case PIXEL_S:
           v = cv::norm(cv::Point2f(kp1->xy) - cv::Point2f(kp0->xy)) / ((kp1->timestamp - kp0->timestamp) * 1e-9);
           break;
         }
 
         if (v > threshold) {
+          // outlier
           outlier_set.remove(tracks[it]);
           cv::circle(track_err, kp1->xy, 3, cv::Scalar(0, 0, 255), -1); // red
         }
-
-        if (v < threshold) {
+        else {
+          // inlier
           result.modelData[label].tracks_inlier.push_back(tracks[it]);
           cv::circle(track_err, kp1->xy, 3, cv::Scalar(255, 0, 0), -1); // blue
         }
 
         // blue: low speed, red: high speed
-        const double vn = v / 0.05; // max. 5cm/s
+        const double vn = v / (2*threshold);
         cv::circle(track_vel, kp1->xy, 3, cv::Scalar((1-vn) * 255, 0, vn * 255), -1);
 
-        unary(label, c1.y*crf_size.width + c1.x) = e;
+        unary(label, c1.y*crf_size.width + c1.x) = v;
       }
       label++;
       cv::imshow("track err "+std::to_string(model->getID()), track_err);
@@ -1687,7 +1692,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     }
 
     if (allowNew) {
-      // outlier tracks ar the outlier model's inlier tracks
+      // outlier tracks are the outlier model's inlier tracks
       result.modelData.back().tracks_inlier = {outlier_set.begin(), outlier_set.end()};
 
       cv::Mat track_err;
@@ -1738,9 +1743,9 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
           case METRE:
             e = ((Toutlier.cast<double>().inverse() * kp0->coordinate.transpose()).transpose() - kp1->coordinate).norm();
             break;
-          case PIXEL:
+          default:
             // TODO: 2D track projection
-            break;
+            throw std::runtime_error("unsupported");
           }
 
           if (std::isnan(e)) { continue; }
