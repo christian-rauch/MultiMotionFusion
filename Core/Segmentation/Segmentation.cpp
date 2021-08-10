@@ -1671,11 +1671,11 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
         if (v > threshold) {
           // outlier
-          outlier_set.remove(tracks[it]);
           cv::circle(track_err, kp1->xy, 3, cv::Scalar(0, 0, 255), -1); // red
         }
         else {
           // inlier
+          outlier_set.remove(tracks[it]);
           result.modelData[label].tracks_inlier.push_back(tracks[it]);
           cv::circle(track_err, kp1->xy, 3, cv::Scalar(255, 0, 0), -1); // blue
         }
