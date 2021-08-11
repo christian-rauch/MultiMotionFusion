@@ -48,7 +48,10 @@ typedef std::chrono::high_resolution_clock Clock;
 typedef std::chrono::system_clock::time_point TimePoint;
 #endif
 
+// show optical flow and dense reprojection probabilities
 #define DBG_VIS_PROBS 0
+// export images of the local keypoint reprojection and errors
+#define DBG_EXP_ERRORS 0
 
 SegmentationResult::ModelData::ModelData(unsigned t_id) : id(t_id) {}
 
@@ -1621,7 +1624,11 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
       const tracker::Tracks ltracks = model->computeTrackProjectionStartEnd(tracks, minhist);
 
 //      Model::exportTracksPLY(ltracks, "/tmp/global-m"+std::to_string(model->getID())+".ply");
-      cv::imshow("model tracks (local) "+std::to_string(model->getID()), Model::drawLocalTracks2D(ltracks, frame.rgb));
+      const cv::Mat track_local_img = Model::drawLocalTracks2D(ltracks, frame.rgb);
+      cv::imshow("model tracks (local) "+std::to_string(model->getID()), track_local_img);
+#if DBG_EXP_ERRORS
+      cv::imwrite("/tmp/mmf/track_local_m"+std::to_string(model->getID())+"_"+std::to_string(frame.timestamp)+".png", track_local_img);
+#endif
 
 //      drawTrackStartEnd(ltracks, frame.rgb, "m"+std::to_string(model->getID()));
 
@@ -1689,6 +1696,9 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
       label++;
       cv::imshow("track err "+std::to_string(model->getID()), track_err);
       cv::imshow("track vel "+std::to_string(model->getID()), track_vel);
+#if DBG_EXP_ERRORS
+      cv::imwrite("/tmp/mmf/track_err_m"+std::to_string(model->getID())+"_"+std::to_string(frame.timestamp)+".png", track_err);
+#endif
     }
 
     if (allowNew) {
@@ -1785,6 +1795,9 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
         }
 //          cv::imshow("errors "+std::to_string(l), errs[l]/0.05);
         cv::imshow("errors "+std::to_string(l), errs[l]);
+#if DBG_EXP_ERRORS
+        cv::imwrite("/tmp/mmf/err_m"+std::to_string(l)+"_"+std::to_string(frame.timestamp)+".png", errs[l]*256);
+#endif
       }
     }
 
@@ -1812,6 +1825,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
 //      std::cout << "unary (probs):" << std::endl << unary << std::endl;
 
+#if 0
     // DBG
     {
       std::vector<cv::Mat_<float>> probs(numLabels, {crf_size, 0});
@@ -1825,7 +1839,29 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
         cv::imshow("probs "+std::to_string(l), probs[l]);
         cv::imshow("probs>0.5 "+std::to_string(l), probs[l]>0.5);
       }
+
+      const static Eigen::IOFormat CSVFormat(Eigen::StreamPrecision, Eigen::DontAlignCols, ", ", "\n");
+      std::ofstream file("/tmp/mmf/unary_"+std::to_string(frame.timestamp)+".csv");
+      file << unary.format(CSVFormat);
+      file.close();
+
+
+      // probs per model ID in separate colours
+      static const std::vector<cv::viz::Color> colours_id = {
+        cv::viz::Color::blue(),
+        cv::viz::Color::red(),
+        cv::viz::Color::green(),
+        cv::viz::Color::yellow(),
+        cv::viz::Color::magenta(),
+      };
+      cv::Mat probs_id(crf_size, CV_32FC3, cv::Scalar(0));
+      for (size_t i=0; i<std::min<size_t>(colours_id.size(), numLabels); i++) {
+        probs_id.setTo(colours_id[i], probs[i]>0.5);
+      }
+      cv::imshow("inlier", probs_id);
+      cv::imwrite("/tmp/mmf/inlier_"+std::to_string(frame.timestamp)+".png", probs_id);
     }
+#endif
 
     // log probability
     unary = -unary.array().log();
