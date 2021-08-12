@@ -153,7 +153,7 @@ class Model {
 
   virtual tracker::Tracks computeTrackProjectionStartEnd(const tracker::Tracks& tracks, const size_t length);
 
-  static cv::Mat drawLocalTracks2D(const tracker::Tracks &tracks, const cv::Mat &img);
+  static cv::Mat drawLocalTracks2D(const tracker::Tracks &tracks, const cv::Mat &img, int msize = 10, bool mscale = false);
 
   // initialise the first set of tracks for the global model
   virtual void initGlobalTracks(const tracker::Tracks& tracks, const Eigen::Isometry3f &initial_pose = Eigen::Isometry3f::Identity(), const uint64_t &time = 0);

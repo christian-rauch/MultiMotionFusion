@@ -602,7 +602,7 @@ tracker::Tracks Model::computeTrackProjectionStartEnd(const tracker::Tracks& tra
   return ltracks;
 }
 
-cv::Mat Model::drawLocalTracks2D(const tracker::Tracks &tracks, const cv::Mat &img) {
+cv::Mat Model::drawLocalTracks2D(const tracker::Tracks &tracks, const cv::Mat &img, int msize, bool mscale) {
   cv::Mat img_tracks;
   cv::cvtColor(img, img_tracks, cv::COLOR_RGB2GRAY);
   cv::cvtColor(img_tracks, img_tracks, cv::COLOR_GRAY2RGB);
@@ -613,6 +613,7 @@ cv::Mat Model::drawLocalTracks2D(const tracker::Tracks &tracks, const cv::Mat &i
     // unique colour
     g.seed(i++);
     const cv::viz::Color c(u(g)*255, u(g)*255, u(g)*255);
+    tracker::KeypointPtr kp_start;
     tracker::KeypointPtr prev_kp;
     for (const tracker::KeypointPtr &kp : *track) {
       if (kp && point_inside(kp->xy, img)) {
@@ -620,11 +621,21 @@ cv::Mat Model::drawLocalTracks2D(const tracker::Tracks &tracks, const cv::Mat &i
           cv::line(img_tracks, kp->xy, prev_kp->xy, c, 2);
         }
         else {
-          cv::circle(img_tracks, kp->xy, 2, c, cv::FILLED);
+          kp_start = kp;
         }
       }
       prev_kp = kp;
     }
+
+    if (!(kp_start && prev_kp) || (kp_start == prev_kp))
+      continue;
+
+    // scale marker size if given in in pxl/s
+    const float duration = mscale  ? abs((prev_kp->timestamp - kp_start->timestamp) * 1e-9) : 1;
+    // start marker
+    cv::circle(img_tracks, kp_start->xy, msize * duration, c, 1, cv::LINE_AA);
+    // end marker
+    cv::drawMarker(img_tracks, prev_kp->xy, c, cv::MARKER_TILTED_CROSS, msize * duration, 1, cv::LINE_AA);
   }
   return img_tracks;
 }
