@@ -1611,6 +1611,20 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
       break;
     }
 
+    // visualisation of local track projection
+    int ms;
+    bool scale;
+    switch (metric) {
+    case PIXEL_S:
+      scale = true;
+    case PIXEL:
+      ms = threshold;
+      break;
+    default:
+      scale = false;
+      ms = 10;
+    }
+
     // unary: Nmodels x Npixel
     TICK("segm/unary");
     Eigen::MatrixXf unary(numLabels, crf_size.area());
@@ -1624,7 +1638,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
       const tracker::Tracks ltracks = model->computeTrackProjectionStartEnd(tracks, minhist);
 
 //      Model::exportTracksPLY(ltracks, "/tmp/global-m"+std::to_string(model->getID())+".ply");
-      const cv::Mat track_local_img = Model::drawLocalTracks2D(ltracks, frame.rgb);
+      const cv::Mat track_local_img = Model::drawLocalTracks2D(ltracks, frame.rgb, ms, scale);
       cv::imshow("model tracks (local) "+std::to_string(model->getID()), track_local_img);
 #if DBG_EXP_ERRORS
       cv::imwrite("/tmp/mmf/track_local_m"+std::to_string(model->getID())+"_"+std::to_string(frame.timestamp)+".png", track_local_img);
