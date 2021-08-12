@@ -556,25 +556,22 @@ tracker::Tracks Model::computeTrackProjectionStartEnd(const tracker::Tracks& tra
   // start and end points in camera frame
   Eigen::MatrixX3d coordinates_start(tracks.size(), 3);
   Eigen::MatrixX3d coordinates_end(tracks.size(), 3);
+  coordinates_start.setConstant(std::numeric_limits<double>::signaling_NaN());
+  coordinates_end.setConstant(std::numeric_limits<double>::signaling_NaN());
+
   std::vector<uint64_t> ts_start(tracks.size(), 0);
   std::vector<uint64_t> ts_end(tracks.size(), 0);
   for (size_t i = 0; i < tracks.size(); ++i) {
     const tracker::KeypointPtr &kp0 = (*(tracks[i]->end()-len_vis));
     const tracker::KeypointPtr &kp1 = tracks[i]->back();
-    if (kp0!=nullptr) {
+    if (kp0!=nullptr && kp0->coordinate.array().isFinite().all()) {
       coordinates_start.row(i) = kp0->coordinate;
       ts_start[i] = kp0->timestamp;
     }
-    else {
-      coordinates_start.row(i).setConstant(std::numeric_limits<double>::signaling_NaN());
-    }
 
-    if (kp1!=nullptr) {
+    if (kp1!=nullptr && kp1->coordinate.array().isFinite().all()) {
       coordinates_end.row(i) = kp1->coordinate;
       ts_end[i] = kp1->timestamp;
-    }
-    else {
-      coordinates_end.row(i).setConstant(std::numeric_limits<double>::signaling_NaN());
     }
   }
 
@@ -582,21 +579,24 @@ tracker::Tracks Model::computeTrackProjectionStartEnd(const tracker::Tracks& tra
   coordinates_start = (((*(poses.end()-len_vis)*Eigen::Isometry3f(pose.inverse())).cast<double>()) * coordinates_start.transpose()).transpose();
   coordinates_end = (((poses.back()*Eigen::Isometry3f(pose.inverse())).cast<double>()) * coordinates_end.transpose()).transpose();
 
-  Eigen::MatrixX2i x_start(tracks.size(), 2);
-  Eigen::MatrixX2i x_end(tracks.size(), 2);
-
+  // project to image plane
   auto proj = [&c,&f](const Eigen::MatrixX3d &points) -> Eigen::MatrixX2d {
     return ((points.leftCols<2>().array().colwise() / points.rightCols<1>().array()).leftCols<2>().rowwise() * f.transpose()).rowwise() + c.transpose();
   };
 
-  x_start = proj(coordinates_start).array().round().cast<int>();
-  x_end = proj(coordinates_end).array().round().cast<int>();
+  const Eigen::MatrixX2i x_start = proj(coordinates_start).array().round().cast<int>();
+  const Eigen::MatrixX2i x_end = proj(coordinates_end).array().round().cast<int>();
+
+  auto make_kp = [](const uint64_t timestamp, const Eigen::RowVector2i &xy, const Eigen::RowVector3d &coordinate) -> tracker::KeypointPtr {
+    if (timestamp==0) { return nullptr; }
+    return std::make_shared<tracker::Keypoint>(tracker::Keypoint{.timestamp = timestamp, .xy = {xy.x(), xy.y()}, .coordinate = coordinate});
+  };
 
   tracker::Tracks ltracks(tracks.size()); // local tracks
   for (size_t i = 0; i < ltracks.size(); ++i) {
     ltracks[i] = std::make_shared<tracker::Track>();
-    ltracks[i]->push_back(std::make_shared<tracker::Keypoint>(tracker::Keypoint{.timestamp = ts_start[i], .xy = {x_start.row(i).x(), x_start.row(i).y()}, .coordinate=coordinates_start.row(i)}));
-    ltracks[i]->push_back(std::make_shared<tracker::Keypoint>(tracker::Keypoint{.timestamp = ts_end[i], .xy = {x_end.row(i).x(), x_end.row(i).y()}, .coordinate=coordinates_end.row(i)}));
+    ltracks[i]->push_back(make_kp(ts_start[i], x_start.row(i), coordinates_start.row(i)));
+    ltracks[i]->push_back(make_kp(ts_end[i], x_end.row(i), coordinates_end.row(i)));
   }
 
   return ltracks;
