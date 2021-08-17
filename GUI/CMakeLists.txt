@@ -33,6 +33,7 @@ endif()
 if(ROSBAG OR ROSNODE)
     find_package(cv_bridge REQUIRED)
     find_package(tf2_eigen REQUIRED)
+    find_package(image_geometry REQUIRED)
 endif()
 
 include_directories(${ZLIB_INCLUDE_DIR})
@@ -129,10 +130,12 @@ if(ROSBAG OR ROSNODE)
     target_include_directories(CoFusionTools PUBLIC
         ${cv_bridge_INCLUDE_DIRS}
         ${tf2_eigen_INCLUDE_DIRS}
+        ${image_geometry_INCLUDE_DIRS}
     )
     target_link_libraries(CoFusionTools
         ${cv_bridge_LIBRARIES}
         ${tf2_eigen_LIBRARIES}
+        ${image_geometry_LIBRARIES}
     )
     add_definitions(-DROSCOMMON)
 endif()

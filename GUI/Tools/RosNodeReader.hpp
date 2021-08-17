@@ -6,6 +6,7 @@
 #include <ros/ros.h>
 #include <image_transport/subscriber_filter.h>
 #include <message_filters/sync_policies/approximate_time.h>
+#include "ros_common.hpp"
 #include <Utils/GroundTruthOdometryInterface.hpp>
 #include <Eigen/Geometry>
 #include <tf2_ros/transform_listener.h>
@@ -61,11 +62,8 @@ private:
   image_transport::SubscriberFilter sub_depth;
   std::unique_ptr<message_filters::Synchronizer<ApproximateTimePolicy>> sync;
 
-  // optional scale&crop to target dimensions
-  cv::Rect crop_roi;
-  const cv::Size target_dimensions;
-  std::function<void(cv::Mat &)> scale_colour;
-  std::function<void(cv::Mat &)> scale_depth;
+  // scale&crop to target dimensions
+  ImageCropTarget image_crop_target;
 
   std::mutex mutex;
   FrameData data;

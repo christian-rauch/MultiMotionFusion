@@ -1,7 +1,6 @@
 #ifdef ROSNODE
 
 #include "RosNodeReader.hpp"
-#include "ros_common.hpp"
 #include <sensor_msgs/CameraInfo.h>
 #include <cv_bridge/cv_bridge.h>
 #include <tf2_eigen/tf2_eigen.h>
@@ -11,8 +10,7 @@ RosNodeReader::RosNodeReader(const uint32_t synchroniser_queue_size,
                              const bool flipColors, const cv::Size &target_dimensions,
                              const std::string frame_gt_camera) :
   LogReader(std::string(), flipColors),
-  frame_gt_camera(frame_gt_camera),
-  target_dimensions(target_dimensions)
+  frame_gt_camera(frame_gt_camera)
 {
   n = std::make_unique<ros::NodeHandle>();
   it = std::make_unique<image_transport::ImageTransport>(*n);
@@ -30,17 +28,7 @@ RosNodeReader::RosNodeReader(const uint32_t synchroniser_queue_size,
   std::cout << "waiting for 'sensor_msgs/CameraInfo' message on '" + ros::names::resolve("camera_info") + "'" << std::endl;
   sensor_msgs::CameraInfo::ConstPtr ci = ros::topic::waitForMessage<sensor_msgs::CameraInfo>("camera_info", *n);
 
-  if (intrinsics_crop_target(ci, target_dimensions, this->crop_roi)) {
-    this->scale_colour = [this](cv::Mat &img) {
-      img = img(this->crop_roi);
-      cv::resize(img, img, this->target_dimensions, 0, 0, CV_INTER_LINEAR);
-    };
-
-    this->scale_depth = [this](cv::Mat &img) {
-      img = img(this->crop_roi);
-      cv::resize(img, img, this->target_dimensions, 0, 0, CV_INTER_NN);
-    };
-  }
+  image_crop_target = ImageCropTarget(ci, target_dimensions);
 
   width = Resolution::getInstance().width();
   height = Resolution::getInstance().height();
@@ -69,12 +57,7 @@ void RosNodeReader::on_rgbd(const sensor_msgs::Image::ConstPtr& msg_colour, cons
   }
 
   // scale and crop images in place
-  if (scale_colour) {
-    scale_colour(data.rgb);
-  }
-  if (scale_depth) {
-    scale_depth(data.depth);
-  }
+  image_crop_target.map_target(data);
   mutex.unlock();
 
   // use provided ground truth camera frame or colour optical frame from images

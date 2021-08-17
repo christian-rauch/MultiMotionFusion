@@ -1,7 +1,6 @@
 #ifdef ROSBAG
 
 #include "RosBagReader.hpp"
-#include "ros_common.hpp"
 #include <sensor_msgs/CameraInfo.h>
 #include <cv_bridge/cv_bridge.h>
 #include <tf2_msgs/TFMessage.h>
@@ -15,7 +14,7 @@ RosBagReader::RosBagReader(const std::string bagfile_path,
                            const bool flipColors,
                            const cv::Size target_dimensions,
                            const std::string frame_gt_camera) :
-  LogReader(bagfile_path, flipColors), target_dimensions(target_dimensions),
+  LogReader(bagfile_path, flipColors),
   topic_colour(topic_colour), topic_depth(topic_depth), topic_camera_info(topic_camera_info),
   frame_gt_camera(frame_gt_camera),
   tf_buffer(ros::Duration(std::numeric_limits<int>::max()))
@@ -27,19 +26,8 @@ RosBagReader::RosBagReader(const std::string bagfile_path,
   if (topic_view_ci.size() == 0)
     throw std::runtime_error("No messages on camera_info topic '"+topic_camera_info+"'");
 
-  if (const auto m = topic_view_ci.begin()->instantiate<sensor_msgs::CameraInfo>()) {
-    if (intrinsics_crop_target(m, target_dimensions, this->crop_roi)) {
-      this->scale_colour = [this](cv::Mat &img) {
-        img = img(this->crop_roi);
-        cv::resize(img, img, this->target_dimensions, 0, 0, CV_INTER_LINEAR);
-      };
-
-      this->scale_depth = [this](cv::Mat &img) {
-        img = img(this->crop_roi);
-        cv::resize(img, img, this->target_dimensions, 0, 0, CV_INTER_NN);
-      };
-    }
-
+  if (const sensor_msgs::CameraInfo::ConstPtr m = topic_view_ci.begin()->instantiate<sensor_msgs::CameraInfo>()) {
+    image_crop_target = ImageCropTarget(m, target_dimensions);
     width = Resolution::getInstance().width();
     height = Resolution::getInstance().height();
     numPixels = width * height;
@@ -146,12 +134,7 @@ void RosBagReader::getNext() {
     throw std::runtime_error("colour and depth images are not registered into the same frame");
 
   // scale and crop images in place
-  if (scale_colour && !data.rgb.empty()) {
-    scale_colour(data.rgb);
-  }
-  if (scale_depth && !data.depth.empty()) {
-    scale_depth(data.depth);
-  }
+  image_crop_target.map_target(data);
 };
 
 int RosBagReader::getNumFrames() {

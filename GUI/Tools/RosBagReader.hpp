@@ -5,6 +5,7 @@
 #include <rosbag/bag.h>
 #include <rosbag/view.h>
 #include <sensor_msgs/CompressedImage.h>
+#include "ros_common.hpp"
 #include <tf2/buffer_core.h>
 #include <Utils/GroundTruthOdometryInterface.hpp>
 #include <Eigen/Geometry>
@@ -46,10 +47,7 @@ private:
 
   rosbag::Bag bag;
 
-  const cv::Size target_dimensions;
-  cv::Rect crop_roi;
-  std::function<void(cv::Mat &)> scale_colour;
-  std::function<void(cv::Mat &)> scale_depth;
+  ImageCropTarget image_crop_target;
 
   // topics
   const std::string topic_colour;

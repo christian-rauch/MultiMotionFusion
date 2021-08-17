@@ -43,13 +43,11 @@ get_crop_roi(const cv::Size &source_dimensions, const cv::Size &target_dimension
   return {crop_roi, scale};
 }
 
-bool
-intrinsics_crop_target(const sensor_msgs::CameraInfo::ConstPtr &ci,
-                       const cv::Size &target_dimensions,
-                       cv::Rect &crop_roi)
+ImageCropTarget::ImageCropTarget(const sensor_msgs::CameraInfo::ConstPtr &camera_info,
+                                 const cv::Size &target_dimensions)
+  : target_dimensions(target_dimensions)
 {
-
-  bool do_crop;
+  camera_model.fromCameraInfo(camera_info);
 
   // Projection/camera matrix
   //     [fx'  0  cx' Tx]
@@ -57,13 +55,13 @@ intrinsics_crop_target(const sensor_msgs::CameraInfo::ConstPtr &ci,
   //     [ 0   0   1   0]
 
   // source intrinsics
-  const cv::Size source_dimensions(ci->width, ci->height);
+  const cv::Size source_dimensions(camera_info->width, camera_info->height);
   // 'P' row-major 3x4 projection matrix: (fx, 0, cx, Tx, 0, fy, cy, Ty, 0, 0, 1, 0)
-  const Eigen::Vector2d src_f = {ci->P[0], ci->P[5]}; // focal length
-  const Eigen::Vector2d src_c = {ci->P[2], ci->P[6]}; // centre
+  const Eigen::Vector2d src_f = {camera_info->P[0], camera_info->P[5]}; // focal length
+  const Eigen::Vector2d src_c = {camera_info->P[2], camera_info->P[6]}; // centre
 
   // source field-of-view (FoV)
-  const Eigen::Vector2d src_d = {ci->width, ci->height}; // dimension
+  const Eigen::Vector2d src_d = {camera_info->width, camera_info->height}; // dimension
   const Eigen::Vector2d src_fov = (2 * (src_d.array() / (2*src_f.array())).atan()) * (180/M_PI);
 
   std::cout << "source sensor properties:" << std::endl;
@@ -96,22 +94,32 @@ intrinsics_crop_target(const sensor_msgs::CameraInfo::ConstPtr &ci,
     std::cout << "  image centre:  (" << tgt_c.x() << " , " << tgt_c.y() << ") px" << std::endl;
     std::cout << "  focal length:  (" << tgt_f.x() << " , " << tgt_f.y() << ") px" << std::endl;
     std::cout << "  field of view: " << tgt_fov.x() << "°(H) x " << tgt_fov.y() << "°(V)" << std::endl;
-
-    do_crop = true;
   }
   else {
-    width = ci->width;
-    height = ci->height;
+    width = camera_info->width;
+    height = camera_info->height;
     tgt_f = src_f;
     tgt_c = src_c;
-    do_crop = false;
   }
 
   // set global camera intrinsics
   Resolution::setResolution(width, height);
   Intrinsics::setIntrinics(tgt_f.x(), tgt_f.y(), tgt_c.x(), tgt_c.y());
+}
 
-  return do_crop;
+void
+ImageCropTarget::map_target(FrameData &data) {
+  // rectify images
+  if (!camera_model.distortionCoeffs().empty()) {
+    camera_model.rectifyImage(data.rgb, data.rgb, cv::INTER_LINEAR);
+    camera_model.rectifyImage(data.depth, data.depth, cv::INTER_NEAREST);
+  }
+
+  // crop and scale to target dimension
+  if (!crop_roi.empty()) {
+    cv::resize(data.rgb(crop_roi), data.rgb, this->target_dimensions, 0, 0, cv::INTER_LINEAR);
+    cv::resize(data.depth(crop_roi), data.depth, this->target_dimensions, 0, 0, cv::INTER_NEAREST);
+  }
 }
 
 #endif
