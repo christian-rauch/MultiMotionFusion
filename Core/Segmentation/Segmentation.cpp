@@ -739,7 +739,6 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
 
       // log probability
       unary = -unary.array().log();
-
       crf.setUnaryEnergy(unary);
 
       crf.addPairwiseGaussian(3, 3, new PottsCompatibility(weightSmoothness));
@@ -1382,6 +1381,12 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
   // number of active (currently tracked) models and potential new model
   const unsigned numLabels = unsigned(models.size()) + allowNew;
 
+  // map from model ID to label ID
+  // the labels in the current segment are continuous (0, 1, ...) while model list can be
+  // unordered and contain missing model IDs after models have been removed
+  // NOTE: this has to be an ordered map to iterate in order of model ids
+  std::map<uint8_t, uint8_t> idx_map;
+
   cv::Mat next, prev;
   std::tie(next, std::ignore, std::ignore) = dmm.getRGBD(0);
   std::tie(prev, std::ignore, std::ignore) = dmm.getRGBD(-1);
@@ -1577,10 +1582,12 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
   if (!flow.empty()) {
     for (ModelListIterator m = models.begin(); m != models.end(); m++) {
       result.modelData.push_back({(*m)->getID(), m, {}, {}});
+      idx_map[(*m)->getID()] = std::distance(models.begin(), m);
     }
 
     if (allowNew) {
       result.modelData.push_back({nextModelID});
+      idx_map[nextModelID] = models.size();
     }
 
     TICK("segm/flowCRF");
@@ -1995,31 +2002,31 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     {
       Eigen::Matrix<uint8_t, 1, Eigen::Dynamic> lbl2 = lbl.cast<uint8_t>();
       cv::Mat_<uint8_t> lbl_cv(next.rows, next.cols, lbl2.data());
-      cv::imwrite("/tmp/mmf/lbl_"+std::to_string(frame.timestamp)+".png", lbl_cv*50);
+      cv::imshow("label", (lbl_cv+1)*50);
+      cv::imwrite("/tmp/mmf/lbl_"+std::to_string(frame.timestamp)+".png", (lbl_cv+1)*50);
     }
 #endif
 
     // create segmentation at CRF resolution
-    cv::Mat_<uint8_t> crf_segm(crf_size, 0);
-    std::array<uint32_t, 256> segm_count;
-
+    // this will contain the model ID
+    cv::Mat_<uint8_t> model_segm(crf_size, 0);
     for (int u = 0; u < flow.rows; ++u) {
       for (int v = 0; v < flow.cols; ++v) {
         const int i = u * flow.cols + v;
         const uint8_t &uid = uint8_t(result.modelData[size_t(lbl[i])].id);
-        crf_segm.at<uint8_t>(i) = uid;
-        segm_count[uid]++;
+        model_segm.at<uint8_t>(i) = uid;
       }
     }
 #if DBG_VIS_PROBS
-    cv::imwrite("/tmp/mmf/segm_"+std::to_string(frame.timestamp)+".png", 50*crf_segm);
+    cv::imwrite("/tmp/mmf/segm_"+std::to_string(frame.timestamp)+".png", 50*model_segm);
 #endif
 
     // find largest blob
-    cv::Mat_<uint8_t> crf_segm_cont(crf_segm.size(), 0);
-    for (int i=0; i<=lbl.maxCoeff(); i++) {
+    cv::Mat_<uint8_t> model_segm_cont(model_segm.size(), 0);
+    std::array<uint32_t, 256> segm_count;
+    for (const auto &[m ,l] : idx_map) {
       std::vector<std::vector<cv::Point>> contours;
-      cv::findContours(crf_segm==i, contours, {}, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_NONE);
+      cv::findContours(model_segm==m, contours, {}, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_NONE);
       double max_a = 0;
       size_t max_i = 0;
       for (size_t j=0; j<contours.size(); j++) {
@@ -2029,16 +2036,18 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
           max_i = j;
         }
       }
-      cv::drawContours(crf_segm_cont, contours, max_i, i, cv::FILLED);
+      segm_count[m] = std::rint(max_a);
+      cv::drawContours(model_segm_cont, contours, max_i, m, cv::FILLED);
     }
+
+    model_segm = model_segm_cont;
+
 #if DBG_VIS_PROBS
-    cv::imshow("segm CRF (largest)", crf_segm_cont*50);
+    cv::imshow("segm (model ID)", model_segm*50);
 #endif
 
-    crf_segm = crf_segm_cont;
-
     // resize to original image dimension
-    cv::resize(crf_segm, result.fullSegmentation, frame.rgb.size(), 0, 0, cv::INTER_NEAREST);
+    cv::resize(model_segm, result.fullSegmentation, frame.rgb.size(), 0, 0, cv::INTER_NEAREST);
 
 //    for (uint i = 0; i < numLabels; ++i) {
 //      std::cout << "s " << i << ": " << segm_count[i] << std::endl;
@@ -2061,20 +2070,24 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
       mod.depthStd = float(dstddev[0]);
     }
 
-    result.hasNewLabel = allowNew && float(cv::countNonZero(crf_segm==nextModelID)) / float(crf_segm.size().area()) > new_model_size;
+    result.hasNewLabel = false;
 
-    if (!result.hasNewLabel) {
-      // delete last, potentially new, model
-      result.modelData.pop_back();
+    if (allowNew) {
+      result.hasNewLabel = float(cv::countNonZero(model_segm==nextModelID)) / float(model_segm.size().area()) > new_model_size;
+
+      if (!result.hasNewLabel) {
+        // delete last, potentially new, model
+        result.modelData.pop_back();
+      }
     }
 
     // DBG
     {
       cv::Mat lbls(crf_size, CV_8UC3);
-      for (int i=0; i<=lbl.maxCoeff(); i++) {
+      for (const auto &[m ,l] : idx_map) {
         // TODO: show all segments in unique colour
-        const cv::Scalar c = (i==0) ? cv::viz::Color::blue() : cv::viz::Color::red();
-        lbls.setTo(c, crf_segm==i);
+        const cv::Scalar c = (m==0) ? cv::viz::Color::blue() : cv::viz::Color::red();
+        lbls.setTo(c, model_segm==m);
       }
       cv::resize(gprev, gprev, lbls.size());
       cv::cvtColor(gprev, gprev, cv::COLOR_GRAY2BGR);
