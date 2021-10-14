@@ -331,7 +331,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       TICK("odom");
       // NOTE: each model will individually store a copy of the 'last' and 'next' feature maps and keypoints on GPU
       // TODO: use one global store for the feature maps and keypoints for the current and last observed frame
-      for (auto model : models) {
+      for (ModelPointer &model : models) {
         // initialise by track transformation
         bool do_icp = true;
         if (!odom_cfg.init.empty()) {
@@ -341,17 +341,18 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
 
           if (odom_cfg.init == "kp") {
             // transformation between keypoints in global camera frame
-            const Eigen::Isometry3f Tinit = model->getLastTrackTransform();
+            const RigidRANSAC::Result res = model->getLastTrackTransform();
 
-            if (Tinit.matrix().isIdentity()) {
+            // detect tracking failures and stop tracking to prevent model corruption
+            if (res.transformation.matrix().isIdentity() || res.inlier.count()==0) {
               std::cout << "model " << model->getID() << " keypoint initialisation failed (" << frame.timestamp << ")" << std::endl;
             }
 
             if (model->getID()==0) {
-              Tnew = model->getPose() * Tinit.matrix();
+              Tnew = model->getPose() * res.transformation.matrix();
             }
             else {
-              Tnew = Tinit.matrix() * model->getPose();
+              Tnew = res.transformation.matrix() * model->getPose();
             }
           }
           else if (odom_cfg.init == "tf") {

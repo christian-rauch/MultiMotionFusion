@@ -752,8 +752,8 @@ void Model::refineTrackSubset(const tracker::Tracks& tracks, const ModelPointer 
   poseLog.pop_back();
 }
 
-Eigen::Isometry3f Model::getLastTrackTransform(const tracker::Tracks &tracks,
-                                               const RigidRANSAC::Config &config) {
+RigidRANSAC::Result Model::getLastTrackTransform(const tracker::Tracks &tracks,
+                                                 const RigidRANSAC::Config &config) {
   const size_t ntracks = tracks.size();
   Eigen::MatrixX3f p0s, p1s;
   p0s.resize(int(ntracks), Eigen::NoChange);
@@ -778,21 +778,18 @@ Eigen::Isometry3f Model::getLastTrackTransform(const tracker::Tracks &tracks,
 
   // skip to the next frame if there are not enough correspondences
   if (nvalid<3) {
-    return Eigen::Isometry3f::Identity();
+    return {.transformation = Eigen::Isometry3f::Identity()};
   }
 
   // least squares estimate
   RigidRANSAC rrs(config);
-  const Eigen::Isometry3f T_01 = rrs.estimate(p0s, p1s).transformation;
-  assert(T_01.matrix().array().isFinite().all());
-  return T_01;
+  const RigidRANSAC::Result res = rrs.estimate(p0s, p1s);
+  assert(res.transformation.matrix().array().isFinite().all());
+  return res;
 }
 
-Eigen::Isometry3f Model::getLastTrackTransform() const {
-  tracker::Tracks tracks;
-  tracks = {this->tracks.begin(), this->tracks.end()};
-
-  return Model::getLastTrackTransform(tracks);
+RigidRANSAC::Result Model::getLastTrackTransform() const {
+  return Model::getLastTrackTransform({this->tracks.begin(), this->tracks.end()});
 }
 
 RigidRANSAC::Result Model::getBestMatch(const std::vector<tracker::KeypointPtr> &keypoints, const RigidRANSAC::Config &config) const {

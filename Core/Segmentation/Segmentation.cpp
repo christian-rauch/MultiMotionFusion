@@ -1753,7 +1753,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
       if (allowNew) {
         // get transformation estimate from outlier set
         const tracker::Tracks outlier_vec(outlier_set.begin(), outlier_set.end());
-        const Eigen::Isometry3f Toutlier = Model::getLastTrackTransform(outlier_vec);
+        const Eigen::Isometry3f Toutlier = Model::getLastTrackTransform(outlier_vec).transformation;
 
         // re-compute new projection error on this outlier tracks for outlier model
         for (size_t it=0; it<outlier_vec.size(); it++) {
