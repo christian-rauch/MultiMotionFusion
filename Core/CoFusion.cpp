@@ -331,6 +331,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       TICK("odom");
       // NOTE: each model will individually store a copy of the 'last' and 'next' feature maps and keypoints on GPU
       // TODO: use one global store for the feature maps and keypoints for the current and last observed frame
+      ModelList lost_models;
       for (ModelPointer &model : models) {
         // initialise by track transformation
         bool do_icp = true;
@@ -346,6 +347,11 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
             // detect tracking failures and stop tracking to prevent model corruption
             if (res.transformation.matrix().isIdentity() || res.inlier.count()==0) {
               std::cout << "model " << model->getID() << " keypoint initialisation failed (" << frame.timestamp << ")" << std::endl;
+              if (model->getID()>0) {
+                lost_models.push_back(model);
+                // skip tracking for this model
+                continue;
+              }
             }
 
             if (model->getID()==0) {
@@ -408,6 +414,13 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
         }
       }
       TOCK("odom");
+
+      // deactivate lost models
+      for (const ModelPointer &model : lost_models) {
+        inactivateModel(model);
+        models.remove(model);
+      }
+      lost_models.clear();
 
       dmm.addRGBD(textures[GPUTexture::RGB]->downloadTexture(), globalModel->getFrameOdometry().getCurrVmap(), globalModel->getFrameOdometry().getCurrNmap());
 
