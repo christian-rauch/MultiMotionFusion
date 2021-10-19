@@ -1601,6 +1601,10 @@ void Model::performFillIn(GPUTexture* rawRGB, GPUTexture* rawDepth, bool frameTo
 }
 
 void Model::store(const fs::path &model_db_path, const Eigen::Isometry3f &pose, bool clear) {
+  if (!tracks_local.empty()) {
+    // model has been stored before, skip
+    return;
+  }
   const fs::path model_dir = model_db_path / fs::path("model-"+std::to_string(getID()));
   if (!fs::exists(model_dir)) {
     fs::create_directories(model_dir);
