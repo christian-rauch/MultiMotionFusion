@@ -300,6 +300,8 @@ class Model {
 
   void store(const fs::path &model_db_path, const Eigen::Isometry3f &pose, bool clear = true);
 
+  void activate(const Eigen::Isometry3f &pose);
+
  protected:
   // Current pose
   Eigen::Matrix4f pose;

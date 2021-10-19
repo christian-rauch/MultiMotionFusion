@@ -556,8 +556,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
                   models.remove(model_act_rm);
                 }
                 models.push_back(model);
-                // reset pose
-                model->overridePose(best.transformation.inverse().matrix());
+                model->activate(best.transformation.inverse());
                 model_inact_rm.push_back(model);
               }
             }

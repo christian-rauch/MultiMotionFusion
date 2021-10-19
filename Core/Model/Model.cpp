@@ -1628,3 +1628,11 @@ void Model::store(const fs::path &model_db_path, const Eigen::Isometry3f &pose, 
   if (clear)
     tracks.clear();
 }
+
+void Model::activate(const Eigen::Isometry3f &pose) {
+  // restore tracks
+  tracks.clear();
+  tracks.insert(tracks_local.cbegin(), tracks_local.cend());
+  // set new pose
+  overridePose(pose.matrix());
+}
