@@ -867,7 +867,15 @@ RigidRANSAC::Result Model::getBestMatch(const std::vector<tracker::KeypointPtr> 
       train.row(imatch) = model_coordinates[match_ids.at(id_view)].row(id_train);
       imatch++;
     }
-    estimates.push_back(ransac.estimate(query, train));
+    const RigidRANSAC::Result estimate = ransac.estimate(query, train);
+    if (estimate.inlier.count() > 0) {
+      estimates.push_back(estimate);
+    }
+  }
+
+  if (estimates.empty()) {
+    // no matching candidates
+    return {};
   }
 
   // find estimate with smallest error

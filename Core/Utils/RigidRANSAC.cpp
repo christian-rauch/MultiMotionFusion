@@ -84,7 +84,7 @@ RigidRANSAC::estimate(const Eigen::MatrixX3f &p0, const Eigen::MatrixX3f &p1, co
 
   // keep track of best model and its performance
   result.transformation = fit(p0, p1, mask);
-  result.error = std::numeric_limits<float>::max();
+  result.error = std::numeric_limits<float>::infinity();
 
   for(int it=0; it<cfg.iterations; it++) {
     // random order of indices
@@ -109,7 +109,7 @@ RigidRANSAC::estimate(const Eigen::MatrixX3f &p0, const Eigen::MatrixX3f &p1, co
     }
     const Eigen::Index Ninliers = inliers.count();
 
-    if(Ninliers > cfg.inlier_fraction*N) {
+    if(Ninliers > std::max<int>(std::rint(cfg.inlier_fraction*N), Nparams)) {
       // potential model
       const Eigen::Isometry3f Tall = fit(p0, p1, inliers);
       // mean error over inliers
