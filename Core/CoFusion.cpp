@@ -533,6 +533,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
             std::list<ModelPointer> model_inact_rm;
             for (const ModelPointer &model : inactiveModels) {
               // try to match last keypoints against inactive models tracks
+              // this provides the best inactive model view with the lowest least-squares error
               const RigidRANSAC::Config cfg{.iterations = 10, .inlier_threshold = 0.03, .inlier_fraction = 0.8};
               const RigidRANSAC::Result best = model->getBestMatch(keypoints, cfg);
               // need at least 10 matches and less than 1cm errors
@@ -564,6 +565,9 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
                 models.push_back(model);
                 model->activate(best.transformation.inverse());
                 model_inact_rm.push_back(model);
+                // stop searching
+                // TODO: search for inactive model with lowest error
+                continue;
               }
             }
 
