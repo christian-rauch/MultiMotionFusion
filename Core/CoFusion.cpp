@@ -522,7 +522,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
             // keypoints at last track position within segment
             std::vector<tracker::KeypointPtr> keypoints;
             for (const tracker::TrackPtr &track : segm_tracks) {
-              if (track->back()) {
+              if (track->back() && track->back()->coordinate.allFinite()) {
                 keypoints.push_back(track->back());
               }
             }

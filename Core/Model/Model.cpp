@@ -818,7 +818,7 @@ RigidRANSAC::Result Model::getBestMatch(const std::vector<tracker::KeypointPtr> 
       }
 
       const tracker::KeypointPtr &kpi = (*tracks_local[j])[i];
-      if (kpi) {
+      if (kpi && kpi->coordinate.allFinite()) {
         model_descriptors[i].row(nkp_valid) = kpi->descriptor.cast<float>();
         model_coordinates[i].row(nkp_valid) = kpi->coordinate.cast<float>();
         nkp_valid++;
@@ -850,8 +850,10 @@ RigidRANSAC::Result Model::getBestMatch(const std::vector<tracker::KeypointPtr> 
     cv::BFMatcher matcher(cv::NORM_L2, true);
     std::vector<cv::DMatch> matches;
     matcher.match(query, model_descriptors_cv[i], matches);
-    for (const cv::DMatch &match : matches) {
-      matches_views[i].push_back({match.queryIdx, match.trainIdx});
+    if (matches.size() >= 3) {
+      for (const cv::DMatch &match : matches) {
+        matches_views[i].push_back({match.queryIdx, match.trainIdx});
+      }
     }
   }
 
