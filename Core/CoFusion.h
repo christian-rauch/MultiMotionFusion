@@ -304,6 +304,7 @@ class CoFusion {
   void spawnObjectModel();
   bool redetectModels(const FrameData& frame, const SegmentationResult& segmentationResult);
   void moveNewModelToList();
+  void inactivateModel(const ModelPointer& m);
   ModelListIterator inactivateModel(const ModelListIterator& it);
 
   unsigned char getNextModelID(bool assign = false);

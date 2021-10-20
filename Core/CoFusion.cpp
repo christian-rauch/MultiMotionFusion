@@ -936,8 +936,7 @@ void CoFusion::moveNewModelToList() {
   }
 }
 
-ModelListIterator CoFusion::inactivateModel(const ModelListIterator& it) {
-  std::shared_ptr<Model> m = *it;
+void CoFusion::inactivateModel(const ModelPointer& m) {
   std::cout << "Deactivating model " << m->getID() << " ... ";
   if (!enableSmartModelDelete || (m->lastCount() >= modelKeepMinSurfels && m->getConfidenceThreshold() > modelKeepConfThreshold)) {
     std::cout << "keeping data";
@@ -951,6 +950,10 @@ ModelListIterator CoFusion::inactivateModel(const ModelListIterator& it) {
   std::cout << ". Surfels: " << m->lastCount() << " confidence threshold: " << m->getConfidenceThreshold() << std::endl;
 
   inactiveModelListeners.callListenersDirect(m);
+}
+
+ModelListIterator CoFusion::inactivateModel(const ModelListIterator& it) {
+  inactivateModel(*it);
   return --models.erase(it);
 }
 
