@@ -543,8 +543,8 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
                   segmentationResult.hasNewLabel = false;
                 }
 
-                // find current model
-                // current active model to be removed
+                // find current active model to be removed
+                // if model is not found, it only exists as segment and has not been spawned yet
                 ModelPointer model_act_rm = nullptr;
                 for (const ModelPointer &model_curr : models) {
                   if (model_curr->getID() == segm_label) {
@@ -552,7 +552,13 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
                     break;
                   }
                 }
+
                 if (model_act_rm) {
+                  if (model_act_rm->getID() < model->getID()) {
+                    // we can not replace an older model with a newer model
+                    std::cout << "... will not replace older (" << model_act_rm->getID() << ") with newer (" << model->getID() << ") model" << std::endl;
+                    continue;
+                  }
                   models.remove(model_act_rm);
                 }
                 models.push_back(model);
