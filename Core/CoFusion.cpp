@@ -418,6 +418,9 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       // deactivate lost models
       for (const ModelPointer &model : lost_models) {
         inactivateModel(model);
+        // the model is lost because of a failed keypoint transformation estimation
+        // remove the last set of keypoints from the failed frame
+        model->removeLastTrackKeypoint();
         models.remove(model);
       }
       lost_models.clear();

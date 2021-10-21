@@ -161,6 +161,8 @@ class Model {
   // add/remove tracks
   virtual void updateTracks(const tracker::Tracks& tracks_add = {}, const tracker::Tracks &tracks_remove = {});
 
+  virtual void removeLastTrackKeypoint();
+
   // re-estimate all model poses given the track subset
   virtual void refineTrackSubset(const tracker::Tracks& tracks, const ModelPointer &parent, const size_t &history = std::numeric_limits<size_t>::infinity());
 

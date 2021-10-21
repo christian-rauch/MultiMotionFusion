@@ -662,6 +662,13 @@ void Model::updateTracks(const tracker::Tracks& tracks_add, const tracker::Track
   }
 }
 
+void Model::removeLastTrackKeypoint() {
+  for (const tracker::TrackPtr &track : tracks_local) {
+    if (!track->empty())
+      track->pop_back();
+  }
+}
+
 void Model::refineTrackSubset(const tracker::Tracks& tracks, const ModelPointer &parent, const size_t &history) {
   if (tracks.empty()) { return; }
 
