@@ -74,6 +74,7 @@
   <depend>image_geometry</depend>
   <depend>super_point_inference</depend>
   <depend>eigen_conversions</depend>
+  <depend>cob_srvs</depend>
 
   <export>
     <build_type>cmake</build_type>

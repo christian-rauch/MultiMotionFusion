@@ -88,4 +88,39 @@ bool RosInterface::on_pause(std_srvs::SetBool::Request &req, std_srvs::SetBool::
   return true;
 }
 
+bool RosInterface::on_deactivate(cob_srvs::SetInt::Request &req, cob_srvs::SetInt::Response &res)
+{
+  if (!*gui) {
+    res.success = false;
+    res.message = "GUI not initialised";
+    return true;
+  }
+  const uint8_t id = req.data;
+
+  std::cout << "deactivate model: " << int(id) << std::endl;
+
+  if (id==0) {
+    res.success = false;
+    res.message = "cannot remove environment model (id: 0)";
+    return true;
+  }
+
+  // search for model with id
+  for (const ModelPointer &model : (*modelling)->getModels()) {
+    if (model->getID()==id) {
+      // schedule model for deactivation
+      (*modelling)->scheduleDeactivation(model);
+      // respond with success
+      res.success = true;
+      res.message = "removed model with id: "+std::to_string(id);
+      return true;
+    }
+  }
+
+  // model not found, it's either not active or does not exist at all
+  res.success = false;
+  res.message = "model "+std::to_string(id)+" does not exist";
+  return true;
+}
+
 #endif

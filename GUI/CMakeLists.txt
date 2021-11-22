@@ -33,6 +33,7 @@ if(ROSNODE)
     find_package(image_transport REQUIRED)
     find_package(tf2_ros REQUIRED)
     find_package(eigen_conversions REQUIRED)
+    find_package(cob_srvs REQUIRED)
 endif()
 
 if(ROSBAG OR ROSNODE)
@@ -124,13 +125,17 @@ if(ROSNODE)
         ${image_transport_INCLUDE_DIRS}
         ${tf2_ros_INCLUDE_DIRS}
         ${eigen_conversions_INCLUDE_DIRS}
+        ${cob_srvs_INCLUDE_DIRS}
     )
     target_link_libraries(CoFusionTools
         ${roscpp_LIBRARIES}
         ${image_transport_LIBRARIES}
         ${tf2_ros_LIBRARIES}
         ${eigen_conversions_LIBRARIES}
+        ${cob_srvs_LIBRARIES}
     )
+    # to find "gSLICr.h" and "super_point_inference.hpp"
+    target_link_libraries(CoFusionTools gSLICr_lib super_point_inference)
     add_definitions(-DROSNODE)
 endif()
 

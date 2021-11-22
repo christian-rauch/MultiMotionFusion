@@ -258,7 +258,7 @@ MainController::MainController(int argc, char* argv[])
     // publish segmentation and point clouds
     // TODO: get camera frame from input images
     state_publisher = std::make_unique<RosStatePublisher>("rgb_camera_link");
-    ui_control = std::make_unique<RosInterface>(&gui);
+    ui_control = std::make_unique<RosInterface>(&gui, &coFusion);
   }
 #endif
 
