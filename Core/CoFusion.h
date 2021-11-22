@@ -299,6 +299,8 @@ class CoFusion {
   /// Called when a model becomes inactive
   inline void addInactiveModelListener(const ModelListener& listener) { inactiveModelListeners.addListener(listener); }
 
+  void scheduleDeactivation(const ModelPointer& m);
+
   // Here be dragons
  private:
   void spawnObjectModel();
@@ -333,6 +335,8 @@ class CoFusion {
 
   CallbackBuffer<std::shared_ptr<Model>> newModelListeners;
   CallbackBuffer<std::shared_ptr<Model>> inactiveModelListeners;
+
+  std::set<ModelPointer> scheduled_model_deactivation;
 
   RGBDOdometry modelToModel;
 

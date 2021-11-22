@@ -302,6 +302,13 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
 
   TOCK("Preprocess");
 
+  // deactivate models that have been scheduled for deactivation
+  for (const ModelPointer &model : scheduled_model_deactivation) {
+    inactivateModel(model);
+    models.remove(model);
+  }
+  scheduled_model_deactivation.clear();
+
   // First run
   if (tick == 1) {
     computeFeedbackBuffers();
@@ -935,6 +942,10 @@ void CoFusion::normaliseDepth(const float& minVal, const float& maxVal) {
 
 void CoFusion::coloriseMasks() {
   computePacks[ComputePack::COLORISE_MASKS]->compute(textures[GPUTexture::MASK]->texture);  // Writes to GPUTexture::MASK_COLOR
+}
+
+void CoFusion::scheduleDeactivation(const ModelPointer& m) {
+  scheduled_model_deactivation.insert(m);
 }
 
 void CoFusion::spawnObjectModel() {
