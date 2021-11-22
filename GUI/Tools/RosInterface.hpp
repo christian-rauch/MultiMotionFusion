@@ -18,6 +18,8 @@ public:
 
     bool on_inhibit(std_srvs::SetBool::Request &req, std_srvs::SetBool::Response &res);
 
+    bool on_pause(std_srvs::SetBool::Request &req, std_srvs::SetBool::Response &res);
+
 private:
     // pointer to a pointer to the GUI, since the GUI will not have been
     // allocated yet when this class is constructed
@@ -26,4 +28,5 @@ private:
     std::unique_ptr<ros::NodeHandle> n;
     ros::ServiceServer srv_reset;
     ros::ServiceServer srv_inhibit;
+    ros::ServiceServer srv_pause;
 };

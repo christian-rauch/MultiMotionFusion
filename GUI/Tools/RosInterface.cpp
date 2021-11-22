@@ -10,6 +10,8 @@ RosInterface::RosInterface(GUI **gui)
   srv_reset = n->advertiseService("reset", &RosInterface::on_reset, this);
 
   srv_inhibit = n->advertiseService("inhibit", &RosInterface::on_inhibit, this);
+
+  srv_pause = n->advertiseService("pause", &RosInterface::on_pause, this);
 }
 
 bool RosInterface::on_reset(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
@@ -50,6 +52,36 @@ bool RosInterface::on_inhibit(std_srvs::SetBool::Request &req, std_srvs::SetBool
     }
     else {
       res.message = "could not apply inhibit setting";
+    }
+  }
+
+  return true;
+}
+
+bool RosInterface::on_pause(std_srvs::SetBool::Request &req, std_srvs::SetBool::Response &res)
+{
+  if (!*gui) {
+    res.success = false;
+    res.message = "GUI not initialised";
+    return true;
+  }
+
+  const std::string action = req.data ? "paused" : "running";
+
+  const bool apply_change = (*gui)->pause->Get() != req.data;
+
+  if (!apply_change) {
+    res.success = false;
+    res.message = "pause setting not applied: already " + action;
+  }
+  else {
+    (*gui)->pause->Ref()->Set(req.data);
+    res.success = (*gui)->pause->Get() == req.data;
+    if (res.success) {
+      res.message = "tracking and modelling is " + action;
+    }
+    else {
+      res.message = "could not apply pause setting";
     }
   }
 
