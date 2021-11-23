@@ -352,7 +352,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
             const RigidRANSAC::Result res = model->getLastTrackTransform();
 
             // detect tracking failures and stop tracking to prevent model corruption
-            if (res.transformation.matrix().isIdentity() || res.inlier.count()==0) {
+            if (res.inlier.count()==0) {
               std::cout << "model " << model->getID() << " keypoint initialisation failed (" << frame.timestamp << ")" << std::endl;
               if (model->getID()>0) {
                 lost_models.push_back(model);
