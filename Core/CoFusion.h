@@ -303,6 +303,8 @@ class CoFusion {
 
   void setOdomInit(const std::string &init);
 
+  void setSegmMode(const std::string &mode);
+
   // Here be dragons
  private:
   void spawnObjectModel();

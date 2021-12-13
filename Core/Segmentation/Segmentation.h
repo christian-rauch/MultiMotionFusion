@@ -98,6 +98,8 @@ class Segmentation {
  public:
   void init(int width, int height, METHOD method, const SegmentationConfiguration &cfg = {});
 
+  void setMode(const std::string &mode);
+
   SegmentationResult performSegmentation(std::list<std::shared_ptr<Model>>& models, const FrameData& frame, unsigned char nextModelID,
                                          bool allowNew, const tracker::Tracks &tracks, const motion::DenseMotionMetric &dmm);
 
@@ -169,6 +171,7 @@ class Segmentation {
   float minRelSizeNew = 0.07;
 
   SegmentationConfiguration cfg;
+  std::mutex lock_cfg;
 
  private:
   Slic slic;

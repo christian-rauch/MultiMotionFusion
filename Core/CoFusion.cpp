@@ -960,6 +960,10 @@ void CoFusion::setOdomInit(const std::string &init) {
   lock_odom_cfg.unlock();
 }
 
+void CoFusion::setSegmMode(const std::string &mode) {
+  labelGenerator.setMode(mode);
+}
+
 void CoFusion::spawnObjectModel() {
   assert(!newModel);
   if (preallocatedModels.size()) {

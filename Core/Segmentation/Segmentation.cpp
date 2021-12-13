@@ -71,6 +71,12 @@ void Segmentation::init(int width, int height, METHOD method, const Segmentation
   this->cfg = cfg;
 }
 
+void Segmentation::setMode(const std::string &mode) {
+  lock_cfg.lock();
+  cfg.mode = mode;
+  lock_cfg.unlock();
+}
+
 SegmentationResult Segmentation::performSegmentation(std::list<std::shared_ptr<Model>>& models, const FrameData& frame,
                                                      unsigned char nextModelID, bool allowNew, const tracker::Tracks &tracks, const motion::DenseMotionMetric &dmm) {
   if (frame.mask.total()) {
@@ -133,7 +139,11 @@ SegmentationResult Segmentation::performSegmentation(std::list<std::shared_ptr<M
     return result;
   }
 
-  if (cfg.mode == "flow_crf") {
+  lock_cfg.lock();
+  const std::string mode = cfg.mode;
+  lock_cfg.unlock();
+
+  if (mode == "flow_crf") {
     return performSegmentationFlowCRF(models, frame, nextModelID, allowNew, tracks, dmm);
   }
   return performSegmentationCRF(models, frame, nextModelID, allowNew, tracks, dmm);
