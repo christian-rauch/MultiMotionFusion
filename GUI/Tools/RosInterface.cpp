@@ -2,8 +2,8 @@
 
 #include "RosInterface.hpp"
 
-RosInterface::RosInterface(GUI **gui)
-  : gui(gui)
+RosInterface::RosInterface(GUI **gui, CoFusion **modelling)
+  : gui(gui), modelling(modelling)
 {
   n = std::make_unique<ros::NodeHandle>("~");
 
@@ -12,6 +12,10 @@ RosInterface::RosInterface(GUI **gui)
   srv_inhibit = n->advertiseService("inhibit", &RosInterface::on_inhibit, this);
 
   srv_pause = n->advertiseService("pause", &RosInterface::on_pause, this);
+
+  srv_deactivate_model = n->advertiseService("deactivate_model", &RosInterface::on_deactivate, this);
+
+  srv_set_odom_init = n->advertiseService("set_odom_init", &RosInterface::on_set_odom_init, this);
 }
 
 bool RosInterface::on_reset(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
@@ -120,6 +124,29 @@ bool RosInterface::on_deactivate(cob_srvs::SetInt::Request &req, cob_srvs::SetIn
   // model not found, it's either not active or does not exist at all
   res.success = false;
   res.message = "model "+std::to_string(id)+" does not exist";
+  return true;
+}
+
+bool RosInterface::on_set_odom_init(cob_srvs::SetString::Request &req, cob_srvs::SetString::Response &res)
+{
+  if (!*modelling) {
+    res.success = false;
+    res.message = "modelling not initialised";
+    return true;
+  }
+
+  static const std::unordered_set<std::string> valid = {{}, "kp", "tf"};
+
+  res.success = valid.count(req.data);
+
+  if (valid.count(req.data)) {
+    (*modelling)->setOdomInit(req.data);
+    res.message = "changed init to: " + req.data;
+  }
+  else {
+    res.message = "invalid init mode: " + req.data;
+  }
+
   return true;
 }
 

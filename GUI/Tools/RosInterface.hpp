@@ -4,6 +4,7 @@
 #include <std_srvs/Trigger.h>
 #include <std_srvs/SetBool.h>
 #include <cob_srvs/SetInt.h>
+#include <cob_srvs/SetString.h>
 
 // manually include some headers here, since they are missing from 'GUI.h'
 #include <list>
@@ -25,6 +26,8 @@ public:
 
     bool on_deactivate(cob_srvs::SetInt::Request &req, cob_srvs::SetInt::Response &res);
 
+    bool on_set_odom_init(cob_srvs::SetString::Request &req, cob_srvs::SetString::Response &res);
+
 private:
     // pointer to a pointer to the GUI, since the GUI will not have been
     // allocated yet when this class is constructed
@@ -37,4 +40,5 @@ private:
     ros::ServiceServer srv_inhibit;
     ros::ServiceServer srv_pause;
     ros::ServiceServer srv_deactivate_model;
+    ros::ServiceServer srv_set_odom_init;
 };
