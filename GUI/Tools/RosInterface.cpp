@@ -16,6 +16,8 @@ RosInterface::RosInterface(GUI **gui, CoFusion **modelling)
   srv_deactivate_model = n->advertiseService("deactivate_model", &RosInterface::on_deactivate, this);
 
   srv_set_odom_init = n->advertiseService("set_odom_init", &RosInterface::on_set_odom_init, this);
+
+  srv_set_segm_mode = n->advertiseService("set_segm_mode", &RosInterface::on_set_segm_mode, this);
 }
 
 bool RosInterface::on_reset(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
@@ -145,6 +147,29 @@ bool RosInterface::on_set_odom_init(cob_srvs::SetString::Request &req, cob_srvs:
   }
   else {
     res.message = "invalid init mode: " + req.data;
+  }
+
+  return true;
+}
+
+bool RosInterface::on_set_segm_mode(cob_srvs::SetString::Request &req, cob_srvs::SetString::Response &res)
+{
+  if (!*modelling) {
+    res.success = false;
+    res.message = "modelling not initialised";
+    return true;
+  }
+
+  static const std::unordered_set<std::string> valid = {{}, "flow_crf", };
+
+  res.success = valid.count(req.data);
+
+  if (valid.count(req.data)) {
+    (*modelling)->setSegmMode(req.data);
+    res.message = "changed segmentation mode to: " + req.data;
+  }
+  else {
+    res.message = "invalid segmentation mode mode: " + req.data;
   }
 
   return true;
