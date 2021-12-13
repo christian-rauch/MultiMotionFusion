@@ -272,19 +272,24 @@ MainController::MainController(int argc, char* argv[])
     loadCalibration(logReader->getIntinsicsFile());
   }
 
+  // initially assume we use "tf" init
+  gt_init = dynamic_cast<GroundTruthOdometryInterface *>(logReader.get());
+
   if (Parse::get().arg(argc, argv, "-p", poseFile) > 0 || odom_cfg.init == "tf") {
     if (std::filesystem::exists(poseFile)) {
       groundTruthOdometry = new GroundTruthOdometry(poseFile);
       gt_odom = dynamic_cast<GroundTruthOdometryInterface *>(groundTruthOdometry);
     }
-    else {
-      gt_odom = dynamic_cast<GroundTruthOdometryInterface *>(logReader.get());
-      if (!gt_odom)
-        throw std::invalid_argument("log reader does not provide ground truth poses");
+    else if (!gt_init) {
+      throw std::invalid_argument("log reader does not provide ground truth poses");
     }
+
     if (odom_cfg.init == "tf") {
-      gt_init = gt_odom;
       gt_odom = nullptr;
+    }
+    else {
+      gt_odom = gt_init;
+      gt_init = nullptr;
     }
   }
 

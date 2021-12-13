@@ -301,6 +301,8 @@ class CoFusion {
 
   void scheduleDeactivation(const ModelPointer& m);
 
+  void setOdomInit(const std::string &init);
+
   // Here be dragons
  private:
   void spawnObjectModel();
@@ -341,7 +343,8 @@ class CoFusion {
   RGBDOdometry modelToModel;
 
   std::shared_ptr<FeatureMatchesInterface> kp_predictor;
-  const OdometryConfig odom_cfg;
+  OdometryConfig odom_cfg;
+  std::mutex lock_odom_cfg;
 
   std::array<tracker::PointTracker, RGBDOdometry::NUM_PYRS> tracker;
 

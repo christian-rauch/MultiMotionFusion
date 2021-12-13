@@ -335,6 +335,12 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       // "global" tracks in image and camera space
       const tracker::Tracks &tracks = tracker[0].getTracks();
 
+      lock_odom_cfg.lock();
+      const std::string odom_init = odom_cfg.init;
+      lock_odom_cfg.unlock();
+
+      assert((odom_init != "tf") ^ ((odom_init == "tf") && gt_pose));
+
       TICK("odom");
       // NOTE: each model will individually store a copy of the 'last' and 'next' feature maps and keypoints on GPU
       // TODO: use one global store for the feature maps and keypoints for the current and last observed frame
@@ -342,12 +348,12 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       for (ModelPointer &model : models) {
         // initialise by track transformation
         bool do_icp = true;
-        if (!odom_cfg.init.empty()) {
+        if (!odom_init.empty()) {
           do_icp = odom_cfg.icp_refine;
 
           Eigen::Matrix4f Tnew;
 
-          if (odom_cfg.init == "kp") {
+          if (odom_init == "kp") {
             // transformation between keypoints in global camera frame
             const RigidRANSAC::Result res = model->getLastTrackTransform();
 
@@ -368,7 +374,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
               Tnew = res.transformation.matrix() * model->getPose();
             }
           }
-          else if (odom_cfg.init == "tf") {
+          else if (odom_init == "tf") {
             // use log ground truth pose
             if (model->getID()==0) {
               // currently, only the camera pose can be used for ground truth
@@ -382,7 +388,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
             }
           }
           else {
-            throw std::invalid_argument("invalid initialisation method: " + odom_cfg.init);
+            throw std::invalid_argument("invalid initialisation method: " + odom_init);
           }
 
           model->overridePose(Tnew);
@@ -946,6 +952,12 @@ void CoFusion::coloriseMasks() {
 
 void CoFusion::scheduleDeactivation(const ModelPointer& m) {
   scheduled_model_deactivation.insert(m);
+}
+
+void CoFusion::setOdomInit(const std::string &init) {
+  lock_odom_cfg.lock();
+  odom_cfg.init = init;
+  lock_odom_cfg.unlock();
 }
 
 void CoFusion::spawnObjectModel() {
