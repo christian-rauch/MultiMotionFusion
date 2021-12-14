@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>cofusion</name>
+  <name>mmf</name>
   <version>0.0.0</version>
-  <description>The cofusion package</description>
+  <description>The MultiMotionFusion package</description>
 
   <maintainer email="Christian.Rauch@ed.ac.uk">Christian Rauch</maintainer>
 
@@ -17,6 +17,7 @@
   <!-- Example: -->
   <!-- <url type="website">http://wiki.ros.org/cofusion</url> -->
 
+  <author email="Christian.Rauch@ed.ac.uk">Christian Rauch</author>
   <author email="M.Runz@cs.ucl.ac.uk">Martin Ruenz</author>
 
 
