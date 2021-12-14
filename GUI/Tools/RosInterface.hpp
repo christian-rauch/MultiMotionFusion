@@ -28,6 +28,8 @@ public:
 
     bool on_set_odom_init(cob_srvs::SetString::Request &req, cob_srvs::SetString::Response &res);
 
+    bool on_set_icp_refine(std_srvs::SetBool::Request &req, std_srvs::SetBool::Response &res);
+
     bool on_set_segm_mode(cob_srvs::SetString::Request &req, cob_srvs::SetString::Response &res);
 
 private:
@@ -43,5 +45,6 @@ private:
     ros::ServiceServer srv_pause;
     ros::ServiceServer srv_deactivate_model;
     ros::ServiceServer srv_set_odom_init;
+    ros::ServiceServer srv_set_icp_refine;
     ros::ServiceServer srv_set_segm_mode;
 };

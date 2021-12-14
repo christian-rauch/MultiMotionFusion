@@ -17,6 +17,8 @@ RosInterface::RosInterface(GUI **gui, CoFusion **modelling)
 
   srv_set_odom_init = n->advertiseService("set_odom_init", &RosInterface::on_set_odom_init, this);
 
+  srv_set_icp_refine = n->advertiseService("set_icp_refine", &RosInterface::on_set_icp_refine, this);
+
   srv_set_segm_mode = n->advertiseService("set_segm_mode", &RosInterface::on_set_segm_mode, this);
 }
 
@@ -148,6 +150,22 @@ bool RosInterface::on_set_odom_init(cob_srvs::SetString::Request &req, cob_srvs:
   else {
     res.message = "invalid init mode: " + req.data;
   }
+
+  return true;
+}
+
+bool RosInterface::on_set_icp_refine(std_srvs::SetBool::Request &req, std_srvs::SetBool::Response &res)
+{
+  if (!*modelling) {
+    res.success = false;
+    res.message = "modelling not initialised";
+    return true;
+  }
+
+  (*modelling)->setOdomRefine(req.data);
+
+  res.success = true;
+  res.message = "ICP refinement changed to: " + std::to_string(req.data);
 
   return true;
 }
