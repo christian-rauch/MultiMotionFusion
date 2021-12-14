@@ -960,6 +960,12 @@ void CoFusion::setOdomInit(const std::string &init) {
   lock_odom_cfg.unlock();
 }
 
+void CoFusion::setOdomRefine(const bool &refine) {
+  lock_odom_cfg.lock();
+  odom_cfg.icp_refine = refine;
+  lock_odom_cfg.unlock();
+}
+
 void CoFusion::setSegmMode(const std::string &mode) {
   labelGenerator.setMode(mode);
 }
