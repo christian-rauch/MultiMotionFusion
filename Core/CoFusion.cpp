@@ -128,6 +128,20 @@ void CoFusion::preallocateModels(unsigned count) {
         std::make_shared<Model>(getNextModelID(true), initConfThresObject, odom_cfg, false, true, enablePoseLogging, modelMatchingType));
 }
 
+void CoFusion::loadModels() {
+  // load all models from the database and add them to the set of inactive models, until they are re-detected
+  for (size_t id=0; id<256; id++) {
+    const fs::path model_path = model_db_path / fs::path("model-"+std::to_string(id));
+    if (fs::exists(model_path) && id>0) {
+      // create a new object model and set data
+      std::cout << "restoring model " << int(id) << " from disk" << std::endl;
+      const ModelPointer m = std::make_shared<Model>(getNextModelID(true), initConfThresObject, odom_cfg, false, true, enablePoseLogging, modelMatchingType);
+      m->load(model_path);
+      inactiveModels.push_back(m);
+    }
+  }
+}
+
 SegmentationResult CoFusion::performSegmentation(const FrameData& frame) {
   return labelGenerator.performSegmentation(models, frame, getNextModelID(), spawnOffset >= modelSpawnOffset, tracker[0].getTracks(), dmm);
 }

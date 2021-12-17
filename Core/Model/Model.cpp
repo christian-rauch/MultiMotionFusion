@@ -23,6 +23,7 @@
 #include <opencv2/core/eigen.hpp>
 
 #include "Utils/RigidRANSAC.h"
+#include "Utils/happly.h"
 
 Model::GPUSetup::GPUSetup()
     : initProgram(loadProgramFromFile("init_unstable.vert")),
@@ -1670,4 +1671,39 @@ void Model::activate(const Eigen::Isometry3f &pose) {
   tracks.insert(tracks_local.cbegin(), tracks_local.cend());
   // set new pose
   overridePose(pose.matrix());
+}
+
+bool Model::load(const fs::path &model_path) {
+  // sparse data
+  happly::PLYData sparse(model_path / fs::path("tracks.ply"));
+  sparse.validate();
+
+  // keypoint coordinates and descriptors
+  const std::vector<std::array<double, 3>> coordinates = sparse.getVertexPositions();
+  const std::vector<std::vector<float>> descriptors = sparse.getElement("vertex").getListProperty<float>("descriptor");
+  const std::vector<std::vector<uint32_t>> tracks = sparse.getElement("track").getListProperty<uint32_t>("vertex_index");
+
+  this->tracks.clear();
+  static constexpr uint32_t uint32_max = std::numeric_limits<uint32_t>::max();
+  for (const std::vector<uint32_t> &track_ids : tracks) {
+    tracker::TrackPtr track = std::make_shared<tracker::Track>();
+    for (const uint32_t &kpid : track_ids) {
+      tracker::KeypointPtr kp;
+      if (kpid == uint32_max) {
+        // invalid
+        kp = nullptr;
+      }
+      else {
+        // valid
+        kp = std::make_shared<tracker::Keypoint>();
+        kp->coordinate = Eigen::Map<const Eigen::RowVector3d>(coordinates[kpid].data());
+        kp->descriptor = Eigen::Map<const Eigen::RowVectorXf>(descriptors[kpid].data(), descriptors[kpid].size()).cast<double>();
+      }
+      track->push_back(kp);
+    }
+
+    this->tracks_local.push_back(track);
+  }
+
+  return true;
 }

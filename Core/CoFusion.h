@@ -62,6 +62,8 @@ class CoFusion {
 
   void preallocateModels(unsigned count);
 
+  void loadModels();
+
   SegmentationResult performSegmentation(const FrameData& frame);
 
   /**

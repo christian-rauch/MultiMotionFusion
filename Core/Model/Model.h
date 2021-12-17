@@ -114,6 +114,8 @@ class Model {
         float maxDepth = std::numeric_limits<float>::max());  // TODO: Default disable
   virtual ~Model();
 
+  virtual bool load(const fs::path &model_path);
+
   // ----- Functions ----- //
 
   virtual unsigned int lastCount();
@@ -226,6 +228,26 @@ class Model {
   };
 
   virtual SurfelMap downloadMap() const;
+
+  // surfel memory representation
+  struct surfel_t {
+    // point
+    Eigen::Vector3f point;  // 96 bit
+    float confidence;       // 32 bit
+
+    // colour
+    float colour;       // 32 bit
+    uint32_t unused;    // 32 bit
+    float init_time;    // 32 bit
+    float timestamp;    // 32 bit
+
+    // normal
+    Eigen::Vector3f normal; // 96 bit
+    float radius;           // 32 bit
+  };
+
+  // a surfel should consume 3 x 4 x 32 = 384 bit = 48 byte
+  static_assert(sizeof(surfel_t) == 48, "struct surfel_t is misaligned");
 
   // inline cv::Mat downloadUnaryConfTexture() {
   //    return indexMap.getUnaryConfTex()->downloadTexture();

@@ -71,6 +71,7 @@
 
     -static        Disable multi-model fusion.
     -redetection   Re-detect previously modelled objects.
+    -restore       Load models from disk (default: /tmp/model_db/model-$ID)
     -confO         Initial surfel confidence threshold for objects (default 0.01).
     -confG         Initial surfel confidence threshold for scene (default 10.00).
     -segMinNew     Min size of new object segments (relative to image size)
@@ -382,6 +383,8 @@ MainController::MainController(int argc, char* argv[])
   // gui->pause->Ref()->Set(logFile.length());
   // gui->pause->Ref()->Set(!showcaseMode);
 
+  restore = Parse::get().arg(argc, argv, "-restore", empty) > 0;
+
   resizeStream = new GPUResize(Resolution::getInstance().width(), Resolution::getInstance().height(), Resolution::getInstance().width() / 2,
                                Resolution::getInstance().height() / 2);
 
@@ -474,6 +477,10 @@ void MainController::launch() {
                               !openLoop, iclnuim, reloc, photoThresh, confGlobalInit, confObjectInit, gui->depthCutoff->Get(),
                               gui->icpWeight->Get(), fastOdom, fernThresh, so3, frameToFrameRGB, gui->modelSpawnOffset->Get(),
                               Model::MatchingType::Drost, exportDir, exportSegmentation, keypoint_model_path, odom_cfg, segm_cfg);
+
+      if (restore) {
+        coFusion->loadModels();
+      }
 
       coFusion->preallocateModels(preallocatedModelsCount);
 

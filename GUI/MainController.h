@@ -64,6 +64,7 @@ class MainController {
   bool exportNormals;
   bool exportPoses;
   bool exportModels;
+  bool restore;
 
 #ifdef ROSNODE
   std::unique_ptr<RosStatePublisher> state_publisher;
