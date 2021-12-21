@@ -14,6 +14,12 @@ RosInterface::RosInterface(GUI **gui)
 
 bool RosInterface::on_reset(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
 {
+  if (!*gui) {
+    res.success = false;
+    res.message = "GUI not initialised";
+    return true;
+  }
+
   (*gui)->reset->Ref()->Set(true);
   res.success = true;
   res.message = "reset map and models";
@@ -22,6 +28,12 @@ bool RosInterface::on_reset(std_srvs::Trigger::Request &req, std_srvs::Trigger::
 
 bool RosInterface::on_inhibit(std_srvs::SetBool::Request &req, std_srvs::SetBool::Response &res)
 {
+  if (!*gui) {
+    res.success = false;
+    res.message = "GUI not initialised";
+    return true;
+  }
+
   const std::string action = req.data ? "inhibited" : "allowed";
 
   const bool apply_change = (*gui)->inhibitModels->Get() != req.data;
