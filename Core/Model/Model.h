@@ -303,9 +303,13 @@ class Model {
 
   inline unsigned getUnseenCount() const { return unseenCount; }
   inline void resetUnseenCount() { unseenCount = 0; }
-  inline unsigned incrementUnseenCount() {
-    if (unseenCount < std::numeric_limits<unsigned>::max()) return ++unseenCount;
-    return unseenCount;
+  inline int64_t incrementUnseenCount() {
+    return std::min(++unseenCount, std::numeric_limits<int64_t>::max());
+  }
+
+  inline int64_t decrementUnseenCount(const int64_t &decrement = 1) {
+    unseenCount -= decrement;
+    return std::max(unseenCount, std::numeric_limits<int64_t>::min());
   }
 
   struct PoseLogItem {
@@ -386,7 +390,7 @@ class Model {
   ModelProjection indexMap;
   RGBDOdometry frameToModel;
 
-  unsigned unseenCount = 0;
+  int64_t unseenCount = 0;
 
   // Fill in holes in prediction (using raw data)
   std::unique_ptr<FillIn> fillIn;
