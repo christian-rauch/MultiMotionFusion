@@ -324,7 +324,7 @@ class Model {
 
   void store(const fs::path &model_db_path, const Eigen::Isometry3f &pose, bool clear = true);
 
-  void activate(const Eigen::Isometry3f &pose);
+  void activate(const Eigen::Isometry3f &pose, const int64_t &timestamp);
 
  protected:
   // Current pose

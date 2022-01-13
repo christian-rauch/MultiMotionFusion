@@ -1665,12 +1665,16 @@ void Model::store(const fs::path &model_db_path, const Eigen::Isometry3f &pose, 
     tracks.clear();
 }
 
-void Model::activate(const Eigen::Isometry3f &pose) {
+void Model::activate(const Eigen::Isometry3f &pose, const int64_t& timestamp) {
   // restore tracks
   tracks.clear();
   tracks.insert(tracks_local.cbegin(), tracks_local.cend());
-  // set new pose
+  // set new pose with current timestamp
   overridePose(pose.matrix());
+  poses.clear();
+  poses.push_back(pose);
+  timestamp_ns.clear();
+  timestamp_ns.push_back(timestamp);
 }
 
 bool Model::load(const fs::path &model_path) {

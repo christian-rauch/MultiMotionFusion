@@ -593,7 +593,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
                   models.remove(model_act_rm);
                 }
                 models.push_back(model);
-                model->activate(best.transformation.inverse());
+                model->activate(best.transformation.inverse(), frame.timestamp);
                 model_inact_rm.push_back(model);
                 // stop searching
                 // TODO: search for inactive model with lowest error
