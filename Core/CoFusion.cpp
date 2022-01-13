@@ -137,6 +137,8 @@ void CoFusion::loadModels() {
       std::cout << "restoring model " << int(id) << " from disk" << std::endl;
       const ModelPointer m = std::make_shared<Model>(getNextModelID(true), initConfThresObject, odom_cfg, false, true, enablePoseLogging, modelMatchingType);
       m->load(model_path);
+      // keep this new model for the next 5 frames
+      m->decrementUnseenCount(5);
       inactiveModels.push_back(m);
     }
   }
