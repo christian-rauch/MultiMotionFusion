@@ -376,11 +376,6 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
             // detect tracking failures and stop tracking to prevent model corruption
             if (res.inlier.count()==0) {
               std::cout << "model " << model->getID() << " keypoint initialisation failed (" << frame.timestamp << ")" << std::endl;
-              if (model->getID()>0) {
-                lost_models.push_back(model);
-                // skip tracking for this model
-                continue;
-              }
             }
 
             if (model->getID()==0) {
