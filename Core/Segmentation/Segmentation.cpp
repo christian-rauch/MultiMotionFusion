@@ -52,6 +52,8 @@ typedef std::chrono::system_clock::time_point TimePoint;
 #define DBG_VIS_PROBS 0
 // export images of the local keypoint reprojection and errors
 #define DBG_EXP_ERRORS 0
+// show keypoint reprojection and segmentation
+#define DBG_VIS_SEGM 0
 
 SegmentationResult::ModelData::ModelData(unsigned t_id) : id(t_id) {}
 
@@ -1488,6 +1490,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     cv::Mat_<float> mag, ang;
     cv::cartToPolar(flow_x_y[0], flow_x_y[1], mag, ang);
     magn_flow = Eigen::Map<MatrixXf_r>((float*)mag.data, mag.rows, mag.cols);
+#if DBG_VIS_SEGM
     std::vector<cv::Mat_<uint8_t>> hsv(3, {mag.size(), 0});
     hsv[0] = ang * 180./M_PI_2;
     cv::normalize(mag, hsv[2], 0, 255, cv::NORM_MINMAX);
@@ -1498,6 +1501,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     cv::Mat magn_scale;
     mag.convertTo(magn_scale, CV_8UC1, 50);
     cv::imshow("flow magn", magn_scale);
+#endif
   } // prev
 
 //  if (!flow.empty()) {
@@ -1628,6 +1632,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
       break;
     }
 
+#if DBG_VIS_SEGM
     // visualisation of local track projection
     int ms;
     bool scale;
@@ -1641,6 +1646,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
       scale = false;
       ms = 10;
     }
+#endif
 
     // unary: Nmodels x Npixel
     TICK("segm/unary");
@@ -1655,8 +1661,10 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
       const tracker::Tracks ltracks = model->computeTrackProjectionStartEnd(tracks, minhist);
 
 //      Model::exportTracksPLY(ltracks, "/tmp/global-m"+std::to_string(model->getID())+".ply");
+#if DBG_VIS_SEGM
       const cv::Mat track_local_img = Model::drawLocalTracks2D(ltracks, frame.rgb, ms, scale);
       cv::imshow("model tracks (local) "+std::to_string(model->getID()), track_local_img);
+#endif
 #if DBG_EXP_ERRORS
       cv::imwrite("/tmp/mmf/track_local_m"+std::to_string(model->getID())+"_"+std::to_string(frame.timestamp)+".png", track_local_img);
 #endif
@@ -1665,11 +1673,15 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
 //        std::cout << "mdl " << model->getID() << ": " << ltracks.size() << std::endl;
 
+#if DBG_VIS_SEGM
       cv::Mat track_err;
       cv::cvtColor(frame.rgb, track_err, cv::COLOR_RGB2GRAY);
       cv::cvtColor(track_err, track_err, cv::COLOR_GRAY2RGB);
 
+#endif
+#if DBG_VIS_SEGM
       cv::Mat track_vel = track_err.clone();
+#endif
 
       for (size_t it=0; it<ltracks.size(); it++) {
         const auto kp0 = ltracks[it]->front();
@@ -1709,24 +1721,32 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
         if (v > threshold) {
           // outlier
+#if DBG_VIS_SEGM
           cv::circle(track_err, kp1->xy, 3, cv::Scalar(0, 0, 255), -1); // red
+#endif
         }
         else {
           // inlier
           outlier_set.remove(tracks[it]);
           result.modelData[label].tracks_inlier.push_back(tracks[it]);
+#if DBG_VIS_SEGM
           cv::circle(track_err, kp1->xy, 3, cv::Scalar(255, 0, 0), -1); // blue
+#endif
         }
 
+#if DBG_VIS_SEGM
         // blue: low speed, red: high speed
         const double vn = v / (2*threshold);
         cv::circle(track_vel, kp1->xy, 3, cv::Scalar((1-vn) * 255, 0, vn * 255), -1);
 
+#endif
         unary(label, c1.y*crf_size.width + c1.x) = v;
       }
       label++;
+#if DBG_VIS_SEGM
       cv::imshow("track err "+std::to_string(model->getID()), track_err);
       cv::imshow("track vel "+std::to_string(model->getID()), track_vel);
+#endif
 #if DBG_EXP_ERRORS
       cv::imwrite("/tmp/mmf/track_err_m"+std::to_string(model->getID())+"_"+std::to_string(frame.timestamp)+".png", track_err);
 #endif
@@ -1736,6 +1756,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
       // outlier tracks are the outlier model's inlier tracks
       result.modelData.back().tracks_inlier = {outlier_set.begin(), outlier_set.end()};
 
+#if DBG_VIS_SEGM
       cv::Mat track_err;
       cv::cvtColor(frame.rgb, track_err, cv::COLOR_RGB2GRAY);
       cv::cvtColor(track_err, track_err, cv::COLOR_GRAY2RGB);
@@ -1745,6 +1766,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
         }
       }
       cv::imshow("outlier", track_err);
+#endif
     }
 
     constexpr bool norm01 = true;
@@ -1814,6 +1836,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 //        }
 //      }
 
+#if DBG_VIS_SEGM
     // DBG
     {
       std::vector<cv::Mat_<float>> errs(numLabels, {crf_size, 0});
@@ -1832,6 +1855,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
       }
     }
 
+#endif
 //      std::cout << "unary (metric):" << std::endl << unary << std::endl;
 
     // turn errors to probabilities p(track | model) via softmax
@@ -2091,6 +2115,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
       }
     }
 
+#if DBG_VIS_SEGM
     // DBG
     {
       cv::Mat lbls(crf_size, CV_8UC3);
@@ -2105,6 +2130,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
       cv::imshow("segm", lbls);
     }
     cv::waitKey(1);
+#endif
     TOCK("segm/flowCRF");
   } // uflow
 
