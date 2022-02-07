@@ -241,12 +241,13 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       tracker[i].addKeypoints(coordinates[i], descriptors[i], frame.timestamp, depth, 0.7f, 30);
     }
     TOCK("Point Matching");
+#if 0
     for(int i=0; i<RGBDOdometry::NUM_PYRS; i++) {
       cv::Mat img;
       cv::resize(frame.rgb, img, cv::Size(frame.rgb.cols >> i, frame.rgb.rows >> i));
       cv::imshow("tracks L"+std::to_string(i), tracker[i].drawTracks(img, 2));
     }
-    cv::waitKey(1);
+#endif
   }
 
 #if 0 // draw Canny edges, Harris corners and Voronoi separation
@@ -895,6 +896,8 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
   }
 
   TOCK("Run");
+
+  cv::waitKey(1);
 
   return false;
 }
