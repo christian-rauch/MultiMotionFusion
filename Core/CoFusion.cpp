@@ -566,7 +566,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
               const RigidRANSAC::Result best = model->getBestMatch(keypoints, cfg);
               // need at least 10 matches and less than 1cm errors
               if (best.error < 0.01 && best.inlier.count() > 5) {
-                std::cout << "replace current model " << int(segm_label) << " with previous model " << model->getID() << std::endl;
+                std::cout << "\033[1m\033[31m>> replace current model " << int(segm_label) << " with previous model " << model->getID() << "\033[0m" << std::endl;
 
                 if (segmentationResult.hasNewLabel) {
                   segmentationResult.hasNewLabel = false;
