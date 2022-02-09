@@ -217,224 +217,221 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
     cv::Mat icpFull = m->downloadICPErrorTexture();
     cv::Mat icp(int(lowHeight), int(lowWidth), CV_32FC1, cv::Scalar(0));
 
-    if (cfg.mode.empty() || cfg.mode == "dense") {
+//    if (cfg.mode.empty() || cfg.mode == "dense") {
       icp = slic.downsample<float>(icpFull);
-    }
-    else if (cfg.mode == "sparse") {
-      cv::Mat kpcount(int(lowHeight), int(lowWidth), CV_32FC1, cv::Scalar(0));
-      const int* slic_map = slic.getResult();
-      static const long len_vis_max = long(cfg.history);
-      const long len_vis = (len_vis_max==0) ? m->getTrackXY().cols() : std::min(len_vis_max, m->getTrackXY().cols());
+//    }
+//    else if (cfg.mode == "sparse") {
+//      cv::Mat kpcount(int(lowHeight), int(lowWidth), CV_32FC1, cv::Scalar(0));
+//      const int* slic_map = slic.getResult();
+//      static const long len_vis_max = long(cfg.history);
+//      const long len_vis = (len_vis_max==0) ? m->getTrackXY().cols() : std::min(len_vis_max, m->getTrackXY().cols());
 
-      if (len_vis>1) {
-        cv::Mat track_err;
-        cv::cvtColor(frame.rgb, track_err, cv::COLOR_RGB2GRAY);
-        cv::cvtColor(track_err, track_err, cv::COLOR_GRAY2BGR);
-        cv::Mat proj_err = track_err.clone();
-        const cv::Rect rect(cv::Point(0,0), track_err.size());
+//      if (len_vis>1) {
+//        cv::Mat track_err;
+//        cv::cvtColor(frame.rgb, track_err, cv::COLOR_RGB2GRAY);
+//        cv::cvtColor(track_err, track_err, cv::COLOR_GRAY2BGR);
+//        cv::Mat proj_err = track_err.clone();
+//        const cv::Rect rect(cv::Point(0,0), track_err.size());
 
-        static const double threshold = 0.05;
+//        static const double threshold = 0.05;
 
-        // project the last (newest) keypoints of the tracks in the camera frame to tracks in the local frame
-        const tracker::Tracks ltracks = m->computeTrackProjectionLastFrame(tracks, size_t(len_vis_max));
+//        // project the last (newest) keypoints of the tracks in the camera frame to tracks in the local frame
+//        const tracker::Tracks ltracks = m->computeTrackProjectionLastFrame(tracks, size_t(len_vis_max));
 
-        for (size_t it=0; it<ltracks.size(); it++) {
-          for (size_t ik=0; ik<(ltracks[it]->size()-1); ik++) {
-            // skip invalid pairs
-            if ((*ltracks[it])[ik]==nullptr || (*ltracks[it])[ik+1]==nullptr || (*ltracks[it]).front()==nullptr) {
-              continue;
-            }
+//        for (size_t it=0; it<ltracks.size(); it++) {
+//          for (size_t ik=0; ik<(ltracks[it]->size()-1); ik++) {
+//            // skip invalid pairs
+//            if ((*ltracks[it])[ik]==nullptr || (*ltracks[it])[ik+1]==nullptr || (*ltracks[it]).front()==nullptr) {
+//              continue;
+//            }
 
-            const cv::Point &c0 = (*ltracks[it])[ik]->xy;
-            const cv::Point &c1 = (*ltracks[it])[ik+1]->xy;
-            const Eigen::RowVector3d &p0 = (*ltracks[it]).front()->coordinate;
-            const Eigen::RowVector3d &px = (*ltracks[it])[ik+1]->coordinate;
+//            const cv::Point &c0 = (*ltracks[it])[ik]->xy;
+//            const cv::Point &c1 = (*ltracks[it])[ik+1]->xy;
+//            const Eigen::RowVector3d &p0 = (*ltracks[it]).front()->coordinate;
+//            const Eigen::RowVector3d &px = (*ltracks[it])[ik+1]->coordinate;
 
-            // distance between current and start point of trajectory section
-            const double e = std::min((p0-px).norm()/threshold, 1.0);
+//            // distance between current and start point of trajectory section
+//            const double e = std::min((p0-px).norm()/threshold, 1.0);
 
-            // ignore invalid 3D point distances
-            if (std::isnan(e)) { continue; }
+//            // ignore invalid 3D point distances
+//            if (std::isnan(e)) { continue; }
 
-            cv::line(track_err, c0, c1, cv::Scalar((1-e)*255,0,e*255), 3);
-          }
+//            cv::line(track_err, c0, c1, cv::Scalar((1-e)*255,0,e*255), 3);
+//          }
 
-          if (ltracks[it]->front() != nullptr && ltracks[it]->back()!=nullptr) {
-            const cv::Point track_end = ltracks[it]->back()->xy;
-            const double e = (ltracks[it]->front()->coordinate - ltracks[it]->back()->coordinate).norm();
-            if (!std::isnan(e) && e<threshold) {
-              // map from image continuous full-dim index to SLIC continuous low-dim index
-              const int index = track_end.y * int(fullWidth) + track_end.x;
-              icp.at<float>(slic_map[index]) += float(e);
-              kpcount.at<float>(slic_map[index]) += 1;
+//          if (ltracks[it]->front() != nullptr && ltracks[it]->back()!=nullptr) {
+//            const cv::Point track_end = ltracks[it]->back()->xy;
+//            const double e = (ltracks[it]->front()->coordinate - ltracks[it]->back()->coordinate).norm();
+//            if (!std::isnan(e) && e<threshold) {
+//              // map from image continuous full-dim index to SLIC continuous low-dim index
+//              const int index = track_end.y * int(fullWidth) + track_end.x;
+//              icp.at<float>(slic_map[index]) += float(e);
+//              kpcount.at<float>(slic_map[index]) += 1;
 
-              const double ee = std::min(e/0.02, 1.0);
-              cv::circle(proj_err, track_end, 5, cv::Scalar((1-ee)*255, 0, ee*255), cv::FILLED);
-            }
-          }
-        }
+//              const double ee = std::min(e/0.02, 1.0);
+//              cv::circle(proj_err, track_end, 5, cv::Scalar((1-ee)*255, 0, ee*255), cv::FILLED);
+//            }
+//          }
+//        }
 
-        cv::imshow("track err "+std::to_string(m->getID()), track_err);
-        cv::imshow("proj err "+std::to_string(m->getID()), proj_err);
-      }
+//        cv::imshow("track err "+std::to_string(m->getID()), track_err);
+//        cv::imshow("proj err "+std::to_string(m->getID()), proj_err);
+//      }
 
-      icp /= kpcount;
-      icp.setTo(0, kpcount==0);
-    } // sparse mode
-    else if (cfg.mode == "crf") {
-      // handle later
-    }
-    else if (cfg.mode == "flow_crf") {
-      // handle later
-    }
-    else if (cfg.mode == "sequential_ransac") {
-      // handle later
-    }
-    else if (cfg.mode == "track_projection") {
-      // separate tracks of current model
-      static const double threshold = 0.02;
-      tracker::Tracks inlier;
-      const tracker::Tracks ltracks = m->computeTrackProjectionLastFrame(tracks, size_t(20));
+//      icp /= kpcount;
+//      icp.setTo(0, kpcount==0);
+//    } // sparse mode
+//    else if (cfg.mode == "crf") {
+//      // handle later
+//    }
+//    else if (cfg.mode == "sequential_ransac") {
+//      // handle later
+//    }
+//    else if (cfg.mode == "track_projection") {
+//      // separate tracks of current model
+//      static const double threshold = 0.02;
+//      tracker::Tracks inlier;
+//      const tracker::Tracks ltracks = m->computeTrackProjectionLastFrame(tracks, size_t(20));
 
-      cv::Mat track_err;
-      cv::cvtColor(frame.rgb, track_err, cv::COLOR_RGB2GRAY);
-      cv::cvtColor(track_err, track_err, cv::COLOR_GRAY2BGR);
+//      cv::Mat track_err;
+//      cv::cvtColor(frame.rgb, track_err, cv::COLOR_RGB2GRAY);
+//      cv::cvtColor(track_err, track_err, cv::COLOR_GRAY2BGR);
 
-      cv::Mat_<uint8_t> mask(frame.rgb.size(), 0);
+//      cv::Mat_<uint8_t> mask(frame.rgb.size(), 0);
 
-      for (size_t it=0; it<ltracks.size(); it++) {
-        const auto kp0 = ltracks[it]->front();
-        const auto kp1 = ltracks[it]->back();
+//      for (size_t it=0; it<ltracks.size(); it++) {
+//        const auto kp0 = ltracks[it]->front();
+//        const auto kp1 = ltracks[it]->back();
 
-        // skip invalid pairs
-        if (kp0==nullptr || kp1==nullptr) { continue; }
+//        // skip invalid pairs
+//        if (kp0==nullptr || kp1==nullptr) { continue; }
 
-        // distance between current and start point of trajectory section
-        const Eigen::RowVector3d &p0 = kp0->coordinate;
-        const Eigen::RowVector3d &px = kp1->coordinate;
-        const double e = (p0-px).norm();
+//        // distance between current and start point of trajectory section
+//        const Eigen::RowVector3d &p0 = kp0->coordinate;
+//        const Eigen::RowVector3d &px = kp1->coordinate;
+//        const double e = (p0-px).norm();
 
-        const cv::Point &c1 = kp1->xy;
+//        const cv::Point &c1 = kp1->xy;
 
-        // ignore invalid 3D point distances
-        if (std::isnan(e)) { continue; }
+//        // ignore invalid 3D point distances
+//        if (std::isnan(e)) { continue; }
 
-        if (e<threshold) {
-          // inlier
-          inlier.push_back(ltracks[it]);
-          mask(c1) = 1;
-          cv::circle(track_err, c1, 5, cv::Scalar(255, 0, 0), cv::FILLED);
-        }
-        else {
-          // outlier
-          outlier.push_back(ltracks[it]);
-          mask(c1) = 2;
-          cv::circle(track_err, c1, 5, cv::Scalar(0, 0, 255), cv::FILLED);
-        }
-      }
+//        if (e<threshold) {
+//          // inlier
+//          inlier.push_back(ltracks[it]);
+//          mask(c1) = 1;
+//          cv::circle(track_err, c1, 5, cv::Scalar(255, 0, 0), cv::FILLED);
+//        }
+//        else {
+//          // outlier
+//          outlier.push_back(ltracks[it]);
+//          mask(c1) = 2;
+//          cv::circle(track_err, c1, 5, cv::Scalar(0, 0, 255), cv::FILLED);
+//        }
+//      }
 
-      std::cout << "in/out: " << inlier.size() << "/" << outlier.size() << std::endl;
+//      std::cout << "in/out: " << inlier.size() << "/" << outlier.size() << std::endl;
 
-      cv::imshow("in/out "+std::to_string(m->getID()), track_err);
+//      cv::imshow("in/out "+std::to_string(m->getID()), track_err);
 
-      cv::Mat inlier_err;
-      if (!inlier.empty()) {
-        inlier_err = dmm.projectionError(inlier);
+//      cv::Mat inlier_err;
+//      if (!inlier.empty()) {
+//        inlier_err = dmm.projectionError(inlier);
 
-        if(!inlier_err.empty()) {
-          cv::imshow("inlier err", inlier_err);
-          icpFull = inlier_err;
-        }
-      }
+//        if(!inlier_err.empty()) {
+//          cv::imshow("inlier err", inlier_err);
+//          icpFull = inlier_err;
+//        }
+//      }
 
-      cv::Mat outlier_err;
-      if (!outlier.empty()) {
-        outlier_err = dmm.projectionError(outlier);
+//      cv::Mat outlier_err;
+//      if (!outlier.empty()) {
+//        outlier_err = dmm.projectionError(outlier);
 
-        if(!outlier_err.empty()) {
-          cv::imshow("outlier err", outlier_err);
-        }
-      }
+//        if(!outlier_err.empty()) {
+//          cv::imshow("outlier err", outlier_err);
+//        }
+//      }
 
-      if (!inlier_err.empty() && !outlier_err.empty()) {
-        cv::Mat inlier_mask = inlier_err<outlier_err;
-        cv::Mat outlier_mask = inlier_err>outlier_err;
+//      if (!inlier_err.empty() && !outlier_err.empty()) {
+//        cv::Mat inlier_mask = inlier_err<outlier_err;
+//        cv::Mat outlier_mask = inlier_err>outlier_err;
 
-        cv::imshow("inlier mask", inlier_mask);
-        cv::imshow("outlier mask", outlier_mask);
-      }
+//        cv::imshow("inlier mask", inlier_mask);
+//        cv::imshow("outlier mask", outlier_mask);
+//      }
 
-      icp = slic.downsample<float>(icpFull);
-    }
-    else if (cfg.mode == "triangle_projection") {
-      const tracker::Tracks ltracks = m->computeTrackProjectionLastFrame(tracks, size_t(20));
+//      icp = slic.downsample<float>(icpFull);
+//    }
+//    else if (cfg.mode == "triangle_projection") {
+//      const tracker::Tracks ltracks = m->computeTrackProjectionLastFrame(tracks, size_t(20));
 
-      const std::vector<motion::Triangle> triangles = motion::triangulate(ltracks);
+//      const std::vector<motion::Triangle> triangles = motion::triangulate(ltracks);
 
-      cv::Mat_<float> tri_proje_err(frame.rgb.size(), 0);
+//      cv::Mat_<float> tri_proje_err(frame.rgb.size(), 0);
 
-      cv::Mat img_tri;
-      cv::cvtColor(frame.rgb, img_tri, cv::COLOR_RGB2GRAY);
-      cv::cvtColor(img_tri, img_tri, cv::COLOR_GRAY2BGR);
+//      cv::Mat img_tri;
+//      cv::cvtColor(frame.rgb, img_tri, cv::COLOR_RGB2GRAY);
+//      cv::cvtColor(img_tri, img_tri, cv::COLOR_GRAY2BGR);
 
-      cv::Mat tri_segm(frame.rgb.size(), CV_8UC3, cv::Scalar(0));
+//      cv::Mat tri_segm(frame.rgb.size(), CV_8UC3, cv::Scalar(0));
 
-      for (const motion::Triangle &tri : triangles) {
-        Eigen::Vector3d es;
-        std::vector<cv::Point> points;
-        for (size_t i = 0; i < 3; ++i) {
-          const auto kp0 = tri.tracks[i]->front();
-          const auto kp1 = tri.tracks[i]->back();
+//      for (const motion::Triangle &tri : triangles) {
+//        Eigen::Vector3d es;
+//        std::vector<cv::Point> points;
+//        for (size_t i = 0; i < 3; ++i) {
+//          const auto kp0 = tri.tracks[i]->front();
+//          const auto kp1 = tri.tracks[i]->back();
 
-          // distance between current and start point of trajectory section
-          const double e = (kp0->coordinate-kp1->coordinate).norm();
-          es[int(i)] = e;
+//          // distance between current and start point of trajectory section
+//          const double e = (kp0->coordinate-kp1->coordinate).norm();
+//          es[int(i)] = e;
 
-          points.push_back(kp1->xy);
-        }
+//          points.push_back(kp1->xy);
+//        }
 
-        // visualisation
-        if (points.size()==3) {
-          static constexpr double threshold = 0.05;
-          const double eavg = es.mean();
-          const double estd = std::sqrt(((es.array() - eavg).pow(2).sum() / double(es.size())));
-          if (std::isfinite(eavg) && estd<0.02) {
-            cv::fillConvexPoly(tri_proje_err, points, cv::Scalar(eavg));
-            const double en = std::min(1., (eavg/threshold));
-            cv::fillConvexPoly(tri_segm, points, cv::Scalar((1-en) * 255, 0, en * 255));
-          }
-          cv::polylines(img_tri, points, true, cv::Scalar(0, 255, 0));
+//        // visualisation
+//        if (points.size()==3) {
+//          static constexpr double threshold = 0.05;
+//          const double eavg = es.mean();
+//          const double estd = std::sqrt(((es.array() - eavg).pow(2).sum() / double(es.size())));
+//          if (std::isfinite(eavg) && estd<0.02) {
+//            cv::fillConvexPoly(tri_proje_err, points, cv::Scalar(eavg));
+//            const double en = std::min(1., (eavg/threshold));
+//            cv::fillConvexPoly(tri_segm, points, cv::Scalar((1-en) * 255, 0, en * 255));
+//          }
+//          cv::polylines(img_tri, points, true, cv::Scalar(0, 255, 0));
 
-          for (int i = 0; i < 3; ++i) {
-            cv::Scalar c(255,255,255);
-            if (es[i]<threshold) {
-              // inlier
-              c = cv::Scalar(255, 0, 0);
-            }
-            else if (es[i]>threshold) {
-              // outlier
-              c = cv::Scalar(0, 0, 255);
-            }
-            cv::circle(img_tri, points[i], 3, c, cv::FILLED);
-          }
-        }
-      }
+//          for (int i = 0; i < 3; ++i) {
+//            cv::Scalar c(255,255,255);
+//            if (es[i]<threshold) {
+//              // inlier
+//              c = cv::Scalar(255, 0, 0);
+//            }
+//            else if (es[i]>threshold) {
+//              // outlier
+//              c = cv::Scalar(0, 0, 255);
+//            }
+//            cv::circle(img_tri, points[i], 3, c, cv::FILLED);
+//          }
+//        }
+//      }
 
-      cv::addWeighted(img_tri, 1.0, tri_segm, 0.5, 1, tri_segm);
-      cv::imshow("tri_proje_err "+std::to_string(m->getID()), tri_proje_err);
+//      cv::addWeighted(img_tri, 1.0, tri_segm, 0.5, 1, tri_segm);
+//      cv::imshow("tri_proje_err "+std::to_string(m->getID()), tri_proje_err);
 
-      cv::imshow("tri_segm "+std::to_string(m->getID()), tri_segm);
+//      cv::imshow("tri_segm "+std::to_string(m->getID()), tri_segm);
 
-      icpFull = tri_proje_err;
-      icp = slic.downsample<float>(icpFull);
-    }
-    else {
-      throw std::runtime_error("invalid segmentation mode: "+cfg.mode);
-    }
+//      icpFull = tri_proje_err;
+//      icp = slic.downsample<float>(icpFull);
+//    }
+//    else {
+//      throw std::runtime_error("invalid segmentation mode: "+cfg.mode);
+//    }
 
     // visualise error and confidence per SLIC region
 //    cv::imshow("icp up "+std::to_string(m->getID()), slic.upsample<float>(icp));
-    cv::waitKey(1);
+//    cv::waitKey(1);
 
     cv::Mat conf = slic.downsample<float>(vertConfTex, 3);
     result.modelData.push_back({m->getID(), it, icp, conf});
@@ -551,313 +548,65 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
     }
   }
 
-  if (cfg.mode == "flow_crf") {
-    cv::Mat next, prev;
-    std::tie(next, std::ignore, std::ignore) = dmm.getRGBD(0);
-    std::tie(prev, std::ignore, std::ignore) = dmm.getRGBD(-1);
+//  if (cfg.mode == "sequential_ransac") {
+//    SequentialRigidRANSAC ransac(10, 0.01f, 0);
 
-    // scale
-    constexpr double s = 0.25;
-//    constexpr double s = 1;
+//    const size_t ntracks = tracks.size();
 
-    cv::Mat flow;
-    cv::Mat gnext, gprev;
-    if (!prev.empty()) {
-      cv::resize(next, next, s * cv::Point(next.size()));
-      cv::resize(prev, prev, s * cv::Point(prev.size()));
+//    Eigen::MatrixX3f p0s, p1s;
+//    p0s.resize(int(ntracks), Eigen::NoChange);
+//    p1s.resize(int(ntracks), Eigen::NoChange);
 
-//      cv::imwrite("/tmp/next.png", next);
+////    static const int len_vis_max = int(cfg.history);
+//    static const int len_vis_max = 2;
 
-      cv::cvtColor(next, gnext, cv::COLOR_BGR2GRAY);
-      cv::cvtColor(prev, gprev, cv::COLOR_BGR2GRAY);
-
-      cv::imshow("next", gnext);
-      cv::imshow("prev", gprev);
-
-      TICK("segm/opt_flow");
-
-      // prev, next, flow, pyr_scale, levels, winsize, iterations, poly_n, poly_sigma, flags
-//      cv::calcOpticalFlowFarneback(prev, next, uflow, 0.5, 3, 15, 3, 5, 1.2, 0);
-      cv::calcOpticalFlowFarneback(gprev, gnext, flow, 0.5, 3, s*25, 3, 5, 1.2, 0);
-
-      // show flow
-      std::vector<cv::Mat> flow_x_y;
-      cv::split(flow, flow_x_y);
-      cv::imshow("flow vx", cv::abs(flow_x_y[0]));
-      cv::imshow("flow vy", cv::abs(flow_x_y[1]));
-
-      cv::Mat mag, ang;
-      cv::cartToPolar(flow_x_y[0], flow_x_y[1], mag, ang);
-      std::vector<cv::Mat_<uint8_t>> hsv(3, {mag.size(), 0});
-      hsv[0] = ang * 180./M_PI_2;
-      cv::normalize(mag, hsv[2], 0, 255, cv::NORM_MINMAX);
-      cv::Mat flow_vis;
-      cv::merge(hsv, flow_vis);
-      cv::cvtColor(flow_vis, flow_vis, cv::COLOR_HSV2BGR);
-      cv::imshow("flow_vis", flow_vis);
-
-      TOCK("segm/opt_flow");
-    } // prev
-
-    if (!flow.empty()) {
-      auto drawOptFlowMap = [](const cv::Mat& flow, cv::Mat& cflowmap, int step,
-                          double, const cv::Scalar& color)
-      {
-          for(int y = 0; y < cflowmap.rows; y += step)
-              for(int x = 0; x < cflowmap.cols; x += step)
-              {
-                  const cv::Point2f& fxy = flow.at<cv::Point2f>(y, x);
-                  cv::line(cflowmap, cv::Point(x,y), cv::Point(cvRound(x+fxy.x), cvRound(y+fxy.y)), color);
-                  cv::circle(cflowmap, cv::Point(x,y), 2, color, -1);
-              }
-      };
-
-      cv::Mat cflow;
-      cv::cvtColor(gprev, cflow, cv::COLOR_GRAY2BGR);
-      drawOptFlowMap(flow, cflow, 16, 1.5, cv::Scalar(0, 255, 0));
-      cv::imshow("flow", cflow);
-    } // flow
-
-    if (!flow.empty()) {
-      TICK("segm/flowCRF");
-      DenseCRF2D crf(next.cols, next.rows, int(numLabels));
-//      DCRF crf(next.cols, next.rows, int(numLabels));
-
-      // unary: Nmodels x Npixel
-      Eigen::MatrixXf unary(numLabels, next.rows * next.cols);
-      // error of unkown association
-      unary.fill(std::numeric_limits<float>::infinity());
-      for (const ModelPointer &model : models) {
-        const tracker::Tracks ltracks = model->computeTrackProjectionLastFrame(tracks, cfg.history);
-
-//        std::cout << "mdl " << model->getID() << ": " << ltracks.size() << std::endl;
-
-//        Eigen::VectorXd errs(ltracks.size());
-
-        for (size_t it=0; it<ltracks.size(); it++) {
-          const auto kp0 = ltracks[it]->front();
-          const auto kp1 = ltracks[it]->back();
-
-          // skip invalid pairs
-          if (kp0==nullptr || kp1==nullptr) { continue; }
-
-          const cv::Point &c1 = s * kp1->xy;
-
-          // distance between current and start point of trajectory section
-          const Eigen::RowVector3d &p0 = kp0->coordinate;
-          const Eigen::RowVector3d &px = kp1->coordinate;
-          const double e = (p0-px).norm();
-
-          // ignore invalid 3D point distances
-          if (std::isnan(e)) { continue; }
-
-//          errs[int(it)] = e;
-
-//          unary(model->getID(), c1.y*next.cols + c1.x) = float(e);
-
-          unary(model->getID(), c1.y*next.cols + c1.x) = (e>0.02);
-
-          if (allowNew) {
-            unary(numLabels-1, c1.y*next.cols + c1.x) = (e<0.02);
-          }
-        }
-      }
-
-//      // set default projection error for outlier
-//      std::set<int> val_tracks;
-//      if (allowNew) {
-//        for (const tracker::TrackPtr &track : tracks) {
-//          const tracker::KeypointPtr kp = track->back();
-//          if (kp != nullptr) {
-//            const cv::Point &c1 = s * kp->xy;
-//            unary(numLabels-1, c1.y*next.cols + c1.x) = 0.03f;
-//            if (/*unary(0, c1.y*next.cols + c1.x) > 0.05f && */unary(0, c1.y*next.cols + c1.x)<std::numeric_limits<float>::infinity()) {
-//              std::cout << "u(m)X: " << unary.col(c1.y*next.cols + c1.x).transpose() << std::endl;
-//              val_tracks.insert(c1.y*next.cols + c1.x);
-//            }
-//          }
+//    int nvalid = 0;
+//    std::map<int, size_t> track_valid_full; // map valid index to full track set
+//    for (size_t it=0; it<ntracks; it++) {
+//      const size_t ik = size_t(std::max(0, int(tracks[it]->size())-len_vis_max));
+//      if ((*tracks[it])[ik] && tracks[it]->back()) {
+//        const Eigen::RowVector3d &p0 = (*tracks[it])[ik]->coordinate;
+//        const Eigen::RowVector3d &p1 = tracks[it]->back()->coordinate;
+//        if (p0.array().isFinite().all() && p1.array().isFinite().all()) {
+//          p0s.row(nvalid) = p0.cast<float>();
+//          p1s.row(nvalid) = p1.cast<float>();
+//          track_valid_full[nvalid] = it;
+//          nvalid++;
 //        }
 //      }
+//    }
+//    p0s.conservativeResize(nvalid, Eigen::NoChange);
+//    p1s.conservativeResize(nvalid, Eigen::NoChange);
 
-      // DBG
-      {
-        std::vector<cv::Mat_<float>> errs(numLabels, {next.size(), 0});
-        for (size_t l = 0; l < numLabels; ++l) {
-          for (int u = 0; u < flow.rows; ++u) {
-            for (int v = 0; v < flow.cols; ++v) {
-              const int i = u * flow.cols + v;
-                errs[l].at<float>(u,v) = unary(int(l), i);
-            }
-          }
-//          cv::imshow("errors "+std::to_string(l), errs[l]/0.05);
-          cv::imshow("errors "+std::to_string(l), errs[l]);
-        }
-      }
+//    const std::vector<RigidRANSAC::Result> transformations = ransac.estimate(p0s, p1s);
 
-//      {
-//        cv::Mat lbls(next.size(), CV_8UC3, cv::Scalar(0,0,0));
-//        for (int u = 0; u < flow.rows; ++u) {
-//          for (int v = 0; v < flow.cols; ++v) {
-//            const int i = u * flow.cols + v;
-//            if (unary(0, i)<1e-6)
-//              lbls.at<cv::Vec3b>(u,v)[0] = 255;
-//            if (unary(1, i)<1e-6)
-//              lbls.at<cv::Vec3b>(u,v)[1] = 255;
-////            if (unary(2, i)<1e-6)
-////              lbls.at<cv::Vec3b>(u,v)[2] = 255;
-//          }
+
+//    // visualise
+
+//    cv::Mat track_segm;
+//    cv::cvtColor(frame.rgb, track_segm, cv::COLOR_RGB2GRAY);
+//    cv::cvtColor(track_segm, track_segm, cv::COLOR_GRAY2BGR);
+
+//    std::default_random_engine g;
+//    std::uniform_real_distribution<double> u(0,1);
+//    for (size_t i = 0; i < transformations.size(); ++i) {
+//      g.seed(i+1);
+//      const cv::Scalar c(u(g)*255, u(g)*255, u(g)*255);
+//      for (int j = 0; j < transformations[i].inlier.size(); ++j) {
+//        if (transformations[i].inlier[j]) {
+//          cv::circle(track_segm, tracks[track_valid_full.at(j)]->back()->xy, 3, c, cv::FILLED);
 //        }
-//        cv::imwrite("/tmp/lbls.png", lbls);
 //      }
-
-//      std::cout << "unary (metric):" << std::endl << unary << std::endl;
-
-      // turn errors to probabilities p(track | model) via softmax
-      unary *= -1;
-//      unary = unary.array().isFinite().select(unary.array().exp() / unary.array().exp().colwise().sum(), 1/numLabels);
-      for (int i = 0; i < unary.cols(); ++i) {
-        const auto exp = unary.col(i).array().exp();
-        if (exp.sum()>0) {
-          // apply regular softmax
-          unary.col(i) = exp / exp.sum();
-        }
-        else {
-          // all infinite, assume equal probability for all models
-          unary.col(i).fill(1 / float(numLabels));
-        }
-//        if (val_tracks.count(i)) {
-//          std::cout << "u(p)X: " << unary.col(i).transpose() << std::endl;
-//        }
-      }
-      // TODO: fix
-//      unary.bottomRows<1>().fill(1 / float(numLabels));
-
-//      std::cout << "unary (probs):" << std::endl << unary << std::endl;
-
-      // DBG
-      {
-        std::vector<cv::Mat_<float>> probs(numLabels, {next.size(), 0});
-        for (size_t l = 0; l < numLabels; ++l) {
-          for (int u = 0; u < flow.rows; ++u) {
-            for (int v = 0; v < flow.cols; ++v) {
-              const int i = u * flow.cols + v;
-                probs[l].at<float>(u,v) = unary(int(l), i);
-            }
-          }
-          cv::imshow("probs "+std::to_string(l), probs[l]);
-          cv::imshow("probs>0.5 "+std::to_string(l), probs[l]>0.5);
-        }
-      }
-
-      // log probability
-      unary = -unary.array().log();
-      crf.setUnaryEnergy(unary);
-
-      crf.addPairwiseGaussian(3, 3, new PottsCompatibility(weightSmoothness));
-
-      // feature optical flow: x, y, vx, vy
-      Eigen::MatrixXf feature(7, next.rows * next.cols);
-      for (int u = 0; u < flow.rows; ++u) {
-        for (int v = 0; v < flow.cols; ++v) {
-          const int i = u * flow.cols + v;
-          feature.col(i).x() = v / 80;
-          feature.col(i).y() = u / 80;
-          // TODO: also add r,g,b if optical flow is not available
-          feature.col(i).z() = flow.at<cv::Point2f>(i).x * 10;
-          feature.col(i).w() = flow.at<cv::Point2f>(i).y * 10;
-          feature.col(i)[4] = next.at<cv::Vec3b>(i)[0] / 13;
-          feature.col(i)[5] = next.at<cv::Vec3b>(i)[1] / 13;
-          feature.col(i)[6] = next.at<cv::Vec3b>(i)[2] / 13;
-        }
-      }
-
-      crf.addPairwiseEnergy(feature, new PottsCompatibility(weightAppearance));
-
-  //    crf.inference(10);
-      const Eigen::VectorXi lbl = crf.map(crfIterations).cast<int>();
-
-      // DBG
-      {
-        cv::Mat lbls(next.size(), CV_8UC3, cv::Scalar(0,0,0));
-        for (int u = 0; u < flow.rows; ++u) {
-          for (int v = 0; v < flow.cols; ++v) {
-            const int i = u * flow.cols + v;
-            if (lbl[i]==0)
-              lbls.at<cv::Vec3b>(u,v)[0] = 255;
-            if (lbl[i]==1)
-              lbls.at<cv::Vec3b>(u,v)[2] = 255;
-            if (lbl[i]==2)
-              lbls.at<cv::Vec3b>(u,v)[1] = 255;
-          }
-        }
-        cv::cvtColor(gprev, gprev, cv::COLOR_GRAY2BGR);
-        cv::addWeighted(gprev, 1, lbls, 0.5, 0, lbls);
-        cv::imshow("lbls", lbls);
-      }
-      cv::waitKey(1);
-      TOCK("segm/flowCRF");
-    } // uflow
-  }
-
-  if (cfg.mode == "sequential_ransac") {
-    SequentialRigidRANSAC ransac(10, 0.01f, 0);
-
-    const size_t ntracks = tracks.size();
-
-    Eigen::MatrixX3f p0s, p1s;
-    p0s.resize(int(ntracks), Eigen::NoChange);
-    p1s.resize(int(ntracks), Eigen::NoChange);
-
-//    static const int len_vis_max = int(cfg.history);
-    static const int len_vis_max = 2;
-
-    int nvalid = 0;
-    std::map<int, size_t> track_valid_full; // map valid index to full track set
-    for (size_t it=0; it<ntracks; it++) {
-      const size_t ik = size_t(std::max(0, int(tracks[it]->size())-len_vis_max));
-      if ((*tracks[it])[ik] && tracks[it]->back()) {
-        const Eigen::RowVector3d &p0 = (*tracks[it])[ik]->coordinate;
-        const Eigen::RowVector3d &p1 = tracks[it]->back()->coordinate;
-        if (p0.array().isFinite().all() && p1.array().isFinite().all()) {
-          p0s.row(nvalid) = p0.cast<float>();
-          p1s.row(nvalid) = p1.cast<float>();
-          track_valid_full[nvalid] = it;
-          nvalid++;
-        }
-      }
-    }
-    p0s.conservativeResize(nvalid, Eigen::NoChange);
-    p1s.conservativeResize(nvalid, Eigen::NoChange);
-
-    const std::vector<RigidRANSAC::Result> transformations = ransac.estimate(p0s, p1s);
+//    }
+//    // show all valid tracks
+//    for (const auto &[valid, full] : track_valid_full) {
+//      cv::circle(track_segm, tracks[full]->back()->xy, 5, cv::Scalar(255), 1);
+//    }
 
 
-    // visualise
-
-    cv::Mat track_segm;
-    cv::cvtColor(frame.rgb, track_segm, cv::COLOR_RGB2GRAY);
-    cv::cvtColor(track_segm, track_segm, cv::COLOR_GRAY2BGR);
-
-    std::default_random_engine g;
-    std::uniform_real_distribution<double> u(0,1);
-    for (size_t i = 0; i < transformations.size(); ++i) {
-      g.seed(i+1);
-      const cv::Scalar c(u(g)*255, u(g)*255, u(g)*255);
-      for (int j = 0; j < transformations[i].inlier.size(); ++j) {
-        if (transformations[i].inlier[j]) {
-          cv::circle(track_segm, tracks[track_valid_full.at(j)]->back()->xy, 3, c, cv::FILLED);
-        }
-      }
-    }
-    // show all valid tracks
-    for (const auto &[valid, full] : track_valid_full) {
-      cv::circle(track_segm, tracks[full]->back()->xy, 5, cv::Scalar(255), 1);
-    }
-
-
-    cv::imshow("track segmentation", track_segm);
-    cv::waitKey(1);
-  }
+//    cv::imshow("track segmentation", track_segm);
+//    cv::waitKey(1);
+//  }
 
   if (allowNew) {
     modelIdToIndex[nextModelID] = mIndex;
@@ -868,11 +617,11 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
 #endif
   }
 
-  cv::Mat icp_outlier;
-  if (!outlier.empty() && cfg.mode == "track_projection") {
-    const cv::Mat outlier_err = dmm.projectionError(outlier);
-    icp_outlier = slic.downsample<float>(outlier_err);
-  }
+//  cv::Mat icp_outlier;
+//  if (!outlier.empty() && cfg.mode == "track_projection") {
+//    const cv::Mat outlier_err = dmm.projectionError(outlier);
+//    icp_outlier = slic.downsample<float>(outlier_err);
+//  }
 
   TOCK("SLIC+SCALING");
   TICK("CRF-FULL");
@@ -941,13 +690,13 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
     }
 
     if (allowNew) {
-      if (!icp_outlier.empty() && cfg.mode == "track_projection") {
-        // explicitely use outlier projection error
-        unary(models.size(), k) = unaryWeightError * ((float*)(icp_outlier.data))[k];
-      }
-      else {
+//      if (!icp_outlier.empty() && cfg.mode == "track_projection") {
+//        // explicitely use outlier projection error
+//        unary(models.size(), k) = unaryWeightError * ((float*)(icp_outlier.data))[k];
+//      }
+//      else {
         unary(models.size(), k) = std::max(unaryThresholdNew - unaryWeightError * lowestError, 0.01f);
-      }
+//      }
       sum += unary(models.size(), k);
     }
 
