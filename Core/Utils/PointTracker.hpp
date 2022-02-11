@@ -37,6 +37,8 @@ public:
 
   cv::Mat drawTracks(const cv::Mat &image, const size_t length = {}) const;
 
+  void prune(const size_t &min_kps, const uint64_t &min_time);
+
 private:
   CameraModel intrinsics;
 

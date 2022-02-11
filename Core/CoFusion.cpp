@@ -239,6 +239,8 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       cv::Mat depth;
       cv::resize(frame.depth, depth, cv::Size(frame.depth.cols >> i, frame.depth.rows >> i), 0, 0, cv::INTER_NEAREST);
       tracker[i].addKeypoints(coordinates[i], descriptors[i], frame.timestamp, depth, 0.7f, 30);
+      // remove all tracks older than 1s with less than 30 keypoints
+      tracker[i].prune(30, uint64_t(std::max<int64_t>(frame.timestamp - 1*1e9, 0)));
     }
     TOCK("Point Matching");
 #if 0

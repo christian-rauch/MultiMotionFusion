@@ -536,7 +536,10 @@ tracker::Tracks Model::computeTrackProjectionFirstFrame() const {
   assert(poses.size() == timestamp_ns.size());
   tracker::Tracks local_tracks;
   for (const tracker::TrackPtr &track : tracks) {
+    if (track->empty())
+      continue;
     local_tracks.push_back(std::make_shared<tracker::Track>(poses.size(), nullptr));
+    assert(track->size() >= poses.size());
     const size_t offset = track->size() - poses.size();
     for (size_t ip=0; ip<poses.size(); ip++) {
       (*local_tracks.back())[ip] = project_kp((*track)[offset+ip], poses.at(ip).cast<double>());
@@ -769,6 +772,8 @@ RigidRANSAC::Result Model::getLastTrackTransform(const tracker::Tracks &tracks,
 
   int nvalid = 0;
   for (const tracker::TrackPtr &track : tracks) {
+    if (track->empty())
+      continue;
     tracker::KeypointPtr kp0 = track->end()[-2];
     tracker::KeypointPtr kp1 = track->end()[-1];
     if (kp0 && kp1) {

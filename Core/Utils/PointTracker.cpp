@@ -167,6 +167,41 @@ PointTracker::drawTracks(const cv::Mat &image, const size_t length) const
   return img_tracks;
 }
 
+void
+PointTracker::prune(const size_t &min_kps, const uint64_t &min_time)
+{
+  Tracks tracks_pruned;
+
+  for (TrackPtr &track : tracks) {
+    const size_t nvalid = std::count_if(track->begin(), track->end(), [](const KeypointPtr &kp){return kp!=nullptr;});
+    uint64_t last_stamp = 0;
+    for (const KeypointPtr &kp : *track) {
+      if (kp!=nullptr) {
+        last_stamp = kp->timestamp;
+      }
+    }
+
+    if (nvalid < min_kps && last_stamp < min_time) {
+      // delete all keypoints of this track and the track itself
+      for (KeypointPtr &kp : *track) {
+        if (kp!=nullptr) {
+          kp.reset();
+          kp = nullptr;
+        }
+      }
+      track->clear();
+      track.reset();
+      track = nullptr;
+    }
+    else {
+      // keep this track
+      tracks_pruned.push_back(track);
+    }
+  }
+
+  tracks = tracks_pruned;
+}
+
 std::vector<KeypointPtr>
 PointTracker::getLastActiveKeypoints(const size_t &history) const
 {
