@@ -18,6 +18,8 @@ public:
 
     void reset();
 
+    void send_status_message(const std::string &message);
+
 private:
     std::unique_ptr<ros::NodeHandle> n;
     std::unique_ptr<image_transport::ImageTransport> it;
@@ -29,6 +31,7 @@ private:
     std::unordered_map<uint8_t, ros::Publisher> pub_model_pc;
     std::unordered_map<uint8_t, ros::Publisher> pub_model_proj_colour;
     std::unordered_map<uint8_t, ros::Publisher> pub_model_proj_depth;
+    ros::Publisher pub_status_message;
 
     const std::string camera_frame;
 };

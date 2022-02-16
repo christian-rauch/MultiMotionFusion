@@ -50,6 +50,8 @@
 
 class CoFusion {
  public:
+  typedef std::function<void (const std::string &)> StatusMessageHandler;
+
   CoFusion(const int timeDelta = 200, const int countThresh = 35000, const float errThresh = 5e-05, const float covThresh = 1e-05,
            const bool closeLoops = true, const bool iclnuim = false, const bool reloc = false, const float photoThresh = 115,
            const float initConfidenceGlobal = 4, const float initConfidenceObject = 2, const float depthCut = 3, const float icpThresh = 10,
@@ -309,6 +311,18 @@ class CoFusion {
 
   void setSegmMode(const std::string &mode);
 
+  void setStatusMessageHandler(StatusMessageHandler status_message_handler) {
+    this->status_message_handler = status_message_handler;
+  }
+
+  bool sendStatusMessage(const std::string &message) {
+    if (status_message_handler) {
+      status_message_handler(message);
+      return true;
+    }
+    return false;
+  }
+
   // Here be dragons
  private:
   void spawnObjectModel();
@@ -343,6 +357,8 @@ class CoFusion {
 
   CallbackBuffer<std::shared_ptr<Model>> newModelListeners;
   CallbackBuffer<std::shared_ptr<Model>> inactiveModelListeners;
+
+  StatusMessageHandler status_message_handler;
 
   std::set<ModelPointer> scheduled_model_deactivation;
 

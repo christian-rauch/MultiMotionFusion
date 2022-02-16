@@ -530,7 +530,10 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
           }
 
           // New model
-          std::cout << "Found new model " << newModelData.id << " (" << frame.timestamp << ")" << std::endl;
+          std::stringstream msg;
+          msg << "Found new model " << newModelData.id;
+          std::cout << msg.str() << " (" << frame.timestamp << ")" << std::endl;
+          sendStatusMessage(msg.str());
 
           spawnObjectModel();
           spawnOffset = 0;
@@ -566,7 +569,10 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
               const RigidRANSAC::Result best = model->getBestMatch(keypoints, cfg);
               // need at least 10 matches and less than 1cm errors
               if (best.error < 0.01 && best.inlier.count() > 5) {
-                std::cout << "\033[1m\033[31m>> replace current model " << int(segm_label) << " with previous model " << model->getID() << "\033[0m" << std::endl;
+                std::stringstream msg;
+                msg << ">> replace current model " << int(segm_label) << " with previous model " << model->getID();
+                std::cout << "\033[1m\033[31m" << msg.str() << "\033[0m" << std::endl;
+                sendStatusMessage(msg.str());
 
                 if (segmentationResult.hasNewLabel) {
                   segmentationResult.hasNewLabel = false;

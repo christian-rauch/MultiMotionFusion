@@ -492,6 +492,14 @@ void MainController::launch() {
       // eFusion->addNewModelListener([this](std::shared_ptr<Model> model){
       //    gui->addModel(model->getID(), model->getConfidenceThreshold());}
       //);
+
+#ifdef ROSNODE
+    if (state_publisher) {
+      CoFusion::StatusMessageHandler send_status_message = std::bind(&RosStatePublisher::send_status_message, state_publisher.get(), std::placeholders::_1);
+      coFusion->setStatusMessageHandler(send_status_message);
+      send_status_message("modelling initialised");
+    }
+#endif
     } else {
       break;
     }

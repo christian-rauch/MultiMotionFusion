@@ -4,6 +4,7 @@
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/point_cloud2_iterator.h>
+#include <std_msgs/String.h>
 #include <cv_bridge/cv_bridge.h>
 #include <eigen_conversions/eigen_msg.h>
 #include <opencv2/imgcodecs.hpp>
@@ -53,6 +54,8 @@ RosStatePublisher::RosStatePublisher(const std::string &camera_frame) :
   pub_segm = it->advertise("segmentation", 1);
 
   pub_camera_info = n->advertise<sensor_msgs::CameraInfo>("camera_info", 1);
+
+  pub_status_message = n->advertise<std_msgs::String>("status", 1, true);
 }
 
 void RosStatePublisher::pub_segmentation(const cv::Mat &segmentation, const int64_t timestamp_ns)
@@ -193,6 +196,13 @@ void RosStatePublisher::reset()
   pub_model_proj_colour.clear();
   pub_model_proj_depth.clear();
 #endif
+}
+
+void RosStatePublisher::send_status_message(const std::string &message)
+{
+  std_msgs::String msg;
+  msg.data = message;
+  pub_status_message.publish(msg);
 }
 
 #endif
