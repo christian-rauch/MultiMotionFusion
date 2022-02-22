@@ -1703,7 +1703,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     }
 
     // remove uncertain projection probabilities
-    prob_proj = (prob_proj.array()<0.6).select(0, prob_proj);
+    prob_proj = (prob_proj.array()<0.3).select(0, prob_proj);
 
 #if DBG_VIS_PROBS
     {
