@@ -17,8 +17,6 @@ find_package(Eigen3 REQUIRED NO_MODULE)
 
 find_package(super_point_inference REQUIRED)
 
-#find_package(densecrf_cuda REQUIRED)
-
 if(PCL_FOUND)
     # See: https://github.com/PointCloudLibrary/pcl/issues/776
     get_directory_property(dir_defs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} COMPILE_DEFINITIONS)
@@ -113,14 +111,6 @@ endif(CMAKE_BUILD_TYPE MATCHES Debug)
 
 set(CUDA_LINK_LIBRARIES_KEYWORD PUBLIC)
 
-# CUDA implementation of Dense CRF
-#CUDA_ADD_LIBRARY(dcrf_cuda STATIC Segmentation/DCRF.cu)
-#target_link_libraries(dcrf_cuda PUBLIC densecrf_cuda_cuda)
-#target_compile_options(dcrf_cuda PRIVATE
-#  $<$<COMPILE_LANGUAGE:CUDA>: --use_fast_math >
-#  $<$<COMPILE_LANGUAGE:CXX>: -fPIC -O3 -march=native >
-#)
-
 add_library(${PROJECT_NAME} SHARED
     ${srcs}
     ${model_srcs}
@@ -150,7 +140,6 @@ target_link_libraries(${PROJECT_NAME}
     ${SUITESPARSE_LIBRARIES}
     ${OpenCV_LIBRARIES}
     super_point_inference
-#    dcrf_cuda
 )
 
 add_library(ransac STATIC "Utils/RigidRANSAC.cpp")

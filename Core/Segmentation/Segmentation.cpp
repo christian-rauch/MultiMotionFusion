@@ -30,8 +30,6 @@
 
 #include <opencv2/viz/types.hpp>
 
-//#include "DCRF.hpp"
-
 #ifdef SHOW_DEBUG_VISUALISATION
 #include <iomanip>
 #include "../Utils/Gnuplot.h"
@@ -1355,7 +1353,6 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 
     TICK("segm/flowCRF");
     DenseCRF2D crf(crf_size.width, crf_size.height, int(numLabels));
-//      DCRF crf(next.cols, next.rows, int(numLabels));
 
     enum error_metric_t {METRE, PIXEL, METRE_S, PIXEL_S};
 
