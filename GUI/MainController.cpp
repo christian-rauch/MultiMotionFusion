@@ -79,12 +79,9 @@
     -offset        Offset between creating models
     -keep          Keep all models (even bad, deactivated)
     -model         Path to trained model for keypoint prediction
-    -segm_source    Source for transformation from which motion is derived
-                    1. "est": via keypoint projection on estimated transform (default)
-                    2. "ransac": via keypoint projection from RANSAC estimated transform
     -segm_mode      Mode for motion segmentation
-                    1. "dense": reprojection of dense  depth (default)
-                    2. "sparse": reprojection of sparse track keypoints
+                    1. <empty>: reprojection of dense depth (default)
+                    2. "flow_crf": sparse keypoint reprojection with optical flow CRF
     -segm_sp_size   size (edge length in pixels) of super pixel (default: 16 pixel)
     -init           initialise ICP odometry
                     - (empty): do not initialise, effectively sets initial transformation to identity
@@ -347,8 +344,6 @@ MainController::MainController(int argc, char* argv[])
   if (Parse::get().arg(argc, argv, "-k", tmpFloat) > -1) gui->unaryErrorK->Ref()->Set(tmpFloat);
 
   Parse::get().arg(argc, argv, "-model", keypoint_model_path);
-
-  Parse::get().arg(argc, argv, "-segm_source", segm_cfg.source);
 
   Parse::get().arg(argc, argv, "-segm_mode", segm_cfg.mode);
 

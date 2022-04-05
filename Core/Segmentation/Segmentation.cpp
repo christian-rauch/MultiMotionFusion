@@ -15,6 +15,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
 
+#include <cmath>
 #include <list>
 #include <tuple>
 
@@ -23,7 +24,6 @@
 #include "densecrf.h"
 #include "../Model/Model.h"
 
-#include <opencv2/core/eigen.hpp>
 #include <opencv2/video/tracking.hpp>
 
 #include <opencv2/viz/types.hpp>
@@ -144,11 +144,11 @@ SegmentationResult Segmentation::performSegmentation(std::list<std::shared_ptr<M
   if (mode == "flow_crf") {
     return performSegmentationFlowCRF(models, frame, nextModelID, allowNew, tracks);
   }
-  return performSegmentationCRF(models, frame, nextModelID, allowNew, tracks);
+  return performSegmentationCRF(models, frame, nextModelID, allowNew);
 }
 
 SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_ptr<Model>>& models, const FrameData& frame,
-                                                        unsigned char nextModelID, bool allowNew, const tracker::Tracks &tracks) {
+                                                        unsigned char nextModelID, bool allowNew) {
   assert(models.size() < 256);
 
   static unsigned CFRAME = 0;
@@ -200,9 +200,6 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
   }
   result.depthRange = depthMax - depthMin;
 
-  // outlier tracks not associated to any model
-  tracker::Tracks outlier;
-
   // Compute per model data (ICP texture..)
   unsigned char modelIdToIndex[256];
   unsigned char mIndex = 0;
@@ -211,10 +208,7 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
 
     cv::Mat vertConfTex = m->downloadVertexConfTexture();
     cv::Mat icpFull = m->downloadICPErrorTexture();
-    cv::Mat icp(int(lowHeight), int(lowWidth), CV_32FC1, cv::Scalar(0));
-
-    icp = slic.downsample<float>(icpFull);
-
+    cv::Mat icp = slic.downsample<float>(icpFull);
     cv::Mat conf = slic.downsample<float>(vertConfTex, 3);
     result.modelData.push_back({m->getID(), it, icp, conf});
     modelIdToIndex[m->getID()] = mIndex++;
@@ -237,99 +231,6 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
     labelDebugImages.push_back({vertConfTex, icpFull, icp});
 #endif
   }
-
-  if (cfg.mode == "crf") {
-    // currently visible tracks
-    tracker::Tracks tracks_visible;
-    const cv::Rect rect(cv::Point(0,0), frame.rgb.size());
-    for (size_t it=0; it<tracks.size(); it++) {
-      if (tracks[it]->back() != nullptr && tracks[it]->back()->xy.inside(rect)) {
-        tracks_visible.push_back(tracks[it]);
-      }
-    }
-
-    DenseCRF crf(int(tracks_visible.size()), int(numLabels));
-
-    Eigen::MatrixXd u(numLabels, tracks_visible.size());
-
-    int i=0;
-    for (const auto &model : models) {
-      const tracker::Tracks ltracks = model->computeTrackProjectionLastFrame(tracks_visible, cfg.history);
-      for (size_t it=0; it<ltracks.size(); it++) {
-        if (ltracks[it]->front() != nullptr && ltracks[it]->back() != nullptr) {
-          const Eigen::RowVector3d &p0 = ltracks[it]->front()->coordinate;
-          const Eigen::RowVector3d &px = ltracks[it]->back()->coordinate;
-          const double e = (p0-px).norm();
-          u(i, int(it)) = e;
-        }
-        else {
-          u(i, int(it)) = std::numeric_limits<double>::quiet_NaN();
-        }
-      }
-      i++;
-    }
-
-    // normalise [0..1]
-    for (int i=0; i<int(numExistingModels); i++) {
-      const Eigen::RowVectorXd row = u.row(i);
-      const double min = row.array().isFinite().select(row, +std::numeric_limits<double>::infinity()).minCoeff();
-      const double max = row.array().isFinite().select(row, -std::numeric_limits<double>::infinity()).maxCoeff();
-      u.row(i) = (u.row(i).array()-min) / (max-min);
-      u.row(i) = row.array().isFinite().select(u.row(i), 1);
-    }
-    if (allowNew) {
-      u.bottomRows<1>() = 1 - u.topRows(numExistingModels).array().colwise().sum() / numExistingModels;
-    }
-    crf.setUnaryEnergy(u.cast<float>());
-
-//    std::cout << "u: " << std::endl << u << std::endl;
-
-    {
-      cv::Mat track_err;
-      cv::cvtColor(frame.rgb, track_err, cv::COLOR_RGB2GRAY);
-      cv::cvtColor(track_err, track_err, cv::COLOR_GRAY2BGR);
-      for (int mid=0; mid<int(numLabels); mid++) {
-        cv::Mat track_mod = track_err.clone();
-        for (size_t it=0; it<tracks_visible.size(); it++) {
-          cv::circle(track_mod, tracks_visible[it]->back()->xy, 3, cv::Scalar((u(mid,it))*255), cv::FILLED);
-        }
-        cv::imshow("model "+std::to_string(mid)+" unary", track_mod);
-      }
-      cv::waitKey(1);
-    }
-
-    Eigen::MatrixXf features(2, tracks_visible.size());
-    for (size_t it=0; it<tracks_visible.size(); it++) {
-      if (tracks_visible[it]->back() != nullptr) {
-        features.col(int(it)).x() = tracks_visible[it]->back()->xy.x;
-        features.col(int(it)).y() = tracks_visible[it]->back()->xy.y;
-      }
-    }
-    crf.addPairwiseEnergy(features, new PottsCompatibility(10));
-
-
-    // maximum a posteriori
-    const Eigen::VectorXi labels = crf.map(10).cast<int>();
-
-//    std::cout << "l: " << std::endl << labels.transpose() << std::endl;
-
-    {
-      cv::Mat track_err;
-      cv::cvtColor(frame.rgb, track_err, cv::COLOR_RGB2GRAY);
-      cv::cvtColor(track_err, track_err, cv::COLOR_GRAY2BGR);
-      for (int mid=0; mid<int(numLabels); mid++) {
-        cv::Mat track_mod = track_err.clone();
-        for (size_t it=0; it<tracks_visible.size(); it++) {
-          if (labels[int(it)]==mid && tracks_visible[it]->back()!=nullptr) {
-            cv::circle(track_mod, tracks_visible[it]->back()->xy, 3, cv::Scalar(255), cv::FILLED);
-          }
-        }
-        cv::imshow("model "+std::to_string(mid)+" tracks", track_mod);
-      }
-      cv::waitKey(1);
-    }
-  }
-
   if (allowNew) {
     modelIdToIndex[nextModelID] = mIndex;
     result.modelData.push_back({nextModelID});
@@ -338,12 +239,6 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
     labelDebugImages.push_back({cv::Mat(), cv::Mat(), cv::Mat::zeros(lowHeight, lowWidth, CV_32FC1)});
 #endif
   }
-
-//  cv::Mat icp_outlier;
-//  if (!outlier.empty() && cfg.mode == "track_projection") {
-//    const cv::Mat outlier_err = dmm.projectionError(outlier);
-//    icp_outlier = slic.downsample<float>(outlier_err);
-//  }
 
   TOCK("SLIC+SCALING");
   TICK("CRF-FULL");
@@ -401,9 +296,7 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
       const SegmentationResult::ModelData& modelData = result.modelData[i];
 
       float error = ((float*)modelData.lowICP.data)[k];
-      // negative errors indicate a de-occlusion case
-      error = std::max<float>(0, error);
-      assert(std::isfinite(error));
+      assert(std::isfinite(error) && error >= 0);
       error /= result.depthRange;
       if (error < lowestError) lowestError = error;
 
@@ -412,13 +305,7 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
     }
 
     if (allowNew) {
-//      if (!icp_outlier.empty() && cfg.mode == "track_projection") {
-//        // explicitely use outlier projection error
-//        unary(models.size(), k) = unaryWeightError * ((float*)(icp_outlier.data))[k];
-//      }
-//      else {
-        unary(models.size(), k) = std::max(unaryThresholdNew - unaryWeightError * lowestError, 0.01f);
-//      }
+      unary(models.size(), k) = std::max(unaryThresholdNew - unaryWeightError * lowestError, 0.01f);
       sum += unary(models.size(), k);
     }
 
@@ -574,13 +461,6 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
   crf.setUnaryEnergy(unary);
   crf.addPairwiseGaussian(2, 2, new PottsCompatibility(weightSmoothness));
 
-//  cv::Mat unary_img;
-//  cv::eigen2cv(unary, unary_img);
-//  for (int i = 0; i < unary.rows(); ++i) {
-//    cv::imshow("unary "+std::to_string(i), 0.1 * slic.upsample<float>(unary_img.row(i)));
-//  }
-//  cv::waitKey(1);
-
   Eigen::MatrixXf feature(6, lowTotal);
   for (unsigned j = 0; j < lowHeight; j++)
     for (unsigned i = 0; i < lowWidth; i++) {
@@ -623,8 +503,6 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
     crfResult.col(i).maxCoeff(&m);
     map.data[i] = result.modelData[m].id;
   }
-
-  assert(crfResult.array().isFinite().all());
 
   TOCK("CRF-FULL");
 
@@ -1197,7 +1075,6 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
         else {
           // inlier
           outlier_set.remove(tracks[it]);
-          result.modelData[label].tracks_inlier.push_back(tracks[it]);
 #if DBG_VIS_SEGM
           cv::circle(track_err, kp1->xy, 3, cv::Scalar(255, 0, 0), -1); // blue
 #endif
@@ -1221,22 +1098,20 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 #endif
     }
 
+#if DBG_VIS_SEGM
     if (allowNew) {
       // outlier tracks are the outlier model's inlier tracks
-      result.modelData.back().tracks_inlier = {outlier_set.begin(), outlier_set.end()};
-
-#if DBG_VIS_SEGM
       cv::Mat track_err;
       cv::cvtColor(frame.rgb, track_err, cv::COLOR_RGB2GRAY);
       cv::cvtColor(track_err, track_err, cv::COLOR_GRAY2RGB);
-      for (const tracker::TrackPtr &track : result.modelData.back().tracks_inlier) {
+      for (const tracker::TrackPtr &track : outlier_set) {
         if (track->back()) {
           cv::circle(track_err, track->back()->xy, 3, cv::Scalar(0, 0, 255), -1);
         }
       }
       cv::imshow("outlier", track_err);
-#endif
     }
+#endif
 
     constexpr bool norm01 = true;
 

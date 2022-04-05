@@ -60,8 +60,6 @@ struct SegmentationResult {
     unsigned short bottom = std::numeric_limits<unsigned short>::min();
     unsigned short left = std::numeric_limits<unsigned short>::max();
 
-    tracker::Tracks tracks_inlier;
-
     // Required for partially supported C++14 (in g++ 4.9.4)
     ModelData(unsigned t_id);
 
@@ -73,19 +71,9 @@ struct SegmentationResult {
 
 struct SegmentationConfiguration {
   // segmentation mode:
-  // "dense": reprojection of dense  depth (default)
-  // "sparse": reprojection of sparse track keypoints
+  // <empty>: reprojection of dense depth (default)
+  // "flow_crf": sparse keypoint reprojection with optical flow CRF
   std::string mode;
-
-  // length of track to consider for motion segmentation
-  // 0: use entire track length
-  // >0: use N last frames
-  size_t history = 20;
-
-  // motion source:
-  // "est": use previous estimated transformations
-  // "ransac": independently use RANSAC on track keypoints
-  std::string source;
 
   // super pixel size (pixel)
   int sp_size = 16;
@@ -104,7 +92,7 @@ class Segmentation {
                                          bool allowNew, const tracker::Tracks &tracks);
 
   SegmentationResult performSegmentationCRF(std::list<std::shared_ptr<Model>>& models, const FrameData& frame, unsigned char nextModelID,
-                                            bool allowNew, const tracker::Tracks &tracks);
+                                            bool allowNew);
 
   SegmentationResult performSegmentationFlowCRF(std::list<std::shared_ptr<Model>>& models, const FrameData& frame, unsigned char nextModelID,
                                                 bool allowNew, const tracker::Tracks &tracks);
