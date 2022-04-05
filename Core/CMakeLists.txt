@@ -16,8 +16,6 @@ find_package(OpenMP)
 find_package(Eigen3 REQUIRED NO_MODULE)
 
 find_package(super_point_inference REQUIRED)
-# define 'super_point_inference' depedency 'feature_matches_interface' again
-find_package(feature_matches_interface REQUIRED)
 
 #find_package(densecrf_cuda REQUIRED)
 

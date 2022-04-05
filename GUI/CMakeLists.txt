@@ -20,7 +20,6 @@ find_package(JPEG REQUIRED)
 
 # TODO: Why do we have to do this here again?
 find_package(super_point_inference REQUIRED)
-find_package(feature_matches_interface REQUIRED)
 
 if(ROSBAG)
     find_package(rosbag REQUIRED)
