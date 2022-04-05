@@ -79,11 +79,6 @@
     -offset        Offset between creating models
     -keep          Keep all models (even bad, deactivated)
     -model         Path to trained model for keypoint prediction
-    -kp_est        Mode for transformation estimation via keypoints, requires 'model'
-                    1. (default): no estimation via keypoints, use regular icp+rgb interative optimisation
-                    2. "icp": iterative estimation with fixes keypoint correspondences,
-                              same objective and gradients as for the regular ICP optimisation on dense
-                    3. "ls": RANSAC with least-squares procrustes optimisation on highest resolution
     -segm_source    Source for transformation from which motion is derived
                     1. "est": via keypoint projection on estimated transform (default)
                     2. "ransac": via keypoint projection from RANSAC estimated transform
@@ -178,9 +173,6 @@ MainController::MainController(int argc, char* argv[])
       std::cerr << "invalid target dimension format: '" << target_dim_str << "' (expected <W>x<H> with <W> and <H> as integers)" << std::endl;
     }
   }
-
-  // TODO: make configurable
-  odom_cfg.history = 10; // frames
 
   Parse::get().arg(argc, argv, "-init", odom_cfg.init);
   Parse::get().arg(argc, argv, "-init_frame", odom_cfg.init_frame);
@@ -355,10 +347,6 @@ MainController::MainController(int argc, char* argv[])
   if (Parse::get().arg(argc, argv, "-k", tmpFloat) > -1) gui->unaryErrorK->Ref()->Set(tmpFloat);
 
   Parse::get().arg(argc, argv, "-model", keypoint_model_path);
-  if(Parse::get().arg(argc, argv, "-kp_est", odom_cfg.mode_est) == -1) {
-    // fall back to no keypoint transformation estimation, if not provided
-    odom_cfg.mode_est = std::string();
-  }
 
   Parse::get().arg(argc, argv, "-segm_source", segm_cfg.source);
 

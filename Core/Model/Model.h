@@ -43,24 +43,6 @@
 namespace fs = std::filesystem;
 
 struct OdometryConfig {
-  // estimation mode:
-  // - (empty): use default ICP, no keypoint transformation estimation
-  // - "icp": ICP with keypoint correspondences
-  // - "ls": RANSAC least-squares optimisation
-  std::string mode_est;
-
-  // motion source:
-  // "est": use previous estimated transform
-  // "ransac": independently use RANSAC on keypoints
-  std::string segm_source;
-
-  // segmentation mode:
-  // "dense": reprojection of dense  depth (default)
-  // "sparse": reprojection of sparse keypoints
-  std::string segm_mode;
-
-  size_t history;
-
   // initialise ICP odometry
   // - (empty): do not initialise, effectively sets initial transformation to identity
   // - "kp": transformation between keypoint tracks
