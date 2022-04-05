@@ -28,7 +28,7 @@
 class Slic {
  public:
   Slic() {}
-  Slic(unsigned width, unsigned height, int spixelSize, /*float scale,*/ gSLICr::COLOR_SPACE colorSpace = gSLICr::XYZ, const bool enforce_connectivity = false);
+  Slic(unsigned width, unsigned height, int spixelSize, /*float scale,*/ gSLICr::COLOR_SPACE colorSpace = gSLICr::XYZ);
 
   virtual ~Slic() {}
 

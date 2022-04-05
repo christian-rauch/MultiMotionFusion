@@ -20,7 +20,7 @@
 
 std::vector<cv::Vec3b> Slic::slicColors;
 
-Slic::Slic(unsigned width, unsigned height, int spixelSize, /*float scale,*/ gSLICr::COLOR_SPACE colorSpace, const bool enforce_connectivity) {
+Slic::Slic(unsigned width, unsigned height, int spixelSize, /*float scale,*/ gSLICr::COLOR_SPACE colorSpace) {
   assert(spixelSize > 10 && spixelSize < 256);
 
   this->spixelSize = spixelSize;  // ceil(sqrtf(1.0f /  (scale * scale) ));
@@ -40,7 +40,7 @@ Slic::Slic(unsigned width, unsigned height, int spixelSize, /*float scale,*/ gSL
   slicSettings.color_space = colorSpace;
   slicSettings.seg_method = gSLICr::GIVEN_SIZE;  // or gSLICr::GIVEN_NUM for given number
   // NO, see top slicSettings.seg_method = gSLICr::GIVEN_NUM; // or gSLICr::GIVEN_NUM for given number
-  slicSettings.do_enforce_connectivity = enforce_connectivity;  // whether or not to run the enforce connectivity step
+  slicSettings.do_enforce_connectivity = false;  // wheter or not run the enforce connectivity step
 
   engine = std::make_shared<gSLICr::engines::seg_engine_GPU>(slicSettings);
   slicInput = std::make_shared<gSLICr::UChar4Image>(slicSettings.img_size, true, true);
