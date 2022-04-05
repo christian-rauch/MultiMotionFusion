@@ -330,49 +330,6 @@ void copyMaps(const DeviceArray<float>& vmap_src,
     cudaSafeCall(cudaGetLastError());
 }
 
-__global__ void copyMapsKernel2(int rows, int cols, const PtrStepSz<float> vmap_src, float * vmap_dst)
-{
-    int x = threadIdx.x + blockIdx.x * blockDim.x;
-    int y = threadIdx.y + blockIdx.y * blockDim.y;
-
-    if (x < cols && y < rows)
-    {
-        //vertexes
-        // init NaN
-        float3 vsrc, vdst = make_float3 (__int_as_float(0x7fffffff), __int_as_float(0x7fffffff), __int_as_float(0x7fffffff));
-
-        vsrc.x = vmap_src.ptr(y)[x];
-        vsrc.y = vmap_src.ptr(y + rows)[x];
-        vsrc.z = vmap_src.ptr(y + 2 * rows)[x];
-
-        if(!(vsrc.z == 0))
-        {
-            vdst = vsrc;
-        }
-
-        vmap_dst[y * cols * 4 + (x * 4) + 0] = vdst.x;
-        vmap_dst[y * cols * 4 + (x * 4) + 1] = vdst.y;
-        vmap_dst[y * cols * 4 + (x * 4) + 2] = vdst.z;
-    }
-}
-
-void copyMaps2(const DeviceArray2D<float>& vmap_src,
-               DeviceArray<float>& vmap_dst)
-{
-    int cols = vmap_src.cols();
-    int rows = vmap_src.rows() / 3;
-
-    vmap_dst.create(rows * 4 * cols);
-
-    dim3 block(32, 8);
-    dim3 grid(1, 1, 1);
-    grid.x = getGridDim(cols, block.x);
-    grid.y = getGridDim(rows, block.y);
-
-    copyMapsKernel2<<<grid, block>>>(rows, cols, vmap_src, vmap_dst);
-    cudaSafeCall(cudaGetLastError());
-}
-
 __global__ void pyrDownKernelGaussF(const PtrStepSz<float> src, PtrStepSz<float> dst, float * gaussKernel)
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;

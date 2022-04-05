@@ -74,11 +74,6 @@ __device__ __host__ __forceinline__ float dot(const float3& a, const float3& b)
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
-__device__ __host__ __forceinline__ float dot4(const float4& a, const float4& b)
-{
-    return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
-}
-
 __device__ __host__ __forceinline__ float norm(const float3& a)
 {
     return sqrtf(dot(a, a));
@@ -90,19 +85,9 @@ __device__ __host__ __forceinline__ float3 normalized(const float3& a)
     return make_float3(a.x * rn, a.y * rn, a.z * rn);
 }
 
-__device__ __host__ __forceinline__ float4 hom34(const float3& a)
-{
-    return {a.x, a.y, a.z, 1};
-}
-
 __device__ __forceinline__ float3 operator*(const mat33& m, const float3& a)
 {
   return make_float3(dot(m.data[0], a), dot(m.data[1], a), dot(m.data[2], a));
-}
-
-__device__ __forceinline__ float4 operator*(const mat44& m, const float4& a)
-{
-  return make_float4(dot4(m.data[0], a), dot4(m.data[1], a), dot4(m.data[2], a), dot4(m.data[3], a));
 }
 
 #endif /* CUDA_OPERATORS_CUH_ */

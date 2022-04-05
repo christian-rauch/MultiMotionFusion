@@ -42,6 +42,37 @@
 
 namespace fs = std::filesystem;
 
+struct OdometryConfig {
+  // estimation mode:
+  // - (empty): use default ICP, no keypoint transformation estimation
+  // - "icp": ICP with keypoint correspondences
+  // - "ls": RANSAC least-squares optimisation
+  std::string mode_est;
+
+  // motion source:
+  // "est": use previous estimated transform
+  // "ransac": independently use RANSAC on keypoints
+  std::string segm_source;
+
+  // segmentation mode:
+  // "dense": reprojection of dense  depth (default)
+  // "sparse": reprojection of sparse keypoints
+  std::string segm_mode;
+
+  size_t history;
+
+  // initialise ICP odometry
+  // - (empty): do not initialise, effectively sets initial transformation to identity
+  // - "kp": transformation between keypoint tracks
+  // - "tf": transformation from log file
+  std::string init;
+  // frame name as "tf" initialisation source (default: colour optical frame)
+  std::string init_frame;
+
+  // refine via ICP after initialisation (only considered if 'track_init' is set)
+  bool icp_refine;
+};
+
 class IModelMatcher;
 class Model;
 typedef std::shared_ptr<Model> ModelPointer;
@@ -96,9 +127,6 @@ class Model {
   typedef Eigen::Matrix<cv::Point, Eigen::Dynamic, Eigen::Dynamic> MatrixXp2;
   typedef Eigen::Matrix<Eigen::Vector3d, Eigen::Dynamic, Eigen::Dynamic> MatrixXp3;
 
-  typedef Eigen::Matrix<cv::Point, Eigen::Dynamic, 1> VectorXp2;
-  typedef Eigen::Matrix<Eigen::Vector3d, Eigen::Dynamic, 1> VectorXp3;
-
  public:
   static const int TEXTURE_DIMENSION;
   static const int MAX_VERTICES;
@@ -140,8 +168,7 @@ class Model {
   // ----- Tracking and fusion
 
   virtual void performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight, bool pyramid, bool fastOdom, bool so3,
-                               float maxDepthProcessed, GPUTexture* rgb, GPUTexture *last_segmentation, int64_t logTimestamp, bool tryFillIn = false,
-                               const std::vector<cv::Mat> &features = {}, const std::vector<Eigen::MatrixX2d> &kp_coordinates = {}, const std::vector<Eigen::MatrixXd> &kp_descriptors = {});
+                               float maxDepthProcessed, GPUTexture* rgb, int64_t logTimestamp, bool tryFillIn = false);
 
   // compute the projection error between keypoints on the trajectory for segmentation
   static std::tuple<Eigen::MatrixXd, Model::MatrixXp2, Model::MatrixXp3>
@@ -295,8 +322,6 @@ class Model {
   inline RGBDOdometry& getFrameOdometry() { return frameToModel; }
   inline ModelProjection& getIndexMap() { return indexMap; }
 
-  RGBDOdometry::KpData& getKeypoints() { return kp_data; };
-
   const MatrixXp2& getTrackXY() const { return track_xy; };
   const MatrixXp3& getTrackPoint() const  { return track_p; };
   const Eigen::MatrixXd& getTrackProjError() const { return track_pe; };
@@ -369,9 +394,6 @@ class Model {
 
   std::unique_ptr<GPUTexture> icpError;
   std::unique_ptr<GPUTexture> rgbError;
-  std::vector<std::unique_ptr<GPUTexture>> projError;
-
-  RGBDOdometry::KpData kp_data;
 
   // set of associated tracks in camera frame
   std::unordered_set<tracker::TrackPtr> tracks;

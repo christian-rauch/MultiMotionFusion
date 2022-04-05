@@ -32,7 +32,7 @@ Ferns::Ferns(int n, int maxDepth, const float photoThresh)
       lastClosest(-1),
       badCode(255),
       rgbd(Resolution::getInstance().width() / factor, Resolution::getInstance().height() / factor, Intrinsics::getInstance().cx() / factor,
-           Intrinsics::getInstance().cy() / factor, Intrinsics::getInstance().fx() / factor, Intrinsics::getInstance().fy() / factor, 0, {}),
+           Intrinsics::getInstance().cy() / factor, Intrinsics::getInstance().fx() / factor, Intrinsics::getInstance().fy() / factor),
       vertFern(width, height, GL_RGBA32F, GL_LUMINANCE, GL_FLOAT, false, true),
       vertCurrent(width, height, GL_RGBA32F, GL_LUMINANCE, GL_FLOAT, false, true),
       normFern(width, height, GL_RGBA32F, GL_LUMINANCE, GL_FLOAT, false, true),
@@ -223,7 +223,7 @@ Eigen::Matrix4f Ferns::findFrame(std::vector<SurfaceConstraint>& constraints, co
     Eigen::Matrix<float, 3, 3, Eigen::RowMajor> rot = fernPose.topLeftCorner(3, 3);
 
     TICK("fernOdom");
-    rgbd.getIncrementalTransformation(trans, rot, false, 100, false, false, false, 0, 0, {}, nullptr);
+    rgbd.getIncrementalTransformation(trans, rot, false, 100, false, false, false, 0, 0);
     TOCK("fernOdom");
 
     estPose.topRightCorner(3, 1) = trans;

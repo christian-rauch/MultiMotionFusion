@@ -63,37 +63,13 @@ struct mat33
     mat33() {}
 
 #if !defined(__CUDACC__)
-    mat33(const Eigen::Matrix<float, 3, 3, Eigen::RowMajor> & e)
+    mat33(Eigen::Matrix<float, 3, 3, Eigen::RowMajor> & e)
     {
         memcpy(data, e.data(), sizeof(mat33));
     }
 #endif
 
     float3 data[3];
-};
-
-struct mat44
-{
-    mat44() {}
-
-#if !defined(__CUDACC__)
-    mat44(Eigen::Matrix<float, 4, 4, Eigen::RowMajor> & e)
-    {
-        memcpy(data, e.data(), sizeof(mat44));
-    }
-
-    mat44(const Eigen::Matrix4f &e)
-    {
-        Eigen::Matrix<float, 4, 4, Eigen::RowMajor>::Map((float*)data) = e;
-    }
-
-    mat44(Eigen::Matrix<float, 4, 4, Eigen::RowMajor> e)
-    {
-        memcpy(data, e.data(), sizeof(mat44));
-    }
-#endif
-
-    float4 data[4];
 };
 
 struct DataTerm

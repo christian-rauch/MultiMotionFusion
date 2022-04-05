@@ -81,38 +81,6 @@ void icpStep(const mat33& Rcurr,
              int blocks,
              const cudaSurfaceObject_t& icpErrorSurface);
 
-void projectionError(const mat44& Tcurr,
-                     const DeviceArray2D<float3> &vmap_curr,
-                     const CameraModel& intr,
-                     const DeviceArray2D<float3> &vmap_prev,
-                     const DeviceArray2D<unsigned char> & lastMask,
-                     unsigned char maskID,
-                     float distThres,
-                     int threads,
-                     int blocks,
-                     const cudaSurfaceObject_t& rpeSurface);
-
-void projectionError2(const DeviceArray2D<float>& vmap_prev,
-                      const DeviceArray2D<float>& nmap_prev,
-                      const DeviceArray2D<float>& vmap_curr,
-                      const DeviceArray2D<float>& nmap_curr,
-                      const mat44 &T_curr_prev,
-                      const CameraModel& intr,
-                      DeviceArray2D<float>& error);
-
-void projectionFeatureDistance(const mat44& Tcurr,
-                              const DeviceArray2D<float3> &vmap_curr,
-                              const CameraModel& intr,
-                              const DeviceArray2D<float3> &vmap_prev,
-                              const DeviceArray2D<float>& feat_curr,
-                              const DeviceArray2D<float>& feat_prev,
-                              const DeviceArray2D<unsigned char> & lastMask,
-                              unsigned char maskID,
-                              float distThres,
-                              int threads,
-                              int blocks,
-                              const cudaSurfaceObject_t& rpeSurface);
-
 void rgbStep(const DeviceArray2D<DataTerm> & corresImg,
              const float & sigma,
              const DeviceArray2D<float3> & cloud,
@@ -151,55 +119,16 @@ void computeRgbResidual(const float & minScale,
                         const DeviceArray2D<unsigned char> & lastMask,
                         const DeviceArray2D<unsigned char> & nextMask,
                         DeviceArray2D<DataTerm> & corresImg,
-                        DeviceArray<float2> &sumResidual,
+                        DeviceArray<int2> & sumResidual,
                         const float maxDepthDelta,
                         const float3 & kt,
                         const mat33 & krkinv,
-                        float &sigmaSum,
+                        int & sigmaSum,
                         int & count,
                         int threads,
                         int blocks,
                         const cudaSurfaceObject_t& icpErrorSurface,
                         unsigned char maskID);
-
-void computeKPResidual(const DeviceArray2D<float> & lastDepth,
-                        const DeviceArray2D<float> & nextDepth,
-                        const DeviceArray2D<float> & lastKeypoints,
-                        const DeviceArray2D<float> & nextKeypoints,
-                        const DeviceArray2D<float> & lastFeatureMaps,
-                        const DeviceArray2D<float> & nextFeatureMaps,
-                        const DeviceArray2D<int> & matchID,
-                        const DeviceArray2D<float> &matchScore,
-                        const DeviceArray2D<unsigned char> & lastMask,
-                        DeviceArray2D<DataTerm> & corresImg,
-                        DeviceArray<float2> &sumResidual,
-                        float &sigmaSum,
-                        int & count,
-                        int threads,
-                        int blocks,
-                        const cudaSurfaceObject_t& icpErrorSurface,
-                        unsigned char maskID);
-
-void kpcStep(const mat33& Rcurr,
-             const float3& tcurr,
-             const DeviceArray2D<float>& vmap_curr,
-             const DeviceArray2D<float>& nmap_curr,
-             const mat33& Rprev_inv,
-             const float3& tprev,
-             const CameraModel& intr,
-             const DeviceArray2D<float>& vmap_g_prev,
-             const DeviceArray2D<float>& nmap_g_prev,
-             float distThres,
-             float angleThres,
-             DeviceArray2D<DataTerm> & corresImg,
-             DeviceArray<JtJJtrSE3> & sum,
-             DeviceArray<JtJJtrSE3> & out,
-             float * matrixA_host,
-             float * vectorB_host,
-             float * residual_host,
-             int threads,
-             int blocks,
-             const cudaSurfaceObject_t& icpErrorSurface);
 
 void createVMap(const CameraModel& intr,
                 const DeviceArray2D<float> & depth,
@@ -218,17 +147,10 @@ void tranformMaps(const DeviceArray2D<float>& vmap_src,
                   DeviceArray2D<float>& vmap_dst,
                   DeviceArray2D<float>& nmap_dst);
 
-void projectVMapsCameraOrigin(const CameraModel& intr,
-                              const DeviceArray2D<float>& vmap_src, const DeviceArray2D<float>& nmap_src,
-                              DeviceArray2D<float>& vmap_dst, DeviceArray2D<float>& nmap_dst);
-
 void copyMaps(const DeviceArray<float>& vmap_src,
               const DeviceArray<float>& nmap_src,
               DeviceArray2D<float>& vmap_dst,
               DeviceArray2D<float>& nmap_dst);
-
-void copyMaps2(const DeviceArray2D<float>& vmap_src,
-               DeviceArray<float>& vmap_dst);
 
 void resizeVMap(const DeviceArray2D<float>& input,
                 DeviceArray2D<float>& output);

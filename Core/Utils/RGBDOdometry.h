@@ -27,56 +27,15 @@
 
 #include <vector>
 #include <vector_types.h>
-#include <queue>
-#include <array>
-
-//#define NLAST_SEGM
-
-struct OdometryConfig {
-  // estimation mode:
-  // - (empty): use default ICP, no keypoint transformation estimation
-  // - "icp": ICP with keypoint correspondences
-  // - "ls": RANSAC least-squares optimisation
-  std::string mode_est;
-
-  // motion source:
-  // "est": use previous estimated transform
-  // "ransac": independently use RANSAC on keypoints
-  std::string segm_source;
-
-  // segmentation mode:
-  // "dense": reprojection of dense  depth (default)
-  // "sparse": reprojection of sparse keypoints
-  std::string segm_mode;
-
-  size_t history;
-
-  // initialise ICP odometry
-  // - (empty): do not initialise, effectively sets initial transformation to identity
-  // - "kp": transformation between keypoint tracks
-  // - "tf": transformation from log file
-  std::string init;
-  // frame name as "tf" initialisation source (default: colour optical frame)
-  std::string init_frame;
-
-  // refine via ICP after initialisation (only considered if 'track_init' is set)
-  bool icp_refine;
-};
 
 class RGBDOdometry {
  public:
-  // {(x,y) coordinates}, {Euclidean distance to previous}
-  typedef std::vector<std::tuple<cv::Point, double>> KpData;
-
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-  RGBDOdometry(int width, int height, float cx, float cy, float fx, float fy, unsigned char maskID,
-               const OdometryConfig &cfg,
+  RGBDOdometry(int width, int height, float cx, float cy, float fx, float fy, unsigned char maskID = 0,
                float distThresh = 0.10f,  // TODO Check, hardcoded scale?
                float angleThresh = sin(20.f * 3.14159254f / 180.f));
 
   virtual ~RGBDOdometry();
-
-  const int2 &getPyramidDim(const int level);
 
   // Prepare current frame data for CUDA ICP execution
   // void initICP(GPUTexture * filteredDepth, const float depthCutoff, GPUTexture * mask); // frame to model
@@ -91,29 +50,14 @@ class RGBDOdometry {
 
   void initRGBModel(GPUTexture* rgb);
 
-  void initRGBDFromPrevious(const Eigen::Matrix4f &pose);
-
   void initFirstRGB(GPUTexture* rgb);
 
   // Get relative transformation, executes optimisation
   void getIncrementalTransformation(Eigen::Vector3f& trans, Eigen::Matrix<float, 3, 3, Eigen::RowMajor>& rot, const bool& rgbOnly,
                                     const float& icpWeight, const bool& pyramid, const bool& fastOdom, const bool& so3,
-                                    const cudaSurfaceObject_t& icpErrorSurface, const cudaSurfaceObject_t& rgbErrorSurface,
-                                    const std::vector<std::unique_ptr<GPUTexture>> &projError, KpData *const kp_data);
+                                    const cudaSurfaceObject_t& icpErrorSurface, const cudaSurfaceObject_t& rgbErrorSurface);
 
   Eigen::MatrixXd getCovariance();
-
-  void setNextKeypoints(const std::vector<Eigen::MatrixX2d> &kp_coordinates, const std::vector<Eigen::MatrixXd> &kp_descriptors);
-  void setLastKeypointsFromPrevious();
-
-  void setNextFeatureMap(const std::vector<cv::Mat> &feat);
-  void setLastFeatureMapFromPrevious();
-
-  void setLastSegmentation(const cv::Mat &segm);
-
-  const DeviceArray2D<float>& getCurrVmap(const size_t layer = 0) const { return vmaps_curr_[layer]; }
-
-  const DeviceArray2D<float>& getCurrNmap(const size_t layer = 0) const { return nmaps_curr_[layer]; }
 
   float lastICPError;
   float lastICPCount;
@@ -146,7 +90,7 @@ class RGBDOdometry {
 
   DeviceArray<JtJJtrSE3> sumDataSE3;
   DeviceArray<JtJJtrSE3> outDataSE3;
-  DeviceArray<float2> sumResidualRGB;
+  DeviceArray<int2> sumResidualRGB;
 
   DeviceArray<JtJJtrSO3> sumDataSO3;
   DeviceArray<JtJJtrSO3> outDataSO3;
@@ -176,7 +120,6 @@ class RGBDOdometry {
   DeviceArray2D<DataTerm> corresImg[NUM_PYRS];
 
   DeviceArray2D<float3> pointClouds[NUM_PYRS];
-  DeviceArray2D<float3> nextPointClouds[NUM_PYRS];
 
   std::vector<int> iterations;
   std::vector<float> minimumGradientMagnitudes;
@@ -191,41 +134,6 @@ class RGBDOdometry {
   const float cx, cy, fx, fy;
 
   unsigned char maskID;
-
-  const OdometryConfig cfg;
-
-  // N x (2+D) matrix that stores N keypoints row-wise
-  // with 2 normalised [0,1] coordinates (x,y) and a D feature vector
-  DeviceArray2D<float> nextKeypoints[NUM_PYRS];
-  DeviceArray2D<float> lastKeypoints[NUM_PYRS];
-  DeviceArray2D<int> matchID[NUM_PYRS]; // N x 2: {(last, next)}
-  DeviceArray2D<float> matchScores[NUM_PYRS];
-
-  // W x H x D tensor
-  DeviceArray2D<float> nextFeatureMaps[NUM_PYRS];
-  DeviceArray2D<float> lastFeatureMaps[NUM_PYRS];
-
-  // local host copies
-  typedef Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> mXXf;
-  std::vector<mXXf> next_keypoints;
-  std::vector<mXXf> last_keypoints;
-  std::vector<std::vector<std::tuple<int, int, float>>> matches; // {(last, next, score)}
-  std::vector<cv::Mat> next_features;
-  std::vector<cv::Mat> last_features;
-  cv::Mat next_segmentation;
-  cv::Mat last_segmentation;
-
-#ifdef NLAST_SEGM
-  // store list of previous correspondences and depth
-  std::queue<std::array<cv::Mat_<uint8_t>, NUM_PYRS>> Nlast_image;
-  std::queue<std::array<DeviceArray2D<float>, NUM_PYRS>> NlastDepth;
-//  std::queue<std::array<DeviceArray2D<float>, NUM_PYRS>> NlastFeatureMaps;
-  std::queue<std::array<mXXf, NUM_PYRS>> Nlast_keypoints;
-  std::queue<Eigen::Isometry3f> Nlast_poses;
-  std::queue<std::array<DeviceArray2D<unsigned char>, NUM_PYRS>> NlastMask;
-#endif
-
-  size_t iimg = 0;
 };
 
 #endif /* RGBDODOMETRY_H_ */

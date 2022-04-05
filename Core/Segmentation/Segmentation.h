@@ -20,8 +20,8 @@
 #include "Slic.h"
 #include "../FrameData.h"
 #include "../Utils/PointTracker.hpp"
-#include "../Utils/DenseMotionMetric.hpp"
 #include <Eigen/Core>
+#include <list>
 #include <thread>
 #include <opencv2/imgproc/imgproc.hpp>
 
@@ -101,13 +101,13 @@ class Segmentation {
   void setMode(const std::string &mode);
 
   SegmentationResult performSegmentation(std::list<std::shared_ptr<Model>>& models, const FrameData& frame, unsigned char nextModelID,
-                                         bool allowNew, const tracker::Tracks &tracks, const motion::DenseMotionMetric &dmm);
+                                         bool allowNew, const tracker::Tracks &tracks);
 
   SegmentationResult performSegmentationCRF(std::list<std::shared_ptr<Model>>& models, const FrameData& frame, unsigned char nextModelID,
-                                            bool allowNew, const tracker::Tracks &tracks, const motion::DenseMotionMetric &dmm);
+                                            bool allowNew, const tracker::Tracks &tracks);
 
   SegmentationResult performSegmentationFlowCRF(std::list<std::shared_ptr<Model>>& models, const FrameData& frame, unsigned char nextModelID,
-                                                bool allowNew, const tracker::Tracks &tracks, const motion::DenseMotionMetric &dmm);
+                                                bool allowNew, const tracker::Tracks &tracks);
 
   /**
      * @brief denseCRF Compute a segmentation of labels based on a fully connected CRF, using icp+projection unary terms and rgb+position+depth pairwise terms
@@ -175,6 +175,6 @@ class Segmentation {
 
  private:
   Slic slic;
-  Eigen::MatrixXf lastRawCRF;
+  FrameData prev_frame;
   METHOD method = METHOD::CONNECTED_COMPONENTS;
 };

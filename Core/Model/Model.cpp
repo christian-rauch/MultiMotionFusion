@@ -160,19 +160,12 @@ Model::Model(unsigned char id, float confidenceThresh, const OdometryConfig &odo
       rgbError(enableErrorRecording ? std::make_unique<GPUTexture>(Resolution::getInstance().width(), Resolution::getInstance().height(), GL_R32F, GL_RED, GL_FLOAT, true, true, cudaGraphicsRegisterFlagsSurfaceLoadStore, "RGB") : nullptr),  // FIXME
       gpu(Model::GPUSetup::getInstance()),
       frameToModel(Resolution::getInstance().width(), Resolution::getInstance().height(), Intrinsics::getInstance().cx(),
-                   Intrinsics::getInstance().cy(), Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), id, odom_cfg),
+                   Intrinsics::getInstance().cy(), Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), id),
       fillIn(enableFillIn ? std::make_unique<FillIn>() : nullptr) {
   switch (matchingType) {
     case MatchingType::Drost:
       // removed
       break;
-  }
-
-  projError.resize(RGBDOdometry::NUM_PYRS);
-  for(int l=0; l<RGBDOdometry::NUM_PYRS; l++) {
-    // note: int2 dims are stores as {.x = height, .y = width}
-    const int2 dim = frameToModel.getPyramidDim(l);
-    projError[l] = std::make_unique<GPUTexture>(dim.y, dim.x, GL_R32F, GL_RED, GL_FLOAT, true, true, cudaGraphicsRegisterFlagsSurfaceLoadStore, "RPE"+std::to_string(l));
   }
 
   if (enablePoseLogging) poseLog.reserve(1000);
@@ -396,36 +389,24 @@ void Model::generateCUDATextures(GPUTexture* depth, GPUTexture* mask) {
 void Model::initICP(bool doFillIn, bool frameToFrameRGB, float depthCutoff, GPUTexture* rgb) {
   TICK("odomInit - Model: " + std::to_string(id));
 
-  if (frameToFrameRGB) {
-      // shift raw RGB-D observation to 'last' position
-      frameToModel.initRGBDFromPrevious(getPose());
-  }
-  else {
-      // WARNING initICP* must be called before initRGB*
-      if (doFillIn) {
-        frameToModel.initICPModel(getFillInVertexTexture(), getFillInNormalTexture(), depthCutoff, getPose());
-        frameToModel.initRGBModel(getFillInImageTexture());
-      } else {
-        frameToModel.initICPModel(getVertexConfProjection(), getNormalProjection(), depthCutoff, getPose());
-        frameToModel.initRGBModel(frameToFrameRGB && allowsFillIn() ? getFillInImageTexture() : getRGBProjection());
-      }
+  // WARNING initICP* must be called before initRGB*
+  if (doFillIn) {
+    frameToModel.initICPModel(getFillInVertexTexture(), getFillInNormalTexture(), depthCutoff, getPose());
+    frameToModel.initRGBModel(getFillInImageTexture());
+  } else {
+    frameToModel.initICPModel(getVertexConfProjection(), getNormalProjection(), depthCutoff, getPose());
+    frameToModel.initRGBModel(frameToFrameRGB && allowsFillIn() ? getFillInImageTexture() : getRGBProjection());
   }
 
   // frameToModel.initICP(filteredDepth, depthCutoff, mask);
   frameToModel.initICP(gpu.depth_tmp, gpu.mask_tmp, depthCutoff);
   frameToModel.initRGB(rgb);
 
-  // assume keypoints from original (non-projected) observation
-  // we do not consider keypoints for projected models
-  frameToModel.setLastKeypointsFromPrevious();
-  frameToModel.setLastFeatureMapFromPrevious();
-
   TOCK("odomInit - Model: " + std::to_string(id));
 }
 
 void Model::performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight, bool pyramid, bool fastOdom, bool so3,
-                            float maxDepthProcessed, GPUTexture* rgb, GPUTexture* last_segmentation, int64_t logTimestamp, bool doFillIn,
-                            const std::vector<cv::Mat> &features, const std::vector<Eigen::MatrixX2d> &kp_coordinates, const std::vector<Eigen::MatrixXd> &kp_descriptors) {
+                            float maxDepthProcessed, GPUTexture* rgb, int64_t logTimestamp, bool doFillIn) {
   assert(fillIn || !doFillIn);
   lastPose = pose;
 
@@ -433,22 +414,13 @@ void Model::performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight,
   // move "old" next to last keypoints and images
   initICP(doFillIn, frameToFrameRGB, maxDepthProcessed, rgb);  // TODO: Don't copy RGB
 
-  // set new features and keypoints detected in current "next" image
-  getFrameOdometry().setNextKeypoints(kp_coordinates, kp_descriptors);
-  getFrameOdometry().setNextFeatureMap(features);
-  getFrameOdometry().setLastSegmentation(last_segmentation->downloadTexture());
-
   TICK("odom - Model: " + std::to_string(id));
 
   Eigen::Vector3f transObject = pose.topRightCorner(3, 1);
   Eigen::Matrix<float, 3, 3, Eigen::RowMajor> rotObject = pose.topLeftCorner(3, 3);
 
   getFrameOdometry().getIncrementalTransformation(transObject, rotObject, rgbOnly, icpWeight, pyramid, fastOdom, so3,
-                                                  icpError->getCudaSurface(), rgbError->getCudaSurface(), projError, &kp_data);
-
-//  const cv::Mat icp_img = icpError->downloadTexture();
-//  cv::imshow("ICP error ctr "+std::to_string(getID()), icp_img+0.5);
-//  cv::waitKey(1);
+                                                  icpError->getCudaSurface(), rgbError->getCudaSurface());
 
   pose.topRightCorner(3, 1) = transObject;
   pose.topLeftCorner(3, 3) = rotObject;

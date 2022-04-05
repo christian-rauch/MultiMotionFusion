@@ -28,9 +28,8 @@ CoFusion::CoFusion(const int timeDelta, const int countThresh, const float errTh
       newModelListeners(0),
       inactiveModelListeners(0),
       modelToModel(Resolution::getInstance().width(), Resolution::getInstance().height(), Intrinsics::getInstance().cx(),
-                   Intrinsics::getInstance().cy(), Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), 0, {}),
+                   Intrinsics::getInstance().cy(), Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy()),
       odom_cfg(odom_cfg),
-      dmm({Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), Intrinsics::getInstance().cx(), Intrinsics::getInstance().cy()}, 20),
       ferns(500, depthCut * 1000, photoThresh),
       tick(1),
       timeDelta(timeDelta),
@@ -145,7 +144,7 @@ void CoFusion::loadModels() {
 }
 
 SegmentationResult CoFusion::performSegmentation(const FrameData& frame) {
-  return labelGenerator.performSegmentation(models, frame, getNextModelID(), spawnOffset >= modelSpawnOffset, tracker[0].getTracks(), dmm);
+  return labelGenerator.performSegmentation(models, frame, getNextModelID(), spawnOffset >= modelSpawnOffset, tracker[0].getTracks());
 }
 
 void CoFusion::createTextures() {
@@ -333,17 +332,9 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
     computeFeedbackBuffers();
     globalModel->initialise(*feedbackBuffers[FeedbackBuffer::RAW], *feedbackBuffers[FeedbackBuffer::FILTERED]);
     globalModel->getFrameOdometry().initFirstRGB(textures[GPUTexture::RGB]);
-    // set the initial keypoint such that in the next iteration, when next becomes last,
-    // we will compare identical features and keypoints
-    for (auto model : models) {
-        model->getFrameOdometry().setNextKeypoints(coordinates, descriptors);
-        model->getFrameOdometry().setNextFeatureMap(features);
-    }
 
     // assign all initial tracks in camera frame to global model
     globalModel->initGlobalTracks(tracker[0].getTracks(), Eigen::Isometry3f::Identity(), frame.timestamp);
-
-    dmm.addRGBD(textures[GPUTexture::RGB]->downloadTexture(), globalModel->getFrameOdometry().getCurrVmap(), globalModel->getFrameOdometry().getCurrNmap());
   } else {
     bool trackingOk = true;
 
@@ -433,7 +424,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
         if (do_icp) {
           // refine initial pose via ICP odometry
           model->performTracking(frameToFrameRGB, rgbOnly, icpWeight, pyramid, fastOdom, so3, maxDepthProcessed, textures[GPUTexture::RGB],
-                                 textures[GPUTexture::MASK], frame.timestamp, requiresFillIn(model), features, coordinates, descriptors);
+                                 frame.timestamp, requiresFillIn(model));
         }
         else {
           // no refinement, use initial pose directly
@@ -451,8 +442,6 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
         models.remove(model);
       }
       lost_models.clear();
-
-      dmm.addRGBD(textures[GPUTexture::RGB]->downloadTexture(), globalModel->getFrameOdometry().getCurrVmap(), globalModel->getFrameOdometry().getCurrNmap());
 
       if (bootstrap) {
         assert(inPose);
@@ -787,7 +776,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       Eigen::Vector3f trans = globalModel->getPose().topRightCorner(3, 1);
       Eigen::Matrix<float, 3, 3, Eigen::RowMajor> rot = globalModel->getPose().topLeftCorner(3, 3);
 
-      modelToModel.getIncrementalTransformation(trans, rot, false, 10, pyramid, fastOdom, false, 0, 0, {}, nullptr);
+      modelToModel.getIncrementalTransformation(trans, rot, false, 10, pyramid, fastOdom, false, 0, 0);
 
       Eigen::MatrixXd covar = modelToModel.getCovariance();
       bool covOk = true;

@@ -38,6 +38,7 @@
 #include "Segmentation/Segmentation.h"
 
 #include <list>
+#include <set>
 #include <iomanip>
 #include <memory>
 #include <atomic>
@@ -46,7 +47,6 @@
 #include <super_point_inference.hpp>
 
 #include "Utils/PointTracker.hpp"
-#include "Utils/DenseMotionMetric.hpp"
 
 class CoFusion {
  public:
@@ -369,8 +369,6 @@ class CoFusion {
   std::mutex lock_odom_cfg;
 
   std::array<tracker::PointTracker, RGBDOdometry::NUM_PYRS> tracker;
-
-  motion::DenseMotionMetric dmm;
 
   // TODO move to model?
   Ferns ferns;

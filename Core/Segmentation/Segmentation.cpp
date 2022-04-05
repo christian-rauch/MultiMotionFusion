@@ -76,7 +76,7 @@ void Segmentation::setMode(const std::string &mode) {
 }
 
 SegmentationResult Segmentation::performSegmentation(std::list<std::shared_ptr<Model>>& models, const FrameData& frame,
-                                                     unsigned char nextModelID, bool allowNew, const tracker::Tracks &tracks, const motion::DenseMotionMetric &dmm) {
+                                                     unsigned char nextModelID, bool allowNew, const tracker::Tracks &tracks) {
   if (frame.mask.total()) {
     assert(frame.mask.type() == CV_8UC1);
     assert(frame.mask.isContinuous());
@@ -142,13 +142,13 @@ SegmentationResult Segmentation::performSegmentation(std::list<std::shared_ptr<M
   lock_cfg.unlock();
 
   if (mode == "flow_crf") {
-    return performSegmentationFlowCRF(models, frame, nextModelID, allowNew, tracks, dmm);
+    return performSegmentationFlowCRF(models, frame, nextModelID, allowNew, tracks);
   }
-  return performSegmentationCRF(models, frame, nextModelID, allowNew, tracks, dmm);
+  return performSegmentationCRF(models, frame, nextModelID, allowNew, tracks);
 }
 
 SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_ptr<Model>>& models, const FrameData& frame,
-                                                        unsigned char nextModelID, bool allowNew, const tracker::Tracks &tracks, const motion::DenseMotionMetric &dmm) {
+                                                        unsigned char nextModelID, bool allowNew, const tracker::Tracks &tracks) {
   assert(models.size() < 256);
 
   static unsigned CFRAME = 0;
@@ -853,7 +853,7 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
 }
 
 SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::shared_ptr<Model>>& models, const FrameData& frame,
-                                                            unsigned char nextModelID, bool allowNew, const tracker::Tracks &tracks, const motion::DenseMotionMetric &dmm)
+                                                            unsigned char nextModelID, bool allowNew, const tracker::Tracks &tracks)
 {
   static unsigned CFRAME = 0;
   CFRAME++;
@@ -870,9 +870,8 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
   // NOTE: this has to be an ordered map to iterate in order of model ids
   std::map<uint8_t, uint8_t> idx_map;
 
-  cv::Mat next, prev;
-  std::tie(next, std::ignore, std::ignore) = dmm.getRGBD(0);
-  std::tie(prev, std::ignore, std::ignore) = dmm.getRGBD(-1);
+  cv::Mat next = frame.rgb;
+  cv::Mat prev = prev_frame.rgb;
 
   auto point_inside = [](const cv::Point &point, const cv::Mat &img) -> bool {
     return point.inside({{}, img.size()});
@@ -1609,6 +1608,8 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 //  FrameData frame_mask = frame;
 //  frame_mask.mask = result.fullSegmentation;
 //  return performSegmentation(models, frame_mask, nextModelID, allowNew, tracks, dmm);
+
+  prev_frame = frame;
 
   return result;
 }
