@@ -26,8 +26,6 @@
 
 #include <opencv2/video/tracking.hpp>
 
-#include <opencv2/viz/types.hpp>
-
 #ifdef SHOW_DEBUG_VISUALISATION
 #include <iomanip>
 #include "../Utils/Gnuplot.h"
@@ -49,7 +47,18 @@ typedef std::chrono::system_clock::time_point TimePoint;
 // export images of the local keypoint reprojection and errors
 #define DBG_EXP_ERRORS 0
 // show keypoint reprojection and segmentation
-#define DBG_VIS_SEGM 0
+#define DBG_VIS_SEGM_DEF 0
+
+// DBG_EXP_ERRORS needs DBG_VIS_SEGM
+#if DBG_EXP_ERRORS
+#define DBG_VIS_SEGM 1
+#else
+#define DBG_VIS_SEGM DBG_VIS_SEGM_DEF
+#endif
+
+#if DBG_VIS_SEGM
+#include <opencv2/viz/types.hpp>
+#endif
 
 SegmentationResult::ModelData::ModelData(unsigned t_id) : id(t_id) {}
 
