@@ -79,6 +79,8 @@
     -offset        Offset between creating models
     -keep          Keep all models (even bad, deactivated)
     -model         Path to trained model for keypoint prediction
+    -lvl_init      image level [0...NUM_PYRS) for estimation initialisation
+    -lvl_segm      image level [0...NUM_PYRS) for flow-crf segmentation
     -segm_mode      Mode for motion segmentation
                     1. <empty>: reprojection of dense depth (default)
                     2. "flow_crf": sparse keypoint reprojection with optical flow CRF
@@ -174,6 +176,9 @@ MainController::MainController(int argc, char* argv[])
   Parse::get().arg(argc, argv, "-init", odom_cfg.init);
   Parse::get().arg(argc, argv, "-init_frame", odom_cfg.init_frame);
   odom_cfg.icp_refine = Parse::get().arg(argc, argv, "-icp_refine", empty) > -1;
+
+  Parse::get().arg(argc, argv, "-lvl_init", odom_cfg.init_lvl);
+  Parse::get().arg(argc, argv, "-lvl_segm", odom_cfg.segm_lvl);
 
   Parse::get().arg(argc, argv, "-l", logFile);
   if (logFile.length()) {

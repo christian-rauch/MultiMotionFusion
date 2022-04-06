@@ -144,7 +144,7 @@ void CoFusion::loadModels() {
 }
 
 SegmentationResult CoFusion::performSegmentation(const FrameData& frame) {
-  return labelGenerator.performSegmentation(models, frame, getNextModelID(), spawnOffset >= modelSpawnOffset, tracker[0].getTracks());
+  return labelGenerator.performSegmentation(models, frame, getNextModelID(), spawnOffset >= modelSpawnOffset, tracker[odom_cfg.segm_lvl].getTracks());
 }
 
 void CoFusion::createTextures() {
@@ -278,6 +278,9 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
   }
   scheduled_model_deactivation.clear();
 
+  // "global" tracks in image and camera space
+  const tracker::Tracks &tracks = tracker[odom_cfg.init_lvl].getTracks();
+
   // First run
   if (tick == 1) {
     computeFeedbackBuffers();
@@ -285,16 +288,13 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
     globalModel->getFrameOdometry().initFirstRGB(textures[GPUTexture::RGB]);
 
     // assign all initial tracks in camera frame to global model
-    globalModel->initGlobalTracks(tracker[0].getTracks(), Eigen::Isometry3f::Identity(), frame.timestamp);
+    globalModel->initGlobalTracks(tracks, Eigen::Isometry3f::Identity(), frame.timestamp);
   } else {
     bool trackingOk = true;
 
     // Regular execution, false if pose is provided by user
     if (bootstrap || !inPose) {
       Model::generateCUDATextures(textures[GPUTexture::DEPTH_METRIC_FILTERED], textures[GPUTexture::MASK]);
-
-      // "global" tracks in image and camera space
-      const tracker::Tracks &tracks = tracker[0].getTracks();
 
       lock_odom_cfg.lock();
       const std::string odom_init = odom_cfg.init;

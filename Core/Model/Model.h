@@ -50,9 +50,14 @@ struct OdometryConfig {
   std::string init;
   // frame name as "tf" initialisation source (default: colour optical frame)
   std::string init_frame;
+  // pyramid level at which to initialise from keypoints
+  int init_lvl = 0;
 
   // refine via ICP after initialisation (only considered if 'track_init' is set)
   bool icp_refine;
+
+  // pyramid level at which to compute keypoint reprojection error
+  int segm_lvl = 0;
 };
 
 class IModelMatcher;
