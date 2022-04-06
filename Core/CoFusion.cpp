@@ -251,55 +251,6 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
 #endif
   }
 
-#if 0 // draw Canny edges, Harris corners and Voronoi separation
-  for(size_t i=0; i<RGBDOdometry::NUM_PYRS; i++) {
-    cv::Mat grey;
-    cv::resize(frame.rgb, grey, cv::Size(frame.rgb.cols >> i, frame.rgb.rows >> i));
-    cv::cvtColor(grey, grey, cv::COLOR_RGB2GRAY);
-
-    cv::Mat corners;
-    cv::cornerHarris(grey, corners, 2, 3, 0.04);
-    cv::imshow("corner response "+std::to_string(i), corners*100);
-
-    cv::Mat edges;
-    cv::Canny(grey, edges, 100, 200);
-    cv::imshow("edge response "+std::to_string(i), edges*100);
-    std::vector<std::vector<cv::Point>> contours;
-    std::vector<cv::Vec4i> hierarchy;
-    cv::findContours(edges, contours, hierarchy, cv::RETR_LIST, cv::CHAIN_APPROX_TC89_L1);
-    cv::Mat pts_img = grey.clone();
-    for (const std::vector<cv::Point> &contour : contours) {
-      for (const cv::Point &point : contour) {
-        cv::circle(pts_img, point, 3, cv::Scalar(255), -1);
-      }
-    }
-    cv::imshow("contour points "+std::to_string(i), pts_img);
-
-    // TODO: intersection of contour edges with Voronoi edges
-    std::vector<cv::Point2f> pt_list;
-    for (int r=0; r<coordinates[i].rows(); r++) {
-      pt_list.emplace_back(coordinates[i].row(r).x() * grey.cols, coordinates[i].row(r).y() * grey.rows);
-    }
-    cv::Subdiv2D subdiv(cv::Rect({},frame.rgb.size()));
-    subdiv.insert(pt_list);
-    std::vector<std::vector<cv::Point2f>> facets;
-    std::vector<cv::Point2f> centers;
-    subdiv.getVoronoiFacetList({}, facets, centers);
-    cv::Mat voronoi_img = grey;
-    for (const std::vector<cv::Point2f> &facet : facets) {
-      std::vector<cv::Point> ifacet;
-      ifacet.resize(facet.size());
-      for( size_t j = 0; j < facet.size(); j++ ) { ifacet[j] = facet[j]; }
-      cv::polylines(voronoi_img, ifacet, true, cv::Scalar(255));
-    }
-    for (const cv::Point2f &pt : centers) {
-      cv::circle(voronoi_img, pt, 3, cv::Scalar(0), cv::FILLED);
-    }
-    cv::imshow("Voronoi "+std::to_string(i), voronoi_img);
-  } // pyramid levels
-  cv::waitKey(1);
-#endif
-
   TICK("Preprocess");
 
   textures[GPUTexture::DEPTH_METRIC]->texture->Upload((float*)frame.depth.data, GL_LUMINANCE, GL_FLOAT);
@@ -352,8 +303,6 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       assert((odom_init != "tf") ^ ((odom_init == "tf") && gt_pose));
 
       TICK("odom");
-      // NOTE: each model will individually store a copy of the 'last' and 'next' feature maps and keypoints on GPU
-      // TODO: use one global store for the feature maps and keypoints for the current and last observed frame
       ModelList lost_models;
       for (ModelPointer &model : models) {
         // initialise by track transformation
