@@ -81,7 +81,8 @@ CoFusion::CoFusion(const int timeDelta, const int countThresh, const float errTh
   if (kp_predictor) {
     const CameraModel cm(Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), Intrinsics::getInstance().cx(), Intrinsics::getInstance().cy());
     for(int i=0; i<RGBDOdometry::NUM_PYRS; i++) {
-      tracker[i] = tracker::PointTracker(cm(i));
+      if (i==odom_cfg.init_lvl || i==odom_cfg.segm_lvl)
+        tracker[i] = tracker::PointTracker(cm(i));
     }
   }
 
@@ -219,27 +220,31 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
   // Upload RGB to graphics card
   textures[GPUTexture::RGB]->texture->Upload(frame.rgb.data, GL_RGB, GL_UNSIGNED_BYTE);
 
-  std::vector<Eigen::MatrixX2d> coordinates(RGBDOdometry::NUM_PYRS);
-  std::vector<Eigen::MatrixXd> descriptors(RGBDOdometry::NUM_PYRS);
-  std::vector<cv::Mat> features(RGBDOdometry::NUM_PYRS);
   if (kp_predictor) {
+    std::vector<Eigen::MatrixX2d> coordinates(RGBDOdometry::NUM_PYRS);
+    std::vector<Eigen::MatrixXd> descriptors(RGBDOdometry::NUM_PYRS);
+
     TICK("Keypoints");
     // get normalised keypoints and feature maps
     for(int i=0; i<RGBDOdometry::NUM_PYRS; i++) {
-      cv::Mat img;
-      cv::resize(frame.rgb, img, cv::Size(frame.rgb.cols >> i, frame.rgb.rows >> i));
-      std::tie(features[i], coordinates[i], descriptors[i]) = kp_predictor->getFeatures(img);
+      if (i==odom_cfg.init_lvl || i==odom_cfg.segm_lvl) {
+        cv::Mat img;
+        cv::resize(frame.rgb, img, cv::Size(frame.rgb.cols >> i, frame.rgb.rows >> i));
+        std::tie(std::ignore, coordinates[i], descriptors[i]) = kp_predictor->getFeatures(img);
+      }
     }
 
     TOCK("Keypoints");
 
     TICK("Point Matching");
     for(int i=0; i<RGBDOdometry::NUM_PYRS; i++) {
-      cv::Mat depth;
-      cv::resize(frame.depth, depth, cv::Size(frame.depth.cols >> i, frame.depth.rows >> i), 0, 0, cv::INTER_NEAREST);
-      tracker[i].addKeypoints(coordinates[i], descriptors[i], frame.timestamp, depth, 0.7f, 30);
-      // remove all tracks older than 1s with less than 30 keypoints
-      tracker[i].prune(30, uint64_t(std::max<int64_t>(frame.timestamp - 1*1e9, 0)));
+      if (i==odom_cfg.init_lvl || i==odom_cfg.segm_lvl) {
+        cv::Mat depth;
+        cv::resize(frame.depth, depth, cv::Size(frame.depth.cols >> i, frame.depth.rows >> i), 0, 0, cv::INTER_NEAREST);
+        tracker[i].addKeypoints(coordinates[i], descriptors[i], frame.timestamp, depth, 0.7f, 30);
+        // remove all tracks older than 1s with less than 30 keypoints
+        tracker[i].prune(30, uint64_t(std::max<int64_t>(frame.timestamp - 1*1e9, 0)));
+      }
     }
     TOCK("Point Matching");
 #if 0
