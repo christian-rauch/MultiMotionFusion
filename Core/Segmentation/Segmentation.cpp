@@ -764,45 +764,8 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     return point.inside({{}, img.size()});
   };
 
-//  auto drawTrackStartEnd = [](const tracker::Tracks &tracks, const cv::Mat &img, const std::string &name) {
-//    cv::Mat img_tracks[2];
-//    cv::cvtColor(img, img_tracks[0], cv::COLOR_RGB2GRAY);
-//    cv::cvtColor(img_tracks[0], img_tracks[0], cv::COLOR_GRAY2RGB);
-//    cv::cvtColor(img, img_tracks[1], cv::COLOR_RGB2GRAY);
-//    cv::cvtColor(img_tracks[1], img_tracks[1], cv::COLOR_GRAY2RGB);
-
-//    std::uniform_real_distribution<double> u(0,1);
-//    std::default_random_engine g;
-//    size_t i = 0;
-//    for (const tracker::TrackPtr &track : tracks) {
-//      // unique colour
-//      g.seed(i++);
-//      const cv::viz::Color c(u(g)*255, u(g)*255, u(g)*255);
-//      if (track->front()) {
-//        cv::circle(img_tracks[0], track->front()->xy, 2, c, cv::FILLED);
-//      }
-//      if (track->back()) {
-//        cv::circle(img_tracks[1], track->back()->xy, 2, c, cv::FILLED);
-//      }
-//    }
-//    cv::imshow(name+" START", img_tracks[0]);
-//    cv::imshow(name+" END", img_tracks[1]);
-//  };
-
-//  auto show_unary = [](const Eigen::VectorXf &unary, const cv::Size &size, const std::string &name) {
-//    cv::Mat_<float> errs(size, 0);
-//    for (int u = 0; u < size.height; ++u) {
-//      for (int v = 0; v < size.width; ++v) {
-//        const int i = u * size.width + v;
-//        errs.at<float>(u,v) = unary[i];
-//      }
-//    }
-//    cv::imshow(name, errs);
-//  };
-
   // CRF scale
   constexpr double s = 0.25;
-//    constexpr double s = 1;
   // optical flow scale
   constexpr double flow_s = 0.25;
   const cv::Size src_size = next.size();
@@ -822,16 +785,10 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     cv::cvtColor(next, gnext, cv::COLOR_BGR2GRAY);
     cv::cvtColor(prev, gprev, cv::COLOR_BGR2GRAY);
 
-//    cv::imshow("next", gnext);
-//    cv::imshow("prev", gprev);
-
     TICK("segm/opt_flow");
 
-    // prev, next, flow, pyr_scale, levels, winsize, iterations, poly_n, poly_sigma, flags
-//      cv::calcOpticalFlowFarneback(prev, next, uflow, 0.5, 3, 15, 3, 5, 1.2, 0);
-//    cv::calcOpticalFlowFarneback(gprev, gnext, flow, 0.5, 3, s*50, 3, 5, 1.2, 0);
-
     // empirically tested
+    // prev, next, flow, pyr_scale, levels, winsize, iterations, poly_n, poly_sigma, flags
     cv::calcOpticalFlowFarneback(gprev, gnext, flow, 0.2, 1, 20, 2, 5, 15/50.0, 0);
 
     TOCK("segm/opt_flow");
@@ -841,8 +798,6 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     // show flow
     std::vector<cv::Mat> flow_x_y;
     cv::split(flow, flow_x_y);
-//    cv::imshow("flow vx", cv::abs(flow_x_y[0]));
-//    cv::imshow("flow vy", cv::abs(flow_x_y[1]));
 
     cv::Mat_<float> mag, ang;
     cv::cartToPolar(flow_x_y[0], flow_x_y[1], mag, ang);
@@ -860,25 +815,6 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     cv::imshow("flow magn", magn_scale);
 #endif
   } // prev
-
-//  if (!flow.empty()) {
-//    auto drawOptFlowMap = [](const cv::Mat& flow, cv::Mat& cflowmap, int step,
-//                        double, const cv::Scalar& color)
-//    {
-//        for(int y = 0; y < cflowmap.rows; y += step)
-//            for(int x = 0; x < cflowmap.cols; x += step)
-//            {
-//                const cv::Point2f& fxy = flow.at<cv::Point2f>(y, x);
-//                cv::line(cflowmap, cv::Point(x,y), cv::Point(cvRound(x+fxy.x), cvRound(y+fxy.y)), color);
-//                cv::circle(cflowmap, cv::Point(x,y), 2, color, -1);
-//            }
-//    };
-
-//    cv::Mat cflow;
-//    cv::cvtColor(gprev, cflow, cv::COLOR_GRAY2BGR);
-//    drawOptFlowMap(flow, cflow, 16, 1.5, cv::Scalar(0, 255, 0));
-//    cv::imshow("flow", cflow);
-//  } // flow
 
   // dense reprojection error
   std::vector<cv::Mat_<float>> proj_prob;
@@ -909,7 +845,6 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 #endif
 
     // turn high errors into low probabilities
-//    cv::exp(-1 * dist, dist);
     cv::exp(-1 * (dist/max_err), dist); // scale for better visualisation
     proj_prob.push_back(dist);
 
@@ -1013,10 +948,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     std::list<tracker::TrackPtr> outlier_set(tracks.begin(), tracks.end());
     for (const ModelPointer &model : models) {
       // test all global tracks
-//      const tracker::Tracks ltracks = model->computeTrackProjection(tracks, minhist);
       const tracker::Tracks ltracks = model->computeTrackProjectionStartEnd(tracks, minhist);
-
-//      Model::exportTracksPLY(ltracks, "/tmp/global-m"+std::to_string(model->getID())+".ply");
 #if DBG_VIS_SEGM
       const cv::Mat track_local_img = Model::drawLocalTracks2D(ltracks, frame.rgb, ms, scale);
       cv::imshow("model tracks (local) "+std::to_string(model->getID()), track_local_img);
@@ -1024,10 +956,6 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 #if DBG_EXP_ERRORS
       cv::imwrite("/tmp/mmf/track_local_m"+std::to_string(model->getID())+"_"+std::to_string(frame.timestamp)+".png", track_local_img);
 #endif
-
-//      drawTrackStartEnd(ltracks, frame.rgb, "m"+std::to_string(model->getID()));
-
-//        std::cout << "mdl " << model->getID() << ": " << ltracks.size() << std::endl;
 
 #if DBG_VIS_SEGM
       cv::Mat track_err;
@@ -1173,22 +1101,6 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     }
     TOCK("segm/unary");
 
-//      // set default projection error for outlier
-//      std::set<int> val_tracks;
-//      if (allowNew) {
-//        for (const tracker::TrackPtr &track : tracks) {
-//          const tracker::KeypointPtr kp = track->back();
-//          if (kp != nullptr) {
-//            const cv::Point &c1 = s * kp->xy;
-//            unary(numLabels-1, c1.y*next.cols + c1.x) = 0.03f;
-//            if (/*unary(0, c1.y*next.cols + c1.x) > 0.05f && */unary(0, c1.y*next.cols + c1.x)<std::numeric_limits<float>::infinity()) {
-//              std::cout << "u(m)X: " << unary.col(c1.y*next.cols + c1.x).transpose() << std::endl;
-//              val_tracks.insert(c1.y*next.cols + c1.x);
-//            }
-//          }
-//        }
-//      }
-
 #if DBG_VIS_SEGM
     // DBG
     {
@@ -1200,7 +1112,6 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
               errs[l].at<float>(u,v) = unary(int(l), i);
           }
         }
-//          cv::imshow("errors "+std::to_string(l), errs[l]/0.05);
         cv::imshow("errors "+std::to_string(l), errs[l]);
 #if DBG_EXP_ERRORS
         cv::imwrite("/tmp/mmf/err_m"+std::to_string(l)+"_"+std::to_string(frame.timestamp)+".png", errs[l]*256);
@@ -1209,11 +1120,9 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     }
 
 #endif
-//      std::cout << "unary (metric):" << std::endl << unary << std::endl;
 
     // turn errors to probabilities p(track | model) via softmax
     unary *= -1;
-//      unary = unary.array().isFinite().select(unary.array().exp() / unary.array().exp().colwise().sum(), 1/numLabels);
     for (int i = 0; i < unary.cols(); ++i) {
       const auto exp = unary.col(i).array().exp();
       if (exp.sum()>0) {
@@ -1224,52 +1133,7 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
         // all infinite, assume equal probability for all models
         unary.col(i).fill(1 / float(numLabels));
       }
-//        if (val_tracks.count(i)) {
-//          std::cout << "u(p)X: " << unary.col(i).transpose() << std::endl;
-//        }
     }
-    // TODO: fix
-//      unary.bottomRows<1>().fill(1 / float(numLabels));
-
-//      std::cout << "unary (probs):" << std::endl << unary << std::endl;
-
-#if 0
-    // DBG
-    {
-      std::vector<cv::Mat_<float>> probs(numLabels, {crf_size, 0});
-      for (size_t l = 0; l < numLabels; ++l) {
-        for (int u = 0; u < flow.rows; ++u) {
-          for (int v = 0; v < flow.cols; ++v) {
-            const int i = u * flow.cols + v;
-              probs[l].at<float>(u,v) = unary(int(l), i);
-          }
-        }
-        cv::imshow("probs "+std::to_string(l), probs[l]);
-        cv::imshow("probs>0.5 "+std::to_string(l), probs[l]>0.5);
-      }
-
-      const static Eigen::IOFormat CSVFormat(Eigen::StreamPrecision, Eigen::DontAlignCols, ", ", "\n");
-      std::ofstream file("/tmp/mmf/unary_"+std::to_string(frame.timestamp)+".csv");
-      file << unary.format(CSVFormat);
-      file.close();
-
-
-      // probs per model ID in separate colours
-      static const std::vector<cv::viz::Color> colours_id = {
-        cv::viz::Color::blue(),
-        cv::viz::Color::red(),
-        cv::viz::Color::green(),
-        cv::viz::Color::yellow(),
-        cv::viz::Color::magenta(),
-      };
-      cv::Mat probs_id(crf_size, CV_32FC3, cv::Scalar(0));
-      for (size_t i=0; i<std::min<size_t>(colours_id.size(), numLabels); i++) {
-        probs_id.setTo(colours_id[i], probs[i]>0.5);
-      }
-      cv::imshow("inlier", probs_id);
-      cv::imwrite("/tmp/mmf/inlier_"+std::to_string(frame.timestamp)+".png", probs_id);
-    }
-#endif
 
     // log probability
     unary = -unary.array().log();
@@ -1279,7 +1143,6 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     crf.addPairwiseGaussian(3, 3, new PottsCompatibility(4*weightSmoothness));
 
     // feature optical flow: x, y, vx, vy
-//    Eigen::MatrixXf feature(7, next.rows * next.cols);
     Eigen::MatrixXf feature(4, crf_size.area());
     for (int u = 0; u < flow.rows; ++u) {
       for (int v = 0; v < flow.cols; ++v) {
@@ -1290,10 +1153,6 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
         // optical flow
         feature.col(i).z() = flow.at<cv::Point2f>(i).x * 10;
         feature.col(i).w() = flow.at<cv::Point2f>(i).y * 10;
-        // RGB
-//        feature.col(i)[4] = next.at<cv::Vec3b>(i)[0] / 13;
-//        feature.col(i)[5] = next.at<cv::Vec3b>(i)[1] / 13;
-//        feature.col(i)[6] = next.at<cv::Vec3b>(i)[2] / 13;
       }
     }
 
@@ -1436,10 +1295,6 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
     // resize to original image dimension
     cv::resize(model_segm, result.fullSegmentation, frame.rgb.size(), 0, 0, cv::INTER_NEAREST);
 
-//    for (uint i = 0; i < numLabels; ++i) {
-//      std::cout << "s " << i << ": " << segm_count[i] << std::endl;
-//    }
-
     // scale size of segments according to image scale
     constexpr float scale_weight = 1.0/(s*s);
 
@@ -1486,12 +1341,6 @@ SegmentationResult Segmentation::performSegmentationFlowCRF(std::list<std::share
 #endif
     TOCK("segm/flowCRF");
   } // uflow
-
-//  std::cout << "models: " << result.modelData.size() << std::endl;
-
-//  FrameData frame_mask = frame;
-//  frame_mask.mask = result.fullSegmentation;
-//  return performSegmentation(models, frame_mask, nextModelID, allowNew, tracks, dmm);
 
   prev_frame = frame;
 
