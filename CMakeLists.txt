@@ -11,6 +11,28 @@ cmake_policy(SET CMP0009 NEW)
 
 set(BUILD_TESTS OFF CACHE BOOL "Build unit tests")
 
+option(BUILD_ASAN "Enable AddressSanitizer for Debug builds" OFF)
+
+# run with "ASAN_OPTIONS=fast_unwind_on_malloc=0" to print stack with more details
+if(BUILD_ASAN)
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} \
+        -fsanitize=address \
+        -fsanitize=bool \
+        -fsanitize=bounds \
+        -fsanitize=enum \
+        -fsanitize=float-cast-overflow \
+        -fsanitize=float-divide-by-zero \
+        -fsanitize=nonnull-attribute \
+        -fsanitize=returns-nonnull-attribute \
+        -fsanitize=signed-integer-overflow \
+        -fsanitize=undefined \
+        -fsanitize=vla-bound \
+        -fno-sanitize=alignment \
+        -fsanitize=leak \
+        -fsanitize=object-size \
+    ")
+endif()
+
 # OpenMP
 find_package(OpenMP)
 if (OPENMP_FOUND)
