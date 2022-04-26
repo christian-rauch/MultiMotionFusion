@@ -5,6 +5,56 @@
 // minimum number of data points to fit model (3D rigid transform)
 static const int Nparams = 3;
 
+// hash function for 3D point correspondence
+// https://wjngkoh.wordpress.com/2015/03/04/c-hash-function-for-eigen-matrix-and-vector/
+template<>
+struct std::hash<Eigen::RowVector3f>
+{
+    std::size_t operator()(Eigen::RowVector3f const& v) const noexcept
+    {
+      std::size_t seed = 0;
+      for (int i = 0; i < v.size(); ++i)
+        seed ^= std::hash<float>()(v[i]) + 0xBADEAFFE + (seed << 6) + (seed >> 2);
+      return seed;
+    }
+};
+
+template<>
+struct std::hash<std::pair<Eigen::RowVector3f, Eigen::RowVector3f>>
+{
+    std::size_t operator()(std::pair<Eigen::RowVector3f, Eigen::RowVector3f> const& v) const noexcept
+    {
+      std::size_t seed = 0;
+      seed ^= std::hash<Eigen::RowVector3f>()(v.first) + 0xCAFED00D + (seed << 6) + (seed >> 2);
+      seed ^= std::hash<Eigen::RowVector3f>()(v.second) + 0xCAFED00D + (seed << 6) + (seed >> 2);
+      return seed;
+    }
+};
+
+std::tuple<Eigen::MatrixX3f,Eigen::MatrixX3f>
+sort(const Eigen::MatrixX3f &p0, const Eigen::MatrixX3f &p1)
+{
+  assert(p0.rows() == p1.rows());
+
+  // store hash per point correspondence with index
+  std::vector<std::pair<std::size_t, std::size_t> > hash(p0.rows());
+  for (std::size_t i = 0; i < hash.size(); i++)
+    hash[i] = {std::hash<std::pair<Eigen::RowVector3f, Eigen::RowVector3f>>()({p0.row(i), p1.row(i)}), i};
+
+  // sort original indices by hash
+  std::sort(hash.begin(), hash.end());
+
+  Eigen::MatrixX3f p0s(p0.rows(), 3);
+  Eigen::MatrixX3f p1s(p1.rows(), 3);
+
+  for (std::size_t i = 0; i < hash.size(); i++) {
+    p0s.row(i) = p0.row(hash[i].second);
+    p1s.row(i) = p1.row(hash[i].second);
+  }
+
+  return {p0s, p1s};
+}
+
 RigidRANSAC::RigidRANSAC(int iterations, float inlier_threshold, float inlier_fraction) :
   cfg({iterations, inlier_threshold, inlier_fraction})
 {
@@ -82,8 +132,12 @@ RigidRANSAC::estimate(const Eigen::MatrixX3f &p0, const Eigen::MatrixX3f &p1, co
 
   Result result;
 
+  // sort (p0,p1)-correspondences by hash
+  Eigen::MatrixX3f p0s, p1s;
+  std::tie(p0s,p1s) = sort(p0,p1);
+
   // keep track of best model and its performance
-  result.transformation = fit(p0, p1, mask);
+  result.transformation = fit(p0s, p1s, mask);
   result.error = std::numeric_limits<float>::infinity();
 
   for(int it=0; it<cfg.iterations; it++) {
@@ -100,8 +154,8 @@ RigidRANSAC::estimate(const Eigen::MatrixX3f &p0, const Eigen::MatrixX3f &p1, co
 
     assert(weights.count()==Nparams);
 
-    const Eigen::Isometry3f transform = fit(p0, p1, weights);
-    const Eigen::VectorXf distance = apply(transform, p0, p1);
+    const Eigen::Isometry3f transform = fit(p0s, p1s, weights);
+    const Eigen::VectorXf distance = apply(transform, p0s, p1s);
 
     VectorXb inliers = (distance.array() < cfg.inlier_threshold);
     if (mask.size()>0) {
@@ -111,9 +165,9 @@ RigidRANSAC::estimate(const Eigen::MatrixX3f &p0, const Eigen::MatrixX3f &p1, co
 
     if(Ninliers > std::max<int>(std::rint(cfg.inlier_fraction*N), Nparams)) {
       // potential model
-      const Eigen::Isometry3f Tall = fit(p0, p1, inliers);
+      const Eigen::Isometry3f Tall = fit(p0s, p1s, inliers);
       // mean error over inliers
-      const float error = inliers.select(apply(Tall, p0, p1), 0).sum() / Ninliers;
+      const float error = inliers.select(apply(Tall, p0s, p1s), 0).sum() / Ninliers;
       if(error < result.error) {
         result.error = error;
         result.transformation = Tall;
