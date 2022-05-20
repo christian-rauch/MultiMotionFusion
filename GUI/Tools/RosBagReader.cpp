@@ -6,27 +6,24 @@
 // TODO: replace by std::format (C++20)
 #include <boost/format.hpp>
 
-// topic names
-static const std::string topic_colour = "/camera/rgb/image_rect_color/compressed";
-static const std::string topic_colour_ci = "/camera/rgb/camera_info";
-static const std::string topic_depth = "/camera/depth/image_rect_raw/compressed";
-
-RosBagReader::RosBagReader(std::string file, bool flipColors, const double scale) :
-  LogReader(file, flipColors), scale(scale), do_scale(std::rint(scale) != 1)
+RosBagReader::RosBagReader(const std::string bagfile_path,
+                           const std::string topic_colour,
+                           const std::string topic_depth,
+                           const std::string topic_camera_info,
+                           const bool flipColors, const double scale) :
+  LogReader(bagfile_path, flipColors), scale(scale), do_scale(std::rint(scale) != 1),
+  topic_colour(topic_colour), topic_depth(topic_depth), topic_camera_info(topic_camera_info)
 {
-  bag.open(file, rosbag::bagmode::Read);
-
-  static const std::vector<std::string> topics = {
-    topic_colour,
-    topic_colour_ci,
-    topic_depth,
-  };
+  bag.open(bagfile_path, rosbag::bagmode::Read);
 
   width = 0;
   height = 0;
   calibrationFile = {};
 
-  topic_view.addQuery(bag, rosbag::TopicQuery(topics));
+  topic_view.addQuery(bag, rosbag::TopicQuery({topic_colour, topic_depth, topic_camera_info}));
+
+  if (topic_view.size() == 0)
+    throw std::runtime_error("None of the requested topics contain messages.");
 
   iter_msg = topic_view.begin();
 }
@@ -41,17 +38,32 @@ void RosBagReader::getNext() {
       iter_msg++)
   {
     if(iter_msg->getTopic()==topic_colour) {
-      msg_colour = *iter_msg->instantiate<sensor_msgs::CompressedImage>();
+      if (const auto m = iter_msg->instantiate<sensor_msgs::CompressedImage>()) {
+        msg_colour = *m;
+      }
+      else {
+        throw std::runtime_error("colour topic '" + topic_colour + "' must only contain messages of type 'sensor_msgs/CompressedImage'");
+      }
       has_colour = true;
     }
     else if(iter_msg->getTopic()==topic_depth) {
-      msg_depth = *iter_msg->instantiate<sensor_msgs::CompressedImage>();
+      if (const auto m = iter_msg->instantiate<sensor_msgs::CompressedImage>()) {
+        msg_depth = *m;
+      }
+      else {
+        throw std::runtime_error("depth topic '" + topic_depth + "' must only contain messages of type 'sensor_msgs/CompressedImage'");
+      }
       has_depth = true;
     }
-    else if(calibrationFile.empty() && iter_msg->getTopic()==topic_colour_ci) {
+    else if(calibrationFile.empty() && iter_msg->getTopic()==topic_camera_info) {
       // image dimensions
-      width = int(scale*iter_msg->instantiate<sensor_msgs::CameraInfo>()->width);
-      height = int(scale*iter_msg->instantiate<sensor_msgs::CameraInfo>()->height);
+      if (const auto m = iter_msg->instantiate<sensor_msgs::CameraInfo>()) {
+        width = int(scale * m->width);
+        height = int(scale * m->height);
+      }
+      else {
+        throw std::runtime_error("topic '" + topic_camera_info + "' must only contain messages of type 'sensor_msgs/CameraInfo'");
+      }
       // row-major 3x4 projection matrix
       const auto &P = iter_msg->instantiate<sensor_msgs::CameraInfo>()->P;
       // store intrinsics, format: "<f_x> <f_y> <c_x> <c_y> <w> <h>"

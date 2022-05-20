@@ -8,7 +8,11 @@
 
 class RosBagReader : public LogReader {
 public:
-  RosBagReader(std::string file, bool flipColors = false, const double scale = 1.);
+  RosBagReader(const std::string bagfile_path,
+               const std::string topic_colour,
+               const std::string topic_depth,
+               const std::string topic_camera_info,
+               const bool flipColors = false, const double scale = 1.);
 
   ~RosBagReader();
 
@@ -38,6 +42,11 @@ private:
   const double scale;
 
   const bool do_scale;
+
+  // topics
+  const std::string topic_colour;
+  const std::string topic_depth;
+  const std::string topic_camera_info;
 
   // raw image messages
   sensor_msgs::CompressedImage msg_colour;

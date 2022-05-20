@@ -72,6 +72,9 @@
     -keep          Keep all models (even bad, deactivated)
 
     -l             Processes a log-file (*.klg/pangolin/rosbag).
+    -topic_colour  ROS topic for colour images (sensor_msgs/CompressedImage)
+    -topic_depth   ROS topic for depth images (sensor_msgs/CompressedImage)
+    -topic_info    ROS topic for camera intrinsics (sensor_msgs/CameraInfo)
     -dir           Processes a log-directory (Default: Color####.png + Depth####.exr [+ Mask####.png])
     -depthdir      Separate depth directory (==dir if not provided)
     -maskdir       Separate mask directory (==dir if not provided)
@@ -125,7 +128,15 @@ MainController::MainController(int argc, char* argv[])
       logReader = std::make_unique<KlgLogReader>(logFile, Parse::get().arg(argc, argv, "-f", empty) > -1);
 #ifdef ROSBAG
     } else if (std::filesystem::exists(logFile) && boost::algorithm::ends_with(logFile, ".bag")) {
-      logReader = std::make_unique<RosBagReader>(logFile, Parse::get().arg(argc, argv, "-f", empty) > -1, s);
+      std::string topic_img_colour, topic_info_camera, topic_img_depth;
+      Parse::get().arg(argc, argv, "-topic_colour", topic_img_colour);
+      Parse::get().arg(argc, argv, "-topic_depth", topic_img_depth);
+      Parse::get().arg(argc, argv, "-topic_info", topic_info_camera);
+      logReader = std::make_unique<RosBagReader>(logFile,
+                                                 topic_img_colour,
+                                                 topic_img_depth,
+                                                 topic_info_camera,
+                                                 Parse::get().arg(argc, argv, "-f", empty) > -1, s);
 #endif
     } else {
       logReader = std::make_unique<PangolinReader>(logFile, Parse::get().arg(argc, argv, "-f", empty) > -1);
