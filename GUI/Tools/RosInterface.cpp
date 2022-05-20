@@ -2,7 +2,7 @@
 
 #include "RosInterface.hpp"
 
-RosInterface::RosInterface(GUI **gui, CoFusion **modelling)
+RosInterface::RosInterface(GUI **gui, MultiMotionFusion **modelling)
   : gui(gui), modelling(modelling)
 {
   n = std::make_unique<ros::NodeHandle>("~");

@@ -688,7 +688,7 @@ SegmentationResult Segmentation::performSegmentationCRF(std::list<std::shared_pt
   const bool writeICP = false;
   const bool writeSLIC = false;
 
-  const std::string outputPath = "/tmp/cofusion";
+  const std::string outputPath = "/tmp/multimotionfusion";
   const int minWrite = 2;
 
   cv::Mat inputOverlay = showInputOverlay(frame.rgb, result.fullSegmentation);

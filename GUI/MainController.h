@@ -18,7 +18,7 @@
 
 #pragma once
 
-#include <CoFusion.h>
+#include <MultiMotionFusion.h>
 #include <Utils/Parse.h>
 
 #include "Tools/GUI.h"
@@ -46,7 +46,7 @@ class MainController {
   void loadCalibration(const std::string& filename);
 
   bool good;
-  CoFusion* coFusion;
+  MultiMotionFusion* mmf;
   GUI* gui;
   bool showcaseMode;
   GroundTruthOdometry* groundTruthOdometry;

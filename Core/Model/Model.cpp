@@ -112,8 +112,8 @@ Model::GPUSetup::GPUSetup()
   }
 }
 
-#ifdef COFUSION_NUM_SURFELS
-const int Model::TEXTURE_DIMENSION = 32 * (int)(sqrt(COFUSION_NUM_SURFELS) / 32);
+#ifdef MULTIMOTIONFUSION_NUM_SURFELS
+const int Model::TEXTURE_DIMENSION = 32 * (int)(sqrt(MULTIMOTIONFUSION_NUM_SURFELS) / 32);
 #else
 const int Model::TEXTURE_DIMENSION = 1024;
 #endif

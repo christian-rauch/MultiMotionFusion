@@ -12,11 +12,11 @@
 #include "Core/Model/Model.h"
 #include "GUI.h"
 
-#include "Core/CoFusion.h"
+#include "Core/MultiMotionFusion.h"
 
 class RosInterface {
 public:
-    RosInterface(GUI **gui, CoFusion **modelling);
+    RosInterface(GUI **gui, MultiMotionFusion **modelling);
 
     bool on_reset(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res);
 
@@ -37,7 +37,7 @@ private:
     // allocated yet when this class is constructed
     GUI **gui;
 
-    CoFusion **modelling;
+    MultiMotionFusion **modelling;
 
     std::unique_ptr<ros::NodeHandle> n;
     ros::ServiceServer srv_reset;

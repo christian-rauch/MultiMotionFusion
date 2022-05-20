@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.1.0)
-project(cofusion)
+project(multimotionfusion)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -70,7 +70,7 @@ file(GLOB_RECURSE showfiles Core/* GUI/*)
 add_custom_target(showthings SOURCES ${showfiles})
 
 # export library
-install(EXPORT cofusion
+install(EXPORT multimotionfusion
     DESTINATION share/${PROJECT_NAME}/cmake
     FILE ${PROJECT_NAME}Config.cmake
 )

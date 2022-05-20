@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.5)
 
-project(cofusion-gui)
+project(multimotionfusion-gui)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -69,21 +69,21 @@ endif(CMAKE_BUILD_TYPE MATCHES Debug)
 
 add_definitions(-Dlinux=1)
 
-add_executable(CoFusion
+add_executable(MultiMotionFusion
                ${srcs}
 )
 
-target_link_libraries(CoFusion
-                      cofusion
-                      CoFusionTools
-                      gSLICr_lib # this should be included by target 'cofusion'
+target_link_libraries(MultiMotionFusion
+                      multimotionfusion
+                      MultiMotionFusionTools
+                      gSLICr_lib # this should be included by target 'multimotionfusion'
                       ${JPEG_LIBRARIES}
                       super_point_inference
 )
 
-add_library(CoFusionTools SHARED ${tools_srcs})
+add_library(MultiMotionFusionTools SHARED ${tools_srcs})
 
-target_link_libraries(CoFusionTools
+target_link_libraries(MultiMotionFusionTools
                       ${ZLIB_LIBRARY}
                       ${Pangolin_LIBRARIES}
                       ${CUDA_LIBRARIES}
@@ -94,7 +94,7 @@ target_link_libraries(CoFusionTools
                       pthread
 )
 
-target_include_directories(CoFusionTools PUBLIC
+target_include_directories(MultiMotionFusionTools PUBLIC
                             ${CMAKE_CURRENT_SOURCE_DIR}
                             ${ZLIB_INCLUDE_DIR}
                             ${Pangolin_INCLUDE_DIRS}
@@ -105,12 +105,12 @@ target_include_directories(CoFusionTools PUBLIC
 )
 
 if(ROSBAG)
-    target_include_directories(CoFusionTools PUBLIC
+    target_include_directories(MultiMotionFusionTools PUBLIC
         ${rosbag_INCLUDE_DIRS}
         ${tf2_INCLUDE_DIRS}
         ${tf2_msgs_INCLUDE_DIRS}
     )
-    target_link_libraries(CoFusionTools
+    target_link_libraries(MultiMotionFusionTools
         ${rosbag_LIBRARIES}
         ${tf2_LIBRARIES}
         ${tf2_msgs_LIBRARIES}
@@ -119,14 +119,14 @@ if(ROSBAG)
 endif()
 
 if(ROSNODE)
-    target_include_directories(CoFusionTools PUBLIC
+    target_include_directories(MultiMotionFusionTools PUBLIC
         ${roscpp_INCLUDE_DIRS}
         ${image_transport_INCLUDE_DIRS}
         ${tf2_ros_INCLUDE_DIRS}
         ${eigen_conversions_INCLUDE_DIRS}
         ${cob_srvs_INCLUDE_DIRS}
     )
-    target_link_libraries(CoFusionTools
+    target_link_libraries(MultiMotionFusionTools
         ${roscpp_LIBRARIES}
         ${image_transport_LIBRARIES}
         ${tf2_ros_LIBRARIES}
@@ -134,17 +134,17 @@ if(ROSNODE)
         ${cob_srvs_LIBRARIES}
     )
     # to find "gSLICr.h" and "super_point_inference.hpp"
-    target_link_libraries(CoFusionTools gSLICr_lib super_point_inference)
+    target_link_libraries(MultiMotionFusionTools gSLICr_lib super_point_inference)
     add_definitions(-DROSNODE)
 endif()
 
 if(ROSBAG OR ROSNODE)
-    target_include_directories(CoFusionTools PUBLIC
+    target_include_directories(MultiMotionFusionTools PUBLIC
         ${cv_bridge_INCLUDE_DIRS}
         ${tf2_eigen_INCLUDE_DIRS}
         ${image_geometry_INCLUDE_DIRS}
     )
-    target_link_libraries(CoFusionTools
+    target_link_libraries(MultiMotionFusionTools
         ${cv_bridge_LIBRARIES}
         ${tf2_eigen_LIBRARIES}
         ${image_geometry_LIBRARIES}
@@ -154,12 +154,12 @@ endif()
 
 include(GNUInstallDirs)
 
-install(TARGETS CoFusionTools
+install(TARGETS MultiMotionFusionTools
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
 # install executable
-install(TARGETS CoFusion EXPORT cofusion
+install(TARGETS MultiMotionFusion EXPORT multimotionfusion
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )

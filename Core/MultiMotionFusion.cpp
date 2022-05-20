@@ -16,9 +16,9 @@
  *
  */
 
-#include "CoFusion.h"
+#include "MultiMotionFusion.h"
 
-CoFusion::CoFusion(const int timeDelta, const int countThresh, const float errThresh, const float covThresh, const bool closeLoops,
+MultiMotionFusion::MultiMotionFusion(const int timeDelta, const int countThresh, const float errThresh, const float covThresh, const bool closeLoops,
                    const bool iclnuim, const bool reloc, const float photoThresh, const float initConfidenceGlobal,
                    const float initConfidenceObject, const float depthCut, const float icpThresh, const bool fastOdom,
                    const float fernThresh, const bool so3, const bool frameToFrameRGB, const unsigned modelSpawnOffset,
@@ -96,7 +96,7 @@ CoFusion::CoFusion(const int timeDelta, const int countThresh, const float errTh
             << " surfel (TEXTURE_DIMENSION: " << Model::TEXTURE_DIMENSION << "x" << Model::TEXTURE_DIMENSION << ")." << std::endl;
 }
 
-CoFusion::~CoFusion() {
+MultiMotionFusion::~MultiMotionFusion() {
   if (iclnuim) {
     savePly();
   }
@@ -122,13 +122,13 @@ CoFusion::~CoFusion() {
   cudaCheckError();
 }
 
-void CoFusion::preallocateModels(unsigned count) {
+void MultiMotionFusion::preallocateModels(unsigned count) {
   for (unsigned i = 0; i < count; ++i)
     preallocatedModels.push_back(
         std::make_shared<Model>(getNextModelID(true), initConfThresObject, odom_cfg, false, true, enablePoseLogging, modelMatchingType));
 }
 
-void CoFusion::loadModels() {
+void MultiMotionFusion::loadModels() {
   // load all models from the database and add them to the set of inactive models, until they are re-detected
   for (size_t id=0; id<256; id++) {
     const fs::path model_path = model_db_path / fs::path("model-"+std::to_string(id));
@@ -144,11 +144,11 @@ void CoFusion::loadModels() {
   }
 }
 
-SegmentationResult CoFusion::performSegmentation(const FrameData& frame) {
+SegmentationResult MultiMotionFusion::performSegmentation(const FrameData& frame) {
   return labelGenerator.performSegmentation(models, frame, getNextModelID(), spawnOffset >= modelSpawnOffset, tracker[odom_cfg.segm_lvl].getTracks());
 }
 
-void CoFusion::createTextures() {
+void MultiMotionFusion::createTextures() {
   textures[GPUTexture::RGB] =
       new GPUTexture(Resolution::getInstance().width(), Resolution::getInstance().height(), GL_RGBA, GL_RGB, GL_UNSIGNED_BYTE, true, true);
 
@@ -172,7 +172,7 @@ void CoFusion::createTextures() {
       new GPUTexture(Resolution::getInstance().width(), Resolution::getInstance().height(), GL_RGB, GL_RGB, GL_UNSIGNED_BYTE, true);
 }
 
-void CoFusion::createCompute() {
+void MultiMotionFusion::createCompute() {
   computePacks[ComputePack::FILTER] = new ComputePack(loadProgramFromFile("empty.vert", "depth_bilateral_metric.frag", "quad.geom"),
                                                       textures[GPUTexture::DEPTH_METRIC_FILTERED]->texture);
 
@@ -188,13 +188,13 @@ void CoFusion::createCompute() {
       new ComputePack(loadProgramFromFile("empty.vert", "int_to_color.frag", "quad.geom"), textures[GPUTexture::MASK_COLOR]->texture);
 }
 
-void CoFusion::createFeedbackBuffers() {
+void MultiMotionFusion::createFeedbackBuffers() {
   feedbackBuffers[FeedbackBuffer::RAW] =
       new FeedbackBuffer(loadProgramGeomFromFile("vertex_feedback.vert", "vertex_feedback.geom"));  // Used to render raw depth data
   feedbackBuffers[FeedbackBuffer::FILTERED] = new FeedbackBuffer(loadProgramGeomFromFile("vertex_feedback.vert", "vertex_feedback.geom"));
 }
 
-void CoFusion::computeFeedbackBuffers() {
+void MultiMotionFusion::computeFeedbackBuffers() {
   TICK("feedbackBuffers");
   feedbackBuffers[FeedbackBuffer::RAW]->compute(textures[GPUTexture::RGB]->texture, textures[GPUTexture::DEPTH_METRIC]->texture, tick,
                                                 maxDepthProcessed);
@@ -204,7 +204,7 @@ void CoFusion::computeFeedbackBuffers() {
   TOCK("feedbackBuffers");
 }
 
-bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPose, const float weightMultiplier,
+bool MultiMotionFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPose, const float weightMultiplier,
                             GroundTruthOdometryInterface* const gt_pose, const bool bootstrap) {
   if (frame.depth.empty() || frame.rgb.empty() || frame.timestamp < 0) {
     std::cerr << "invalid image data" << std::endl;
@@ -853,14 +853,14 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
   return false;
 }
 
-void CoFusion::processFerns() {
+void MultiMotionFusion::processFerns() {
   TICK("Ferns::addFrame");
   ferns.addFrame(globalModel->getFillInImageTexture(), globalModel->getFillInVertexTexture(), globalModel->getFillInNormalTexture(),
                  globalModel->getPose(), tick, fernThresh);
   TOCK("Ferns::addFrame");
 }
 
-void CoFusion::predict() {
+void MultiMotionFusion::predict() {
   TICK("IndexMap::ACTIVE");
 
   for (auto& model : models) {
@@ -874,7 +874,7 @@ void CoFusion::predict() {
   TOCK("IndexMap::ACTIVE");
 }
 
-bool CoFusion::requiresFillIn(ModelPointer model, float ratio) {
+bool MultiMotionFusion::requiresFillIn(ModelPointer model, float ratio) {
   if (!model->allowsFillIn()) return false;
 
   TICK("autoFill");
@@ -894,7 +894,7 @@ bool CoFusion::requiresFillIn(ModelPointer model, float ratio) {
   return float(sum) / float(imageBuff.rows * imageBuff.cols) < ratio;
 }
 
-void CoFusion::filterDepth() {
+void MultiMotionFusion::filterDepth() {
   std::vector<Uniform> uniforms;
   uniforms.push_back(Uniform("cols", (float)Resolution::getInstance().cols()));
   uniforms.push_back(Uniform("rows", (float)Resolution::getInstance().rows()));
@@ -903,7 +903,7 @@ void CoFusion::filterDepth() {
                                              &uniforms);  // Writes to GPUTexture::DEPTH_METRIC_FILTERED
 }
 
-void CoFusion::normaliseDepth(const float& minVal, const float& maxVal) {
+void MultiMotionFusion::normaliseDepth(const float& minVal, const float& maxVal) {
   std::vector<Uniform> uniforms;
   uniforms.push_back(Uniform("maxVal", maxVal));
   uniforms.push_back(Uniform("minVal", minVal));
@@ -911,31 +911,31 @@ void CoFusion::normaliseDepth(const float& minVal, const float& maxVal) {
                                                  &uniforms);  // Writes to GPUTexture::DEPTH_NORM
 }
 
-void CoFusion::coloriseMasks() {
+void MultiMotionFusion::coloriseMasks() {
   computePacks[ComputePack::COLORISE_MASKS]->compute(textures[GPUTexture::MASK]->texture);  // Writes to GPUTexture::MASK_COLOR
 }
 
-void CoFusion::scheduleDeactivation(const ModelPointer& m) {
+void MultiMotionFusion::scheduleDeactivation(const ModelPointer& m) {
   scheduled_model_deactivation.insert(m);
 }
 
-void CoFusion::setOdomInit(const std::string &init) {
+void MultiMotionFusion::setOdomInit(const std::string &init) {
   lock_odom_cfg.lock();
   odom_cfg.init = init;
   lock_odom_cfg.unlock();
 }
 
-void CoFusion::setOdomRefine(const bool &refine) {
+void MultiMotionFusion::setOdomRefine(const bool &refine) {
   lock_odom_cfg.lock();
   odom_cfg.icp_refine = refine;
   lock_odom_cfg.unlock();
 }
 
-void CoFusion::setSegmMode(const std::string &mode) {
+void MultiMotionFusion::setSegmMode(const std::string &mode) {
   labelGenerator.setMode(mode);
 }
 
-void CoFusion::spawnObjectModel() {
+void MultiMotionFusion::spawnObjectModel() {
   assert(!newModel);
   if (preallocatedModels.size()) {
     newModel = preallocatedModels.front();
@@ -946,12 +946,12 @@ void CoFusion::spawnObjectModel() {
   newModel->getFrameOdometry().initFirstRGB(textures[GPUTexture::RGB]);
 }
 
-bool CoFusion::redetectModels(const FrameData& frame, const SegmentationResult& segmentationResult) {
+bool MultiMotionFusion::redetectModels(const FrameData& frame, const SegmentationResult& segmentationResult) {
   // [Removed code]
   return false;
 }
 
-void CoFusion::moveNewModelToList() {
+void MultiMotionFusion::moveNewModelToList() {
   if (newModel) {
     models.push_back(newModel);
     newModelListeners.callListenersDirect(newModel);
@@ -959,7 +959,7 @@ void CoFusion::moveNewModelToList() {
   }
 }
 
-void CoFusion::inactivateModel(const ModelPointer& m) {
+void MultiMotionFusion::inactivateModel(const ModelPointer& m) {
   std::cout << "Deactivating model " << m->getID() << " ... ";
   if (!enableSmartModelDelete || (m->lastCount() >= modelKeepMinSurfels && m->getConfidenceThreshold() > modelKeepConfThreshold)) {
     std::cout << "keeping data";
@@ -975,12 +975,12 @@ void CoFusion::inactivateModel(const ModelPointer& m) {
   inactiveModelListeners.callListenersDirect(m);
 }
 
-ModelListIterator CoFusion::inactivateModel(const ModelListIterator& it) {
+ModelListIterator MultiMotionFusion::inactivateModel(const ModelListIterator& it) {
   inactivateModel(*it);
   return --models.erase(it);
 }
 
-unsigned char CoFusion::getNextModelID(bool assign) {
+unsigned char MultiMotionFusion::getNextModelID(bool assign) {
   unsigned char next = nextID;
   if (assign) {
     if (models.size() == 256)
@@ -998,7 +998,7 @@ unsigned char CoFusion::getNextModelID(bool assign) {
   return next;
 }
 
-void CoFusion::savePly() {
+void MultiMotionFusion::savePly() {
   std::cout << "Exporting PLYs..." << std::endl;
 
   const Eigen::Isometry3f global_pose(globalModel->getPose());
@@ -1017,7 +1017,7 @@ void CoFusion::savePly() {
   export_all(inactiveModels);
 }
 
-void CoFusion::exportPoses() {
+void MultiMotionFusion::exportPoses() {
   std::cout << "Exporting poses..." << std::endl;
 
   auto exportModelPoses = [&](ModelList list) {
@@ -1045,82 +1045,82 @@ void CoFusion::exportPoses() {
 }
 
 // Sad times ahead
-ModelProjection& CoFusion::getIndexMap() { return globalModel->getIndexMap(); }
+ModelProjection& MultiMotionFusion::getIndexMap() { return globalModel->getIndexMap(); }
 
-std::shared_ptr<Model> CoFusion::getBackgroundModel() { return globalModel; }
+std::shared_ptr<Model> MultiMotionFusion::getBackgroundModel() { return globalModel; }
 
-std::list<std::shared_ptr<Model>>& CoFusion::getModels() { return models; }
+std::list<std::shared_ptr<Model>>& MultiMotionFusion::getModels() { return models; }
 
-Ferns& CoFusion::getFerns() { return ferns; }
+Ferns& MultiMotionFusion::getFerns() { return ferns; }
 
-Deformation& CoFusion::getLocalDeformation() { return localDeformation; }
+Deformation& MultiMotionFusion::getLocalDeformation() { return localDeformation; }
 
-std::map<std::string, GPUTexture*>& CoFusion::getTextures() { return textures; }
+std::map<std::string, GPUTexture*>& MultiMotionFusion::getTextures() { return textures; }
 
-const std::vector<PoseMatch>& CoFusion::getPoseMatches() { return poseMatches; }
+const std::vector<PoseMatch>& MultiMotionFusion::getPoseMatches() { return poseMatches; }
 
-const RGBDOdometry& CoFusion::getModelToModel() { return modelToModel; }
+const RGBDOdometry& MultiMotionFusion::getModelToModel() { return modelToModel; }
 
-void CoFusion::setRgbOnly(const bool& val) { rgbOnly = val; }
+void MultiMotionFusion::setRgbOnly(const bool& val) { rgbOnly = val; }
 
-void CoFusion::setIcpWeight(const float& val) { icpWeight = val; }
+void MultiMotionFusion::setIcpWeight(const float& val) { icpWeight = val; }
 
-void CoFusion::setOutlierCoefficient(const float& val) { Model::GPUSetup::getInstance().outlierCoefficient = val; }
+void MultiMotionFusion::setOutlierCoefficient(const float& val) { Model::GPUSetup::getInstance().outlierCoefficient = val; }
 
-void CoFusion::setPyramid(const bool& val) { pyramid = val; }
+void MultiMotionFusion::setPyramid(const bool& val) { pyramid = val; }
 
-void CoFusion::setFastOdom(const bool& val) { fastOdom = val; }
+void MultiMotionFusion::setFastOdom(const bool& val) { fastOdom = val; }
 
-void CoFusion::setSo3(const bool& val) { so3 = val; }
+void MultiMotionFusion::setSo3(const bool& val) { so3 = val; }
 
-void CoFusion::setFrameToFrameRGB(const bool& val) { frameToFrameRGB = val; }
+void MultiMotionFusion::setFrameToFrameRGB(const bool& val) { frameToFrameRGB = val; }
 
-void CoFusion::setModelSpawnOffset(const unsigned& val) { modelSpawnOffset = val; }
+void MultiMotionFusion::setModelSpawnOffset(const unsigned& val) { modelSpawnOffset = val; }
 
-void CoFusion::setModelDeactivateCount(const unsigned& val) { modelDeactivateCount = val; }
+void MultiMotionFusion::setModelDeactivateCount(const unsigned& val) { modelDeactivateCount = val; }
 
-void CoFusion::setCrfPairwiseSigmaRGB(const float& val) { labelGenerator.setPairwiseSigmaRGB(val); }
+void MultiMotionFusion::setCrfPairwiseSigmaRGB(const float& val) { labelGenerator.setPairwiseSigmaRGB(val); }
 
-void CoFusion::setCrfPairwiseSigmaPosition(const float& val) { labelGenerator.setPairwiseSigmaPosition(val); }
+void MultiMotionFusion::setCrfPairwiseSigmaPosition(const float& val) { labelGenerator.setPairwiseSigmaPosition(val); }
 
-void CoFusion::setCrfPairwiseSigmaDepth(const float& val) { labelGenerator.setPairwiseSigmaDepth(val); }
+void MultiMotionFusion::setCrfPairwiseSigmaDepth(const float& val) { labelGenerator.setPairwiseSigmaDepth(val); }
 
-void CoFusion::setCrfPairwiseWeightAppearance(const float& val) { labelGenerator.setPairwiseWeightAppearance(val); }
+void MultiMotionFusion::setCrfPairwiseWeightAppearance(const float& val) { labelGenerator.setPairwiseWeightAppearance(val); }
 
-void CoFusion::setCrfPairwiseWeightSmoothness(const float& val) { labelGenerator.setPairwiseWeightSmoothness(val); }
+void MultiMotionFusion::setCrfPairwiseWeightSmoothness(const float& val) { labelGenerator.setPairwiseWeightSmoothness(val); }
 
-void CoFusion::setCrfThresholdNew(const float& val) { labelGenerator.setUnaryThresholdNew(val); }
+void MultiMotionFusion::setCrfThresholdNew(const float& val) { labelGenerator.setUnaryThresholdNew(val); }
 
-void CoFusion::setCrfUnaryWeightError(const float& val) { labelGenerator.setUnaryWeightError(val); }
+void MultiMotionFusion::setCrfUnaryWeightError(const float& val) { labelGenerator.setUnaryWeightError(val); }
 
-void CoFusion::setCrfIteration(const unsigned& val) { labelGenerator.setIterationsCRF(val); }
+void MultiMotionFusion::setCrfIteration(const unsigned& val) { labelGenerator.setIterationsCRF(val); }
 
-void CoFusion::setCrfUnaryKError(const float& val) { labelGenerator.setUnaryKError(val); }
+void MultiMotionFusion::setCrfUnaryKError(const float& val) { labelGenerator.setUnaryKError(val); }
 
-void CoFusion::setNewModelMinRelativeSize(const float& val) { labelGenerator.setNewModelMinRelativeSize(val); }
+void MultiMotionFusion::setNewModelMinRelativeSize(const float& val) { labelGenerator.setNewModelMinRelativeSize(val); }
 
-void CoFusion::setNewModelMaxRelativeSize(const float& val) { labelGenerator.setNewModelMaxRelativeSize(val); }
+void MultiMotionFusion::setNewModelMaxRelativeSize(const float& val) { labelGenerator.setNewModelMaxRelativeSize(val); }
 
-void CoFusion::setFernThresh(const float& val) { fernThresh = val; }
+void MultiMotionFusion::setFernThresh(const float& val) { fernThresh = val; }
 
-void CoFusion::setDepthCutoff(const float& val) { depthCutoff = val; }
+void MultiMotionFusion::setDepthCutoff(const float& val) { depthCutoff = val; }
 
-const bool& CoFusion::getLost() {  // lel
+const bool& MultiMotionFusion::getLost() {  // lel
   return lost;
 }
 
-const int& CoFusion::getTick() { return tick; }
+const int& MultiMotionFusion::getTick() { return tick; }
 
-const int& CoFusion::getTimeDelta() { return timeDelta; }
+const int& MultiMotionFusion::getTimeDelta() { return timeDelta; }
 
-void CoFusion::setTick(const int& val) { tick = val; }
+void MultiMotionFusion::setTick(const int& val) { tick = val; }
 
-const float& CoFusion::getMaxDepthProcessed() { return maxDepthProcessed; }
+const float& MultiMotionFusion::getMaxDepthProcessed() { return maxDepthProcessed; }
 
-const Eigen::Matrix4f& CoFusion::getCurrPose() { return globalModel->getPose(); }
+const Eigen::Matrix4f& MultiMotionFusion::getCurrPose() { return globalModel->getPose(); }
 
-const int& CoFusion::getDeforms() { return deforms; }
+const int& MultiMotionFusion::getDeforms() { return deforms; }
 
-const int& CoFusion::getFernDeforms() { return fernDeforms; }
+const int& MultiMotionFusion::getFernDeforms() { return fernDeforms; }
 
-std::map<std::string, FeedbackBuffer*>& CoFusion::getFeedbackBuffers() { return feedbackBuffers; }
+std::map<std::string, FeedbackBuffer*>& MultiMotionFusion::getFeedbackBuffers() { return feedbackBuffers; }

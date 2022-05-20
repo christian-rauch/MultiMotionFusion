@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0.2)
 
-project(cofusion)
+project(multimotionfusion)
 
 message(STATUS "Evaluating Core/CMAKE")
 
@@ -44,9 +44,9 @@ endif()
 ## Options
 
 # Max number of surfels
-if(DEFINED COFUSION_NUM_SURFELS)
-message(STATUS "COFUSION_NUM_SURFELS=${COFUSION_NUM_SURFELS}")
-add_definitions(-DCOFUSION_NUM_SURFELS=${COFUSION_NUM_SURFELS})
+if(DEFINED MULTIMOTIONFUSION_NUM_SURFELS)
+message(STATUS "MULTIMOTIONFUSION_NUM_SURFELS=${MULTIMOTIONFUSION_NUM_SURFELS}")
+add_definitions(-DMULTIMOTIONFUSION_NUM_SURFELS=${MULTIMOTIONFUSION_NUM_SURFELS})
 endif()
 
 # Show debug visualisations
@@ -58,10 +58,10 @@ endif()
 
 ## Directories
 find_package(densecrf REQUIRED)
-set(cofusion_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Shaders" CACHE PATH "Where the shaders live")
+set(MULTIMOTIONFUSION_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Shaders" CACHE PATH "Where the shaders live")
 
 message(STATUS "Directories: ")
-message(STATUS "cofusion_SHADER_DIR: ${cofusion_SHADER_DIR}")
+message(STATUS "MULTIMOTIONFUSION_SHADER_DIR: ${MULTIMOTIONFUSION_SHADER_DIR}")
 
 ## Includes
 include_directories(${Pangolin_INCLUDE_DIRS})
@@ -100,7 +100,7 @@ add_definitions(-DNVIDIA_VARYINGS)
 
 CUDA_COMPILE(cuda_objs ${cuda})
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -msse -msse2 -msse3 -DSHADER_DIR=${cofusion_SHADER_DIR}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -msse -msse2 -msse3 -DSHADER_DIR=${MULTIMOTIONFUSION_SHADER_DIR}")
 
 if(CMAKE_BUILD_TYPE MATCHES Debug)
     message(STATUS "Debug build.")

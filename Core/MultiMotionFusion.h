@@ -47,11 +47,11 @@
 
 #include "Utils/PointTracker.hpp"
 
-class CoFusion {
+class MultiMotionFusion {
  public:
   typedef std::function<void (const std::string &)> StatusMessageHandler;
 
-  CoFusion(const int timeDelta = 200, const int countThresh = 35000, const float errThresh = 5e-05, const float covThresh = 1e-05,
+  MultiMotionFusion(const int timeDelta = 200, const int countThresh = 35000, const float errThresh = 5e-05, const float covThresh = 1e-05,
            const bool closeLoops = true, const bool iclnuim = false, const bool reloc = false, const float photoThresh = 115,
            const float initConfidenceGlobal = 4, const float initConfidenceObject = 2, const float depthCut = 3, const float icpThresh = 10,
            const bool fastOdom = false, const float fernThresh = 0.3095, const bool so3 = true, const bool frameToFrameRGB = false,
@@ -59,7 +59,7 @@ class CoFusion {
            const std::string& exportDirectory = "", const bool exportSegmentationResults = false, const std::string keypoint_predictor_path = {},
            const OdometryConfig &odom_cfg = {}, const SegmentationConfiguration &segm_cfg = {});
 
-  virtual ~CoFusion();
+  virtual ~MultiMotionFusion();
 
   void preallocateModels(unsigned count);
 
