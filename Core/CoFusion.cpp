@@ -230,7 +230,7 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
       if (i==odom_cfg.init_lvl || i==odom_cfg.segm_lvl) {
         cv::Mat img;
         cv::resize(frame.rgb, img, cv::Size(frame.rgb.cols >> i, frame.rgb.rows >> i));
-        std::tie(std::ignore, coordinates[i], descriptors[i]) = kp_predictor->getFeatures(img);
+        std::tie(coordinates[i], descriptors[i]) = kp_predictor->getFeatures(img);
       }
     }
 

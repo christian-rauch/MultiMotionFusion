@@ -43,7 +43,6 @@
 #include <memory>
 #include <atomic>
 
-// TODO: load implementation dynamically
 #include <super_point_inference.hpp>
 
 #include "Utils/PointTracker.hpp"
@@ -364,7 +363,7 @@ class CoFusion {
 
   RGBDOdometry modelToModel;
 
-  std::shared_ptr<FeatureMatchesInterface> kp_predictor;
+  std::shared_ptr<SuperPoint> kp_predictor;
   OdometryConfig odom_cfg;
   std::mutex lock_odom_cfg;
 
