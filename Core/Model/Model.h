@@ -33,8 +33,32 @@
 #include <memory>
 #include <list>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <Utils/PointTracker.hpp>
+#include "Utils/RigidRANSAC.h"
+#include <unordered_set>
+#include <filesystem>
 
 #include "Buffers.h"
+
+namespace fs = std::filesystem;
+
+struct OdometryConfig {
+  // initialise ICP odometry
+  // - (empty): do not initialise, effectively sets initial transformation to identity
+  // - "kp": transformation between keypoint tracks
+  // - "tf": transformation from log file
+  std::string init;
+  // frame name as "tf" initialisation source (default: colour optical frame)
+  std::string init_frame;
+  // pyramid level at which to initialise from keypoints
+  int init_lvl = 0;
+
+  // refine via ICP after initialisation (only considered if 'track_init' is set)
+  bool icp_refine;
+
+  // pyramid level at which to compute keypoint reprojection error
+  int segm_lvl = 0;
+};
 
 class IModelMatcher;
 class Model;
@@ -87,6 +111,9 @@ class Model {
 
   enum class MatchingType { Drost };
 
+  typedef Eigen::Matrix<cv::Point, Eigen::Dynamic, Eigen::Dynamic> MatrixXp2;
+  typedef Eigen::Matrix<Eigen::Vector3d, Eigen::Dynamic, Eigen::Dynamic> MatrixXp3;
+
  public:
   static const int TEXTURE_DIMENSION;
   static const int MAX_VERTICES;
@@ -97,10 +124,12 @@ class Model {
   // static std::list<unsigned char> availableIDs;
 
  public:
-  Model(unsigned char id, float confidenceThresh, bool enableFillIn = true, bool enableErrorRecording = true,
+  Model(unsigned char id, float confidenceThresh, const OdometryConfig &odom_cfg, bool enableFillIn = true, bool enableErrorRecording = true,
         bool enablePoseLogging = false, MatchingType matchingType = MatchingType::Drost,
         float maxDepth = std::numeric_limits<float>::max());  // TODO: Default disable
   virtual ~Model();
+
+  virtual bool load(const fs::path &model_path);
 
   // ----- Functions ----- //
 
@@ -127,6 +156,38 @@ class Model {
 
   virtual void performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight, bool pyramid, bool fastOdom, bool so3,
                                float maxDepthProcessed, GPUTexture* rgb, int64_t logTimestamp, bool tryFillIn = false);
+
+  // compute the projection error between keypoints on the trajectory for segmentation
+  static std::tuple<Eigen::MatrixXd, Model::MatrixXp2, Model::MatrixXp3>
+  computeTrackProjectionError(const tracker::Tracks &tracks);
+
+  // project all 2D and 3D keypoints into the last frame of the model trajectory
+  virtual tracker::Tracks computeTrackProjectionLastFrame(const tracker::Tracks& tracks, const size_t length = 0) const;
+
+  // project all 3D keypoints into the first (initial) model frame
+  virtual tracker::Tracks computeTrackProjectionFirstFrame() const;
+
+  virtual tracker::Tracks computeTrackProjectionStartEnd(const tracker::Tracks& tracks, const size_t length);
+
+  static cv::Mat drawLocalTracks2D(const tracker::Tracks &tracks, const cv::Mat &img, int msize = 10, bool mscale = false);
+
+  // initialise the first set of tracks for the global model
+  virtual void initGlobalTracks(const tracker::Tracks& tracks, const Eigen::Isometry3f &initial_pose = Eigen::Isometry3f::Identity(), const uint64_t &time = 0);
+
+  // add/remove tracks
+  virtual void updateTracks(const tracker::Tracks& tracks_add = {}, const tracker::Tracks &tracks_remove = {});
+
+  virtual void removeLastTrackKeypoint();
+
+  // re-estimate all model poses given the track subset
+  virtual void refineTrackSubset(const tracker::Tracks& tracks, const ModelPointer &parent, const size_t &history = std::numeric_limits<size_t>::infinity());
+
+  static RigidRANSAC::Result getLastTrackTransform(const tracker::Tracks &tracks, const RigidRANSAC::Config &config = {10, 0.03f, 0.6f});
+
+  // get the transformation between the last two point sets on model tracks
+  virtual RigidRANSAC::Result getLastTrackTransform() const;
+
+  virtual RigidRANSAC::Result getBestMatch(const std::vector<tracker::KeypointPtr> &keypoints, const RigidRANSAC::Config &config) const;
 
   // Compute fusion-weight based on velocity
   virtual float computeFusionWeight(float weightMultiplier) const;
@@ -180,11 +241,39 @@ class Model {
     unsigned numValid = 0;
   };
 
-  virtual SurfelMap downloadMap();
+  virtual SurfelMap downloadMap() const;
+
+  // surfel memory representation
+  struct surfel_t {
+    // point
+    Eigen::Vector3f point;  // 96 bit
+    float confidence;       // 32 bit
+
+    // colour
+    float colour;       // 32 bit
+    uint32_t unused;    // 32 bit
+    float init_time;    // 32 bit
+    float timestamp;    // 32 bit
+
+    // normal
+    Eigen::Vector3f normal; // 96 bit
+    float radius;           // 32 bit
+  };
+
+  // a surfel should consume 3 x 4 x 32 = 384 bit = 48 byte
+  static_assert(sizeof(surfel_t) == 48, "struct surfel_t is misaligned");
 
   // inline cv::Mat downloadUnaryConfTexture() {
   //    return indexMap.getUnaryConfTex()->downloadTexture();
   //}
+
+  static void exportTracksPLY(const tracker::Tracks &tracks, const std::string &path, const Eigen::Isometry3f &pose = Eigen::Isometry3f::Identity(), bool with_descriptor = false, bool binary = true);
+
+  void exportTracksPLY(const std::string &export_dir, const Eigen::Isometry3f &global_pose, bool binary = true) const;
+
+  static void exportModelPLY(const SurfelMap &surfels, const float conf_threshold, const std::string &path, const Eigen::Isometry3f &pose = Eigen::Isometry3f::Identity());
+
+  void exportModelPLY(const std::string &export_dir, const Eigen::Isometry3f &global_pose) const;
 
   inline cv::Mat downloadVertexConfTexture() { return indexMap.getSplatVertexConfTex()->downloadTexture(); }
 
@@ -220,11 +309,19 @@ class Model {
   inline RGBDOdometry& getFrameOdometry() { return frameToModel; }
   inline ModelProjection& getIndexMap() { return indexMap; }
 
+  const MatrixXp2& getTrackXY() const { return track_xy; };
+  const MatrixXp3& getTrackPoint() const  { return track_p; };
+  const Eigen::MatrixXd& getTrackProjError() const { return track_pe; };
+
   inline unsigned getUnseenCount() const { return unseenCount; }
   inline void resetUnseenCount() { unseenCount = 0; }
-  inline unsigned incrementUnseenCount() {
-    if (unseenCount < std::numeric_limits<unsigned>::max()) return ++unseenCount;
-    return unseenCount;
+  inline int64_t incrementUnseenCount() {
+    return std::min(++unseenCount, std::numeric_limits<int64_t>::max());
+  }
+
+  inline int64_t decrementUnseenCount(const int64_t &decrement = 1) {
+    unseenCount -= decrement;
+    return std::max(unseenCount, std::numeric_limits<int64_t>::min());
   }
 
   struct PoseLogItem {
@@ -234,10 +331,25 @@ class Model {
   inline bool isLoggingPoses() const { return poseLog.capacity() > 0; }
   inline std::vector<PoseLogItem>& getPoseLog() { return poseLog; }
 
+  void appendPoses(const Eigen::Isometry3f& pose, const uint64_t &time) {
+    timestamp_ns.push_back(time);
+    poses.push_back(pose);
+  };
+
+  // ----- Save & Load ----- //
+
+  void store(const fs::path &model_db_path, const Eigen::Isometry3f &pose, bool clear = true);
+
+  void activate(const Eigen::Isometry3f &pose, const int64_t &timestamp);
+
  protected:
   // Current pose
   Eigen::Matrix4f pose;
   Eigen::Matrix4f lastPose;
+
+  // poses and timestamps in nanoseconds
+  std::vector<uint64_t> timestamp_ns;
+  std::vector<Eigen::Isometry3f> poses;
 
   std::vector<PoseLogItem> poseLog;  // optional, for testing
 
@@ -270,12 +382,24 @@ class Model {
   std::unique_ptr<GPUTexture> icpError;
   std::unique_ptr<GPUTexture> rgbError;
 
+  // set of associated tracks in camera frame
+  std::unordered_set<tracker::TrackPtr> tracks;
+
+  // local projected tracks, stored when the model is deactivated
+  // keypoints are synchronous with poses
+  tracker::Tracks tracks_local;
+
+  // track projection error
+  Eigen::MatrixXd track_pe;
+  MatrixXp2 track_xy;
+  MatrixXp3 track_p;
+
   const GPUSetup& gpu;
 
   ModelProjection indexMap;
   RGBDOdometry frameToModel;
 
-  unsigned unseenCount = 0;
+  int64_t unseenCount = 0;
 
   // Fill in holes in prediction (using raw data)
   std::unique_ptr<FillIn> fillIn;

@@ -18,12 +18,17 @@
 
 #pragma once
 
-#include <CoFusion.h>
+#include <MultiMotionFusion.h>
 #include <Utils/Parse.h>
 
 #include "Tools/GUI.h"
 #include "Tools/GroundTruthOdometry.h"
 #include "Tools/LogReader.h"
+
+#ifdef ROSNODE
+#include "Tools/RosStatePublisher.hpp"
+#include "Tools/RosInterface.hpp"
+#endif
 
 class MainController {
  public:
@@ -41,11 +46,12 @@ class MainController {
   void loadCalibration(const std::string& filename);
 
   bool good;
-  CoFusion* coFusion;
+  MultiMotionFusion* mmf;
   GUI* gui;
   bool showcaseMode;
   GroundTruthOdometry* groundTruthOdometry;
   GroundTruthOdometryInterface *gt_odom = nullptr;
+  GroundTruthOdometryInterface *gt_init = nullptr;
   std::unique_ptr<LogReader> logReader;
 
   bool iclnuim;
@@ -58,16 +64,28 @@ class MainController {
   bool exportNormals;
   bool exportPoses;
   bool exportModels;
+  bool restore;
+
+#ifdef ROSNODE
+  std::unique_ptr<RosStatePublisher> state_publisher;
+  std::unique_ptr<RosInterface> ui_control;
+#endif
 
   float confGlobalInit, confObjectInit, icpErrThresh, covThresh, photoThresh, fernThresh;
 
   int timeDelta, icpCountThresh, start, end, preallocatedModelsCount;
+
+  int min_frame_skip = 0;
 
   bool fillIn, openLoop, reloc, frameskip, quit, fastOdom, so3, rewind, frameToFrameRGB;
 
   int framesToSkip;
   bool streaming;
   bool resetButton;
+
+  std::string keypoint_model_path;
+  OdometryConfig odom_cfg;
+  SegmentationConfiguration segm_cfg;
 
   GPUResize* resizeStream;
 };

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.1.0)
-project(cofusion)
+project(multimotionfusion)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 
 # Warnings / Errors
 add_compile_options(-Wall -Werror -Wno-write-strings -Wno-deprecated-declarations)
@@ -10,6 +10,28 @@ add_compile_options(-Wall -Werror -Wno-write-strings -Wno-deprecated-declaration
 cmake_policy(SET CMP0009 NEW)
 
 set(BUILD_TESTS OFF CACHE BOOL "Build unit tests")
+
+option(BUILD_ASAN "Enable AddressSanitizer for Debug builds" OFF)
+
+# run with "ASAN_OPTIONS=fast_unwind_on_malloc=0" to print stack with more details
+if(BUILD_ASAN)
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} \
+        -fsanitize=address \
+        -fsanitize=bool \
+        -fsanitize=bounds \
+        -fsanitize=enum \
+        -fsanitize=float-cast-overflow \
+        -fsanitize=float-divide-by-zero \
+        -fsanitize=nonnull-attribute \
+        -fsanitize=returns-nonnull-attribute \
+        -fsanitize=signed-integer-overflow \
+        -fsanitize=undefined \
+        -fsanitize=vla-bound \
+        -fno-sanitize=alignment \
+        -fsanitize=leak \
+        -fsanitize=object-size \
+    ")
+endif()
 
 # OpenMP
 find_package(OpenMP)
@@ -48,7 +70,7 @@ file(GLOB_RECURSE showfiles Core/* GUI/*)
 add_custom_target(showthings SOURCES ${showfiles})
 
 # export library
-install(EXPORT cofusion
+install(EXPORT multimotionfusion
     DESTINATION share/${PROJECT_NAME}/cmake
     FILE ${PROJECT_NAME}Config.cmake
 )

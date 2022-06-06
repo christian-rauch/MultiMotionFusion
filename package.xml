@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>cofusion</name>
+  <name>mmf</name>
   <version>0.0.0</version>
-  <description>The cofusion package</description>
+  <description>The MultiMotionFusion package</description>
 
   <maintainer email="Christian.Rauch@ed.ac.uk">Christian Rauch</maintainer>
 
@@ -15,8 +15,9 @@
   <!-- Url tags are optional, but multiple are allowed, one per tag -->
   <!-- Optional attribute type can be: website, bugtracker, or repository -->
   <!-- Example: -->
-  <!-- <url type="website">http://wiki.ros.org/cofusion</url> -->
+  <!-- <url type="website">http://wiki.ros.org/multimotionfusion</url> -->
 
+  <author email="Christian.Rauch@ed.ac.uk">Christian Rauch</author>
   <author email="M.Runz@cs.ucl.ac.uk">Martin Ruenz</author>
 
 
@@ -71,6 +72,9 @@
   <depend>image_transport</depend>
   <depend>cv_bridge</depend>
   <depend>image_geometry</depend>
+  <depend>super_point_inference</depend>
+  <depend>eigen_conversions</depend>
+  <depend>cob_srvs</depend>
 
   <export>
     <build_type>cmake</build_type>

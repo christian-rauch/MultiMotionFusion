@@ -23,6 +23,7 @@
 #include "Utils/Resolution.h"
 #include "Utils/Intrinsics.h"
 #include "Utils/Stopwatch.h"
+#include "Utils/GroundTruthOdometryInterface.hpp"
 #include "Callbacks.h"
 #include "Shaders/Shaders.h"
 #include "Shaders/ComputePack.h"
@@ -37,21 +38,32 @@
 #include "Segmentation/Segmentation.h"
 
 #include <list>
+#include <set>
 #include <iomanip>
 #include <memory>
+#include <atomic>
 
-class CoFusion {
+#include <super_point_inference.hpp>
+
+#include "Utils/PointTracker.hpp"
+
+class MultiMotionFusion {
  public:
-  CoFusion(const int timeDelta = 200, const int countThresh = 35000, const float errThresh = 5e-05, const float covThresh = 1e-05,
+  typedef std::function<void (const std::string &)> StatusMessageHandler;
+
+  MultiMotionFusion(const int timeDelta = 200, const int countThresh = 35000, const float errThresh = 5e-05, const float covThresh = 1e-05,
            const bool closeLoops = true, const bool iclnuim = false, const bool reloc = false, const float photoThresh = 115,
            const float initConfidenceGlobal = 4, const float initConfidenceObject = 2, const float depthCut = 3, const float icpThresh = 10,
            const bool fastOdom = false, const float fernThresh = 0.3095, const bool so3 = true, const bool frameToFrameRGB = false,
            const unsigned modelSpawnOffset = 20, const Model::MatchingType matchingType = Model::MatchingType::Drost,
-           const std::string& exportDirectory = "", const bool exportSegmentationResults = false);
+           const std::string& exportDirectory = "", const bool exportSegmentationResults = false, const std::string keypoint_predictor_path = {},
+           const OdometryConfig &odom_cfg = {}, const SegmentationConfiguration &segm_cfg = {});
 
-  virtual ~CoFusion();
+  virtual ~MultiMotionFusion();
 
   void preallocateModels(unsigned count);
+
+  void loadModels();
 
   SegmentationResult performSegmentation(const FrameData& frame);
 
@@ -64,6 +76,7 @@ class CoFusion {
        * @return returns true if a pause might be interesting, can be ignored without hesitation
        */
   bool processFrame(const FrameData& frame, const Eigen::Matrix4f* inPose = 0, const float weightMultiplier = 1.f,
+                    GroundTruthOdometryInterface* const gt_pose = nullptr,
                     const bool bootstrap = false);
 
   /**
@@ -242,6 +255,8 @@ class CoFusion {
   void setNewModelMinRelativeSize(const float& val);
   void setNewModelMaxRelativeSize(const float& val);
   void setEnableMultipleModels(bool val) { enableMultipleModels = val; }
+  void setEnableRedetection(bool val) { enableRedetection = val; }
+  void setSetInhibit(bool val) { inhibitModels = val; }
   void setEnableSmartModelDelete(bool val) { enableSmartModelDelete = val; }
   // void setCrfUnaryWeightErrorBackground(const float& val);
   // void setCrfUnaryWeightConfBackground(const float& val);
@@ -287,11 +302,32 @@ class CoFusion {
   /// Called when a model becomes inactive
   inline void addInactiveModelListener(const ModelListener& listener) { inactiveModelListeners.addListener(listener); }
 
+  void scheduleDeactivation(const ModelPointer& m);
+
+  void setOdomInit(const std::string &init);
+
+  void setOdomRefine(const bool &refine);
+
+  void setSegmMode(const std::string &mode);
+
+  void setStatusMessageHandler(StatusMessageHandler status_message_handler) {
+    this->status_message_handler = status_message_handler;
+  }
+
+  bool sendStatusMessage(const std::string &message) {
+    if (status_message_handler) {
+      status_message_handler(message);
+      return true;
+    }
+    return false;
+  }
+
   // Here be dragons
  private:
   void spawnObjectModel();
   bool redetectModels(const FrameData& frame, const SegmentationResult& segmentationResult);
   void moveNewModelToList();
+  void inactivateModel(const ModelPointer& m);
   ModelListIterator inactivateModel(const ModelListIterator& it);
 
   unsigned char getNextModelID(bool assign = false);
@@ -321,7 +357,17 @@ class CoFusion {
   CallbackBuffer<std::shared_ptr<Model>> newModelListeners;
   CallbackBuffer<std::shared_ptr<Model>> inactiveModelListeners;
 
+  StatusMessageHandler status_message_handler;
+
+  std::set<ModelPointer> scheduled_model_deactivation;
+
   RGBDOdometry modelToModel;
+
+  std::shared_ptr<SuperPoint> kp_predictor;
+  OdometryConfig odom_cfg;
+  std::mutex lock_odom_cfg;
+
+  std::array<tracker::PointTracker, RGBDOdometry::NUM_PYRS> tracker;
 
   // TODO move to model?
   Ferns ferns;
@@ -365,7 +411,8 @@ class CoFusion {
 
   bool enableMultipleModels = true;
   bool enableSmartModelDelete = true;
-  bool enableRedetection = false;
+  std::atomic<bool> enableRedetection = true;
+  std::atomic<bool> inhibitModels = false;
   bool enableModelMerging = false;
   bool enableSpawnSubtraction = true;
   bool enablePoseLogging = true;
@@ -380,11 +427,12 @@ class CoFusion {
   bool frameToFrameRGB;
   float depthCutoff;
   unsigned modelDeactivateCount = 10;   // deactivate model, when not seen for this many frames FIXME unused
-  unsigned modelKeepMinSurfels = 4000;  // Only keep deactivated models with at least this many surfels
+  unsigned modelKeepMinSurfels = 500;  // Only keep deactivated models with at least this many surfels
   float modelKeepConfThreshold = 0.3;
   unsigned modelSpawnOffset;  // setting
   unsigned spawnOffset = 0;   // current value
 
   bool exportSegmentation;
   std::string exportDir;
+  fs::path model_db_path;
 };
