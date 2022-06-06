@@ -74,3 +74,11 @@ install(EXPORT multimotionfusion
     DESTINATION share/${PROJECT_NAME}/cmake
     FILE ${PROJECT_NAME}Config.cmake
 )
+
+# install wrapper scripts
+install(
+    DIRECTORY scripts/
+    TYPE BIN
+    USE_SOURCE_PERMISSIONS
+    PATTERN *.sh
+)

@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  pull_request:
+    paths-ignore:
+      - '**/README.md'
+      - doc/**
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v3
+
+      - name: setup
+        run: |
+          $GITHUB_WORKSPACE/doc/setup.sh
+
+      - name: install
+        run: |
+          $GITHUB_WORKSPACE/doc/install.sh
