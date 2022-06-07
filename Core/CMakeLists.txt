@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0.2)
 
-project(cofusion)
+project(multimotionfusion)
 
 message(STATUS "Evaluating Core/CMAKE")
 
@@ -14,6 +14,8 @@ find_package(SuiteSparse REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(OpenMP)
 find_package(Eigen3 REQUIRED NO_MODULE)
+
+find_package(super_point_inference REQUIRED)
 
 if(PCL_FOUND)
     # See: https://github.com/PointCloudLibrary/pcl/issues/776
@@ -42,9 +44,9 @@ endif()
 ## Options
 
 # Max number of surfels
-if(DEFINED COFUSION_NUM_SURFELS)
-message(STATUS "COFUSION_NUM_SURFELS=${COFUSION_NUM_SURFELS}")
-add_definitions(-DCOFUSION_NUM_SURFELS=${COFUSION_NUM_SURFELS})
+if(DEFINED MULTIMOTIONFUSION_NUM_SURFELS)
+message(STATUS "MULTIMOTIONFUSION_NUM_SURFELS=${MULTIMOTIONFUSION_NUM_SURFELS}")
+add_definitions(-DMULTIMOTIONFUSION_NUM_SURFELS=${MULTIMOTIONFUSION_NUM_SURFELS})
 endif()
 
 # Show debug visualisations
@@ -56,10 +58,10 @@ endif()
 
 ## Directories
 find_package(densecrf REQUIRED)
-set(cofusion_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Shaders" CACHE PATH "Where the shaders live")
+set(MULTIMOTIONFUSION_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Shaders" CACHE PATH "Where the shaders live")
 
 message(STATUS "Directories: ")
-message(STATUS "cofusion_SHADER_DIR: ${cofusion_SHADER_DIR}")
+message(STATUS "MULTIMOTIONFUSION_SHADER_DIR: ${MULTIMOTIONFUSION_SHADER_DIR}")
 
 ## Includes
 include_directories(${Pangolin_INCLUDE_DIRS})
@@ -98,7 +100,7 @@ add_definitions(-DNVIDIA_VARYINGS)
 
 CUDA_COMPILE(cuda_objs ${cuda})
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -msse -msse2 -msse3 -DSHADER_DIR=${cofusion_SHADER_DIR}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -msse -msse2 -msse3 -DSHADER_DIR=${MULTIMOTIONFUSION_SHADER_DIR}")
 
 if(CMAKE_BUILD_TYPE MATCHES Debug)
     message(STATUS "Debug build.")
@@ -106,6 +108,8 @@ else(CMAKE_BUILD_TYPE MATCHES Release)
     message(STATUS "Release build.")
     add_compile_options(-O3)
 endif(CMAKE_BUILD_TYPE MATCHES Debug)
+
+set(CUDA_LINK_LIBRARIES_KEYWORD PUBLIC)
 
 add_library(${PROJECT_NAME} SHARED
     ${srcs}
@@ -135,7 +139,17 @@ target_link_libraries(${PROJECT_NAME}
     ${CUDA_LIBRARIES}
     ${SUITESPARSE_LIBRARIES}
     ${OpenCV_LIBRARIES}
+    super_point_inference
 )
+
+add_library(ransac STATIC "Utils/RigidRANSAC.cpp")
+target_link_libraries(ransac Eigen3::Eigen)
+
+add_executable(ransac_test tests/ransac_test.cpp "Utils/RigidRANSAC.cpp")
+add_executable(ransac_test_points tests/ransac_test_points.cpp "Utils/RigidRANSAC.cpp")
+
+target_link_libraries(ransac_test ransac)
+target_link_libraries(ransac_test_points ransac)
 
 
 set_target_properties(${PROJECT_NAME} PROPERTIES INTERFACE_LINK_LIBRARIES "")

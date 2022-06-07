@@ -67,7 +67,7 @@ class GUI {
 
     width += widthPanel;
 
-    pangolin::CreateWindowAndBind("Co-Fusion", width, height);
+    pangolin::CreateWindowAndBind("Multi-Motion-Fusion", width, height);
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
@@ -177,6 +177,8 @@ class GUI {
     }
 
     pause = new pangolin::Var<bool>("ui.Pause", false, true);
+    logProgress = new pangolin::Var<std::string>("ui.Log", "0");
+    timing = new pangolin::Var<float>("ui.Timing (ms)");
     step = new pangolin::Var<bool>("ui.Step", false, false);
     skip = new pangolin::Var<bool>("ui.Skip", false, false);
     saveCloud = new pangolin::Var<bool>("ui.Save cloud", false, false);
@@ -198,13 +200,15 @@ class GUI {
     fastOdom = new pangolin::Var<bool>("ui.Fast Odometry", false, true);
     rgbOnly = new pangolin::Var<bool>("ui.RGB only tracking", false, true);
     // confidenceThreshold = new pangolin::Var<float>("ui.Confidence threshold", 10.0, 0.0, 24.0);
-    depthCutoff = new pangolin::Var<float>("ui.Depth cutoff", 5.0, 0.0, 20.0);
+    depthCutoff = new pangolin::Var<float>("ui.Depth cutoff", 15.0, 0.0, 20.0);
     icpWeight = new pangolin::Var<float>("ui.ICP weight", 10.0, 0.0, 100.0);
     outlierCoefficient = new pangolin::Var<float>("ui.Outlier Rejection", 3, 0, 10);
 
     enableMultiModel = new pangolin::Var<bool>("oi.Enable multiple models", true, true);
+    enableRedetection = new pangolin::Var<bool>("oi.re-detect models", false, true);
     enableSmartDelete = new pangolin::Var<bool>("oi.Delete deactivated", true, true);
-    minRelSizeNew = new pangolin::Var<float>("oi.Min-size new", 0.015, 0, 0.5);
+    inhibitModels = new pangolin::Var<bool>("oi.inhibit new models", false, true);
+    minRelSizeNew = new pangolin::Var<float>("oi.Min-size new", 0.005, 0, 0.5);
     maxRelSizeNew = new pangolin::Var<float>("oi.Max-size new", 0.4, 0.3, 1);
     modelSpawnOffset = new pangolin::Var<unsigned>("oi.Model spawn offset", 22, 0, 100);
     modelDeactivateCnt = new pangolin::Var<unsigned>("oi.Deactivate model count", 10, 0, 100);
@@ -231,6 +235,7 @@ class GUI {
     drawColors = new pangolin::Var<bool>("ui.Draw colors", showcaseMode, true);
     drawLabelColors = new pangolin::Var<bool>("ui.Draw label-color", false, true);
     drawPoseLog = new pangolin::Var<bool>("ui.Draw pose log", false, true);
+    showModProj = new pangolin::Var<bool>("ui.Show projections", true, true);
     drawFxaa = new pangolin::Var<bool>("ui.Draw FXAA", showcaseMode, true);
     drawWindow = new pangolin::Var<bool>("ui.Draw time window", false, true);
     drawNormals = new pangolin::Var<bool>("ui.Draw normals", false, true);
@@ -249,7 +254,6 @@ class GUI {
 
     trackInliers = new pangolin::Var<std::string>("ui.Inliers", "0");
     trackRes = new pangolin::Var<std::string>("ui.Residual", "0");
-    logProgress = new pangolin::Var<std::string>("ui.Log", "0");
 
     if (showcaseMode) {
       pangolin::RegisterKeyPressCallback(' ', pangolin::SetVarFunctor<bool>("ui.Reset", true));
@@ -299,7 +303,9 @@ class GUI {
     delete pyramid;
     delete rgbOnly;
     delete enableMultiModel;
+    delete enableRedetection;
     delete enableSmartDelete;
+    delete inhibitModels;
     delete totalFernDefs;
     delete drawFerns;
     delete followPose;
@@ -609,11 +615,14 @@ class GUI {
 
   pangolin::Var<bool> *pause, *step, *skip, *savePoses, *saveView, *saveCloud,
       //* saveDepth,
-      *reset, *flipColors, *rgbOnly, *enableMultiModel, *enableSmartDelete, *pyramid, *so3, *frameToFrameRGB, *fastOdom, *followPose,
-      *drawRawCloud, *drawFilteredCloud, *drawNormals, *autoSettings, *drawDefGraph, *drawColors, *drawPoseLog, *drawLabelColors, *drawFxaa,
-      *drawGlobalModel, *drawObjectModels, *drawUnstable, *drawPoints, *drawTimes, *drawFerns, *drawDeforms, *drawWindow;
+      *reset, *flipColors, *rgbOnly, *enableMultiModel, *enableSmartDelete, *inhibitModels, *pyramid, *so3, *frameToFrameRGB, *fastOdom, *followPose,
+      *drawRawCloud, *drawFilteredCloud, *drawNormals, *autoSettings, *drawDefGraph, *drawColors, *drawPoseLog, *drawLabelColors, *showModProj, *drawFxaa,
+      *drawGlobalModel, *drawObjectModels, *drawUnstable, *drawPoints, *drawTimes, *drawFerns, *drawDeforms, *drawWindow,
+      *enableRedetection;
   pangolin::Var<int>* gpuMem;
   pangolin::Var<std::string> *totalPoints, *totalNodes, *totalFerns, *totalDefs, *totalFernDefs, *trackInliers, *trackRes, *logProgress;
+
+  pangolin::Var<float> *timing;
 
   pangolin::Var<float> *depthCutoff, *icpWeight, *outlierCoefficient;
 

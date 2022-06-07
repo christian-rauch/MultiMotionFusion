@@ -19,6 +19,12 @@
 #include "Model.h"
 #include "ModelMatching.h"
 
+#include <opencv2/opencv.hpp>
+#include <opencv2/core/eigen.hpp>
+
+#include "Utils/RigidRANSAC.h"
+#include "Utils/happly.h"
+
 Model::GPUSetup::GPUSetup()
     : initProgram(loadProgramFromFile("init_unstable.vert")),
       drawProgram(loadProgramFromFile("draw_feedback.vert", "draw_feedback.frag")),
@@ -106,8 +112,8 @@ Model::GPUSetup::GPUSetup()
   }
 }
 
-#ifdef COFUSION_NUM_SURFELS
-const int Model::TEXTURE_DIMENSION = 32 * (int)(sqrt(COFUSION_NUM_SURFELS) / 32);
+#ifdef MULTIMOTIONFUSION_NUM_SURFELS
+const int Model::TEXTURE_DIMENSION = 32 * (int)(sqrt(MULTIMOTIONFUSION_NUM_SURFELS) / 32);
 #else
 const int Model::TEXTURE_DIMENSION = 1024;
 #endif
@@ -120,7 +126,24 @@ const int Model::bufferSize = Model::MAX_VERTICES * Vertex::SIZE;
 
 GPUTexture Model::deformationNodes = GPUTexture(NODE_TEXTURE_DIMENSION, 1, GL_LUMINANCE32F_ARB, GL_LUMINANCE, GL_FLOAT);
 
-Model::Model(unsigned char id, float confidenceThresh, bool enableFillIn, bool enableErrorRecording, bool enablePoseLogging,
+tracker::KeypointPtr project_kp(const tracker::KeypointPtr &origin_kp, const Eigen::Isometry3d &T)
+{
+  if (origin_kp==nullptr)
+    return nullptr;
+
+  // project keypoint from origin frame (camera) to local model frame
+  return  std::make_shared<tracker::Keypoint>(tracker::Keypoint{
+                            origin_kp->timestamp,
+                            origin_kp->xy,
+                            T * origin_kp->coordinate.transpose(),
+                            origin_kp->descriptor});
+};
+
+static bool point_inside(const cv::Point &point, const cv::Mat &img) {
+  return point.inside({{}, img.size()});
+}
+
+Model::Model(unsigned char id, float confidenceThresh, const OdometryConfig &odom_cfg, bool enableFillIn, bool enableErrorRecording, bool enablePoseLogging,
              MatchingType matchingType, float maxDepthThesh)
     : pose(Eigen::Matrix4f::Identity()),
       lastPose(Eigen::Matrix4f::Identity()),
@@ -134,8 +157,7 @@ Model::Model(unsigned char id, float confidenceThresh, bool enableFillIn, bool e
                    ? std::make_unique<GPUTexture>(Resolution::getInstance().width(), Resolution::getInstance().height(), GL_R32F, GL_RED,
                                                   GL_FLOAT, true, true, cudaGraphicsRegisterFlagsSurfaceLoadStore, "ICP")
                    : nullptr),
-      rgbError(
-          /*enableErrorRecording ? std::make_unique<GPUTexture>(Resolution::getInstance().width(), Resolution::getInstance().height(), GL_R32F, GL_RED, GL_FLOAT, true, true, cudaGraphicsRegisterFlagsSurfaceLoadStore, "RGB") :*/ nullptr),  // FIXME
+      rgbError(enableErrorRecording ? std::make_unique<GPUTexture>(Resolution::getInstance().width(), Resolution::getInstance().height(), GL_R32F, GL_RED, GL_FLOAT, true, true, cudaGraphicsRegisterFlagsSurfaceLoadStore, "RGB") : nullptr),  // FIXME
       gpu(Model::GPUSetup::getInstance()),
       frameToModel(Resolution::getInstance().width(), Resolution::getInstance().height(), Intrinsics::getInstance().cx(),
                    Intrinsics::getInstance().cy(), Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), id),
@@ -389,6 +411,7 @@ void Model::performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight,
   lastPose = pose;
 
   // TODO Allow fillIn again
+  // move "old" next to last keypoints and images
   initICP(doFillIn, frameToFrameRGB, maxDepthProcessed, rgb);  // TODO: Don't copy RGB
 
   TICK("odom - Model: " + std::to_string(id));
@@ -402,7 +425,451 @@ void Model::performTracking(bool frameToFrameRGB, bool rgbOnly, float icpWeight,
   pose.topRightCorner(3, 1) = transObject;
   pose.topLeftCorner(3, 3) = rotObject;
 
+  timestamp_ns.push_back(logTimestamp);
+  poses.emplace_back(pose);
+
   TOCK("odom - Model: " + std::to_string(id));
+}
+
+std::tuple<Eigen::MatrixXd, Model::MatrixXp2, Model::MatrixXp3>
+Model::computeTrackProjectionError(const tracker::Tracks &tracks) {
+  // L2 distances of local points to previous point, Ntracks x Nimages
+  Eigen::MatrixXd track_pe(int(tracks.size()), 0);
+  MatrixXp2 track_xy(int(tracks.size()), 0);
+  MatrixXp3 track_p(int(tracks.size()), 0);
+
+  int it=0;
+  for (const tracker::TrackPtr &track : tracks) {
+    // resize the projection error matrix, assumes that all tracks have same length
+    const int len_dist = int(track->size()-1);
+    if (track_pe.cols() != len_dist) {
+      track_pe.resize(Eigen::NoChange, len_dist);
+    }
+
+    for (int ik=0; ik<len_dist; ik++) {
+      if ((*track)[size_t(ik)] != nullptr && (*track)[size_t(ik+1)] != nullptr) {
+        track_pe(it,ik) = ((*track)[size_t(ik+1)]->coordinate - (*track)[size_t(ik)]->coordinate).norm();
+      }
+      else {
+        track_pe(it,ik) = std::numeric_limits<double>::quiet_NaN();
+      }
+    }
+
+    if (track_xy.cols() != int(track->size())) {
+      track_xy.resize(Eigen::NoChange, int(track->size()));
+    }
+    if (track_p.cols() != int(track->size())) {
+      track_p.resize(Eigen::NoChange, int(track->size()));
+    }
+    for (size_t ik=0; ik<track->size(); ik++) {
+      track_xy(it,int(ik)) = ((*track)[ik] == nullptr) ? cv::Point(-1,-1) : (*track)[ik]->xy;
+      track_p(it,int(ik)) = ((*track)[ik] == nullptr) ? Eigen::RowVector3d::Constant(std::numeric_limits<double>::quiet_NaN()) : (*track)[ik]->coordinate;
+    }
+
+    it++;
+  } // tracks
+
+  return {track_pe, track_xy, track_p};
+}
+
+tracker::Tracks Model::computeTrackProjectionLastFrame(const tracker::Tracks& tracks, const size_t length) const {
+  assert(!poses.empty());
+  tracker::Tracks ltracks(tracks.size()); // local tracks
+
+  const size_t len_vis = (length==0) ? poses.size() : std::min(length, poses.size());
+
+  // camera intrinsics
+  const Eigen::Array2d c(Intrinsics::getInstance().cx(), Intrinsics::getInstance().cy());
+  const Eigen::Array2d f(Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy());
+
+  for (size_t it=0; it<tracks.size(); it++) {
+    ltracks[it] = std::make_shared<tracker::Track>();
+    for (size_t ip=poses.size()-len_vis; ip<poses.size(); ip++) {
+      const size_t id = tracks[it]->size() - poses.size() + ip;
+
+      // project 3D keypoints from previous frames into current frame
+      tracker::KeypointPtr kp = project_kp((*tracks[it])[id], (poses.at(ip)*Eigen::Isometry3f(pose.inverse())).cast<double>());
+
+      if (kp) {
+        // project onto 2D image plane
+        const Eigen::Array3d p3 = kp->coordinate;
+        const Eigen::Vector2i p2 = (c + (p3 / p3.z()).head<2>() * f).array().round().cast<int>();
+        kp->xy = {p2.x(), p2.y()};
+      }
+
+      ltracks[it]->push_back(kp);
+    }
+  }
+
+  return ltracks;
+}
+
+tracker::Tracks Model::computeTrackProjectionFirstFrame() const {
+  assert(poses.size() == timestamp_ns.size());
+  tracker::Tracks local_tracks;
+  for (const tracker::TrackPtr &track : tracks) {
+    if (track->empty())
+      continue;
+    local_tracks.push_back(std::make_shared<tracker::Track>(poses.size(), nullptr));
+    assert(track->size() >= poses.size());
+    const size_t offset = track->size() - poses.size();
+    for (size_t ip=0; ip<poses.size(); ip++) {
+      (*local_tracks.back())[ip] = project_kp((*track)[offset+ip], poses.at(ip).cast<double>());
+    }
+  }
+  return local_tracks;
+}
+
+tracker::Tracks Model::computeTrackProjectionStartEnd(const tracker::Tracks& tracks, const size_t length) {
+  assert(!poses.empty());
+
+  const size_t len_vis = (length==0) ? poses.size() : std::min(length, poses.size());
+
+  // camera intrinsics
+  const Eigen::Array2d c(Intrinsics::getInstance().cx(), Intrinsics::getInstance().cy());
+  const Eigen::Array2d f(Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy());
+
+  // start and end points in camera frame
+  Eigen::MatrixX3d coordinates_start(tracks.size(), 3);
+  Eigen::MatrixX3d coordinates_end(tracks.size(), 3);
+  coordinates_start.setConstant(std::numeric_limits<double>::signaling_NaN());
+  coordinates_end.setConstant(std::numeric_limits<double>::signaling_NaN());
+
+  std::vector<uint64_t> ts_start(tracks.size(), 0);
+  std::vector<uint64_t> ts_end(tracks.size(), 0);
+  for (size_t i = 0; i < tracks.size(); ++i) {
+    const tracker::KeypointPtr &kp0 = (*(tracks[i]->end()-len_vis));
+    const tracker::KeypointPtr &kp1 = tracks[i]->back();
+    if (kp0!=nullptr && kp0->coordinate.array().isFinite().all()) {
+      coordinates_start.row(i) = kp0->coordinate;
+      ts_start[i] = kp0->timestamp;
+    }
+
+    if (kp1!=nullptr && kp1->coordinate.array().isFinite().all()) {
+      coordinates_end.row(i) = kp1->coordinate;
+      ts_end[i] = kp1->timestamp;
+    }
+  }
+
+  // transform to local model frames
+  coordinates_start = (((*(poses.end()-len_vis)*Eigen::Isometry3f(pose.inverse())).cast<double>()) * coordinates_start.transpose()).transpose();
+  coordinates_end = (((poses.back()*Eigen::Isometry3f(pose.inverse())).cast<double>()) * coordinates_end.transpose()).transpose();
+
+  // project to image plane
+  auto proj = [&c,&f](const Eigen::MatrixX3d &points) -> Eigen::MatrixX2d {
+    return ((points.leftCols<2>().array().colwise() / points.rightCols<1>().array()).leftCols<2>().rowwise() * f.transpose()).rowwise() + c.transpose();
+  };
+
+  const Eigen::MatrixX2i x_start = proj(coordinates_start).array().round().cast<int>();
+  const Eigen::MatrixX2i x_end = proj(coordinates_end).array().round().cast<int>();
+
+  auto make_kp = [](const uint64_t timestamp, const Eigen::RowVector2i &xy, const Eigen::RowVector3d &coordinate) -> tracker::KeypointPtr {
+    if (timestamp==0) { return nullptr; }
+    return std::make_shared<tracker::Keypoint>(tracker::Keypoint{.timestamp = timestamp, .xy = {xy.x(), xy.y()}, .coordinate = coordinate});
+  };
+
+  tracker::Tracks ltracks(tracks.size()); // local tracks
+  for (size_t i = 0; i < ltracks.size(); ++i) {
+    ltracks[i] = std::make_shared<tracker::Track>();
+    ltracks[i]->push_back(make_kp(ts_start[i], x_start.row(i), coordinates_start.row(i)));
+    ltracks[i]->push_back(make_kp(ts_end[i], x_end.row(i), coordinates_end.row(i)));
+  }
+
+  return ltracks;
+}
+
+cv::Mat Model::drawLocalTracks2D(const tracker::Tracks &tracks, const cv::Mat &img, int msize, bool mscale) {
+  cv::Mat img_tracks;
+  cv::cvtColor(img, img_tracks, cv::COLOR_RGB2GRAY);
+  cv::cvtColor(img_tracks, img_tracks, cv::COLOR_GRAY2RGB);
+  std::uniform_real_distribution<double> u(0,1);
+  std::default_random_engine g;
+  size_t i = 0;
+  for (const tracker::TrackPtr &track : tracks) {
+    // unique colour
+    g.seed(i++);
+    const cv::viz::Color c(u(g)*255, u(g)*255, u(g)*255);
+    tracker::KeypointPtr kp_start;
+    tracker::KeypointPtr prev_kp;
+    for (const tracker::KeypointPtr &kp : *track) {
+      if (kp && point_inside(kp->xy, img)) {
+        if (prev_kp && point_inside(prev_kp->xy, img)) {
+          cv::line(img_tracks, kp->xy, prev_kp->xy, c, 2);
+        }
+        else {
+          kp_start = kp;
+        }
+      }
+      prev_kp = kp;
+    }
+
+    if (!(kp_start && prev_kp) || (kp_start == prev_kp))
+      continue;
+
+    // scale marker size if given in in pxl/s
+    const float duration = mscale  ? abs((prev_kp->timestamp - kp_start->timestamp) * 1e-9) : 1;
+    // start marker
+    cv::circle(img_tracks, kp_start->xy, msize * duration, c, 1, cv::LINE_AA);
+    // end marker
+    cv::drawMarker(img_tracks, prev_kp->xy, c, cv::MARKER_TILTED_CROSS, msize * duration, 1, cv::LINE_AA);
+  }
+  return img_tracks;
+}
+
+void Model::initGlobalTracks(const tracker::Tracks& tracks, const Eigen::Isometry3f &initial_pose, const uint64_t &time) {
+  assert(poses.size()==0);
+  assert(this->tracks.size()==0);
+
+  this->tracks = {tracks.begin(), tracks.end()};
+
+  timestamp_ns.push_back(time);
+  poses.emplace_back(initial_pose);
+}
+
+void Model::updateTracks(const tracker::Tracks& tracks_add, const tracker::Tracks& tracks_remove) {
+  assert(!poses.empty());
+
+  // add new inlier tracks with new pose estimates
+  this->tracks.insert(tracks_add.begin(), tracks_add.end());
+
+  // remove outlier tracks
+  for (const tracker::TrackPtr &track : tracks_remove) {
+    this->tracks.erase(track);
+  }
+}
+
+void Model::removeLastTrackKeypoint() {
+  for (const tracker::TrackPtr &track : tracks_local) {
+    if (!track->empty())
+      track->pop_back();
+  }
+}
+
+void Model::refineTrackSubset(const tracker::Tracks& tracks, const ModelPointer &parent, const size_t &history) {
+  if (tracks.empty()) { return; }
+
+  // pose to 7D (px, py, pz, qx, qy, qz, qw)
+  auto pose_7d = [](const Eigen::Isometry3f &pose) -> Eigen::Matrix<float, 7, 1> {
+    Eigen::Matrix<float, 7, 1> p7d;
+    // x, y, z
+    p7d.head<3>() = pose.translation();
+    // x, y, z, w
+    p7d.tail<4>() << Eigen::Quaternionf(pose.rotation()).coeffs();
+    return p7d;
+  };
+
+  // apply RANSAC on every set of track segments
+  // model must have 60% of samples within 3cm error
+  // this assumes that the 'tracks' are already associated to the model via segments
+  RigidRANSAC rrs(10, 0.03f, 0.6f);
+
+  const size_t len = std::min((*tracks.begin())->size(), history);
+  // branch index
+  const size_t end = parent->poses.size()-1;
+  // point to which estimate the poses of new object
+  const size_t start = end-len+1;
+  timestamp_ns.resize(len);
+  poses.resize(len);
+  poses[0].setIdentity();
+  if (isLoggingPoses()) {
+    poseLog.push_back(parent->poseLog[start]);
+    timestamp_ns[0] = parent->poseLog[start].ts;
+  }
+
+  const size_t ntracks = tracks.size();
+  for (size_t ik=0, jk=1; jk < len; jk++) {
+    Eigen::MatrixX3f p0s, p1s;
+    p0s.resize(int(ntracks), Eigen::NoChange);
+    p1s.resize(int(ntracks), Eigen::NoChange);
+
+    int nvalid = 0;
+    uint64_t t1 = 0; // timestamp
+    for (const tracker::TrackPtr &track : tracks) {
+      if ((*track)[start+ik] && (*track)[start+jk]) {
+        t1 = track->at(start+jk)->timestamp;
+        const Eigen::RowVector3d &p0 = track->at(start+ik)->coordinate;
+        const Eigen::RowVector3d &p1 = track->at(start+jk)->coordinate;
+        if (p0.array().isFinite().all() && p1.array().isFinite().all()) {
+          p0s.row(nvalid) = p0.cast<float>();
+          p1s.row(nvalid) = p1.cast<float>();
+          nvalid++;
+        }
+      }
+    }
+    p0s.conservativeResize(nvalid, Eigen::NoChange);
+    p1s.conservativeResize(nvalid, Eigen::NoChange);
+
+    timestamp_ns[jk] = t1;
+
+    // skip to the next frame if there are not enough correspondences
+    if (nvalid<3) {
+      poses[jk] = poses.at(ik);
+      if (isLoggingPoses()) {
+        const Eigen::Isometry3f Two = Eigen::Isometry3f(parent->getPose()) * poses[jk].inverse();
+        poseLog.push_back({int64_t(t1), pose_7d(Two)});
+      }
+      continue;
+    }
+
+    // least squares estimate
+    const Eigen::Isometry3f T_01 = rrs.estimate(p0s, p1s).transformation;
+    assert(T_01.matrix().array().isFinite().all());
+    poses[jk] = poses.at(ik) * T_01;
+    if (isLoggingPoses()) {
+      const Eigen::Isometry3f Two = Eigen::Isometry3f(parent->getPose()) * poses[jk].inverse();
+      poseLog.push_back({int64_t(t1), pose_7d(Two)});
+    }
+
+    ik = jk;
+  }
+
+  // transform the pose trajectory such that the end (current time) is at origin
+  for (Eigen::Isometry3f &p : poses) {
+    p = poses.back().inverse() * p;
+  }
+
+  // the new 'initial' pose is the pose at the end of the track
+  overridePose(poses.back().matrix()); // this should be close to identity
+
+  // the 'poseLog' is extended later via 'pose', remove the last log again
+  poseLog.pop_back();
+}
+
+RigidRANSAC::Result Model::getLastTrackTransform(const tracker::Tracks &tracks,
+                                                 const RigidRANSAC::Config &config) {
+  const size_t ntracks = tracks.size();
+  Eigen::MatrixX3f p0s, p1s;
+  p0s.resize(int(ntracks), Eigen::NoChange);
+  p1s.resize(int(ntracks), Eigen::NoChange);
+
+  int nvalid = 0;
+  for (const tracker::TrackPtr &track : tracks) {
+    if (track->empty())
+      continue;
+    tracker::KeypointPtr kp0 = track->end()[-2];
+    tracker::KeypointPtr kp1 = track->end()[-1];
+    if (kp0 && kp1) {
+      const Eigen::RowVector3d &p0 = kp0->coordinate;
+      const Eigen::RowVector3d &p1 = kp1->coordinate;
+      if (p0.array().isFinite().all() && p1.array().isFinite().all()) {
+        p0s.row(nvalid) = p0.cast<float>();
+        p1s.row(nvalid) = p1.cast<float>();
+        nvalid++;
+      }
+    }
+  }
+  p0s.conservativeResize(nvalid, Eigen::NoChange);
+  p1s.conservativeResize(nvalid, Eigen::NoChange);
+
+  // skip to the next frame if there are not enough correspondences
+  if (nvalid<3) {
+    return {.transformation = Eigen::Isometry3f::Identity()};
+  }
+
+  // least squares estimate
+  RigidRANSAC rrs(config);
+  const RigidRANSAC::Result res = rrs.estimate(p0s, p1s);
+  assert(res.transformation.matrix().array().isFinite().all());
+  return res;
+}
+
+RigidRANSAC::Result Model::getLastTrackTransform() const {
+  return Model::getLastTrackTransform({this->tracks.begin(), this->tracks.end()});
+}
+
+RigidRANSAC::Result Model::getBestMatch(const std::vector<tracker::KeypointPtr> &keypoints, const RigidRANSAC::Config &config) const {
+  // no previously stored model
+  if (tracks_local.empty()) {
+    std::cout << "model " << getID() << " has no stored tracks" << std::endl;
+    return {};
+  }
+
+  const size_t nd = keypoints.front()->descriptor.size();
+
+  cv::Mat_<float> query(keypoints.size(), nd);
+  for (size_t i=0; i<keypoints.size(); i++) {
+    cv::eigen2cv(keypoints[i]->descriptor, query.row(i));
+  }
+
+  std::vector<Eigen::MatrixXf> model_descriptors(tracks_local.front()->size());
+  std::vector<Eigen::MatrixX3f> model_coordinates(tracks_local.front()->size());
+
+  for (size_t i=0; i<tracks_local.front()->size(); i++) {
+    size_t nkp_valid = 0;
+    for (size_t j=0; j<tracks_local.size(); j++) {
+      if (model_descriptors[i].size()==0) {
+        model_descriptors[i].resize(tracks_local.size(), nd);
+        model_coordinates[i].resize(tracks_local.size(), Eigen::NoChange);
+      }
+
+      const tracker::KeypointPtr &kpi = (*tracks_local[j])[i];
+      if (kpi && kpi->coordinate.allFinite()) {
+        model_descriptors[i].row(nkp_valid) = kpi->descriptor.cast<float>();
+        model_coordinates[i].row(nkp_valid) = kpi->coordinate.cast<float>();
+        nkp_valid++;
+      }
+    }
+
+    // only keep valid points
+    model_descriptors[i].conservativeResize(nkp_valid, Eigen::NoChange);
+  }
+
+  // convert Eigen to OpenCV matrix, skip time indices with empty data
+  std::vector<cv::Mat_<float>> model_descriptors_cv;
+  // map matches to time indices
+  std::unordered_map<size_t, size_t> match_ids;
+  size_t match_id = 0;
+  for (size_t i=0; i<model_descriptors.size(); i++) {
+    if (model_descriptors[i].rows()>0) {
+      model_descriptors_cv.emplace_back();
+      cv::eigen2cv(model_descriptors[i], model_descriptors_cv.back());
+      match_ids[match_id] = i;
+      match_id++;
+    }
+  }
+
+  // pairwise matching of query discriptors from current model/segment
+  // against all views of previous models
+  std::unordered_map<size_t, std::list<std::tuple<size_t, size_t>>> matches_views;
+  for (size_t i=0; i<model_descriptors_cv.size(); i++) {
+    cv::BFMatcher matcher(cv::NORM_L2, true);
+    std::vector<cv::DMatch> matches;
+    matcher.match(query, model_descriptors_cv[i], matches);
+    if (matches.size() >= 3) {
+      for (const cv::DMatch &match : matches) {
+        matches_views[i].push_back({match.queryIdx, match.trainIdx});
+      }
+    }
+  }
+
+  // RANSAC on all matches
+  RigidRANSAC ransac(config);
+  std::vector<RigidRANSAC::Result> estimates;
+  for (const auto &[id_view, matches] : matches_views) {
+    Eigen::MatrixX3f query(matches.size(), 3);
+    Eigen::MatrixX3f train(matches.size(), 3);
+    size_t imatch = 0;
+    for (const auto &[id_query, id_train] : matches) {
+      query.row(imatch) = keypoints[id_query]->coordinate.cast<float>();
+      train.row(imatch) = model_coordinates[match_ids.at(id_view)].row(id_train);
+      imatch++;
+    }
+    const RigidRANSAC::Result estimate = ransac.estimate(query, train);
+    if (estimate.inlier.count() > 0) {
+      estimates.push_back(estimate);
+    }
+  }
+
+  if (estimates.empty()) {
+    // no matching candidates
+    return {};
+  }
+
+  // find estimate with smallest error
+  auto min_ransac = [](const RigidRANSAC::Result &a, const RigidRANSAC::Result &b) {
+    return a.error < b.error;
+  };
+  return *std::min_element(estimates.begin(), estimates.end(), min_ransac);
 }
 
 float Model::computeFusionWeight(float weightMultiplier) const {
@@ -882,7 +1349,7 @@ ModelDetectionResult Model::detectInRegion(const FrameData& frame, const cv::Rec
   return ModelDetectionResult({Eigen::Matrix4f(), false});
 }
 
-Model::SurfelMap Model::downloadMap() {
+Model::SurfelMap Model::downloadMap() const {
   SurfelMap result;
   result.numPoints = count;
   result.data = std::make_unique<std::vector<Eigen::Vector4f>>();
@@ -915,6 +1382,227 @@ Model::SurfelMap Model::downloadMap() {
   return result;
 }
 
+void Model::exportTracksPLY(const tracker::Tracks &tracks, const std::string &path, const Eigen::Isometry3f &pose, bool with_descriptor, bool binary) {
+  std::stringstream ss_hdr, ss_vrt, ss_edg, ss_trk;
+
+  uint32_t vert_id = 0;
+  uint32_t edge_id = 0;
+  uint32_t trak_id = 0;
+  std::queue<uint32_t> edge_ids;  // store consecutive keypoint neighbour connections
+  std::vector<uint32_t> trak_ids; // store all keypoint IDs of a track
+  static constexpr uint32_t uint32_max = std::numeric_limits<uint32_t>::max();
+  for (const tracker::TrackPtr &track : tracks) {
+    // clear FIFO buffer
+    edge_ids = {};
+    trak_ids = {};
+    for (const tracker::KeypointPtr &kp : *track) {
+      // add valid points
+      if (kp!=nullptr && kp->coordinate.array().isFinite().all()) {
+        const Eigen::RowVector3f vertices = pose * kp->coordinate.cast<float>().transpose();
+        const Eigen::RowVectorXf descriptor = kp->descriptor.cast<float>();
+        assert(descriptor.size() <= std::numeric_limits<uint16_t>::max());
+        const uint16_t nd = descriptor.size();
+        if (binary) {
+          ss_vrt.write(reinterpret_cast<const char*>(vertices.data()), vertices.size() * sizeof(float));
+          if (with_descriptor) {
+            ss_vrt.write(reinterpret_cast<const char*>(&nd), sizeof(uint16_t));
+            ss_vrt.write(reinterpret_cast<const char*>(descriptor.data()), nd * sizeof(float));
+          }
+        }
+        else {
+          ss_vrt << vertices;
+          if (with_descriptor) {
+            ss_vrt << " " << nd << " " << descriptor;
+          }
+          ss_vrt << std::endl;
+        }
+
+        edge_ids.push(vert_id);
+        trak_ids.push_back(vert_id);
+        vert_id++;
+      }
+      else {
+        // if we encounter an invalid point, reset the track connection
+        while (edge_ids.size()!=0) { edge_ids.pop(); }
+
+        // mark an invalid keypoint by setting the maximum ID
+        trak_ids.push_back(uint32_max);
+      }
+
+      // add track edge
+      if (edge_ids.size()==2) {
+        if (binary) {
+          ss_edg.write(reinterpret_cast<const char*>(&edge_ids.front()), sizeof(uint32_t));
+          ss_edg.write(reinterpret_cast<const char*>(&edge_ids.back()), sizeof(uint32_t));
+        }
+        else {
+          ss_edg << edge_ids.front() << " " << edge_ids.back();
+          ss_edg << std::endl;
+        }
+        edge_id++;
+        edge_ids.pop();
+      }
+    }
+
+    const uint32_t nk = trak_ids.size();
+    if (binary) {
+      ss_trk.write(reinterpret_cast<const char*>(&nk), sizeof(uint32_t));
+      ss_trk.write(reinterpret_cast<const char*>(trak_ids.data()), nk * sizeof(uint32_t));
+    }
+    else {
+      ss_trk << nk;
+      for (size_t i = 0; i < trak_ids.size(); i++) {
+        ss_trk << " " << trak_ids[i];
+      }
+      ss_trk << std::endl;
+    }
+    trak_id++;
+  }
+
+  // PLY header
+  const std::string fmt = binary ? "binary_little_endian" : "ascii";
+  ss_hdr << "ply" << std::endl << "format " << fmt << " 1.0" << std::endl;
+
+  ss_hdr << "element vertex " << vert_id << std::endl;
+  for(const std::string &c : {"x", "y", "z"}) {
+    ss_hdr << "property float32 " << c << std::endl;
+  }
+  if (with_descriptor) {
+    ss_hdr << "property list uint16 float32 descriptor"  << std::endl;
+  }
+
+  ss_hdr << "element edge " << edge_id << std::endl;
+  ss_hdr << "property uint32 vertex1" << std::endl;
+  ss_hdr << "property uint32 vertex2" << std::endl;
+
+  ss_hdr << "element track " << trak_id << std::endl;
+  ss_hdr << "property list uint32 uint32 vertex_index"  << std::endl;
+
+  ss_hdr << "end_header" << std::endl;
+
+  std::ofstream file;
+  file.open(path);
+  file << ss_hdr.rdbuf();
+  file.close();
+
+  std::ios::openmode mode = std::ios::app;
+  if (binary)
+    mode |= std::ios::binary;
+
+  file.open(path, mode);
+  file << ss_vrt.rdbuf();
+  file << ss_edg.rdbuf();
+  file << ss_trk.rdbuf();
+  file.close();
+}
+
+void Model::exportTracksPLY(const std::string &export_dir, const Eigen::Isometry3f &global_pose, bool binary) const {
+  // pre-multiply the exported tracks with the pose of the global model (id=0, static environment)
+  // this transforms object tracks (id>0) from the start of their trajectory to the end
+  const Eigen::Isometry3f Tp = global_pose * Eigen::Isometry3f(getPose()).inverse();
+
+  const tracker::Tracks local_tracks = computeTrackProjectionFirstFrame();
+
+  exportTracksPLY(local_tracks, export_dir+"/tracks-"+std::to_string(getID())+".ply", Tp, false, binary);
+}
+
+void Model::exportModelPLY(const SurfelMap &surfels, const float conf_threshold, const std::string &path, const Eigen::Isometry3f &pose) {
+  // Open file
+  std::ofstream fs;
+  fs.open(path.c_str());
+
+  // Write header
+  fs << "ply";
+  fs << "\nformat "
+     << "binary_little_endian"
+     << " 1.0";
+
+  // Vertices
+  fs << "\nelement vertex " << surfels.numValid;
+  fs << "\nproperty float x"
+        "\nproperty float y"
+        "\nproperty float z";
+
+  fs << "\nproperty uchar red"
+        "\nproperty uchar green"
+        "\nproperty uchar blue";
+
+  fs << "\nproperty float nx"
+        "\nproperty float ny"
+        "\nproperty float nz";
+
+  fs << "\nproperty float radius";
+
+  fs << "\nend_header\n";
+
+  // Close the file
+  fs.close();
+
+  // Open file in binary appendable
+  std::ofstream fpout(path.c_str(), std::ios::app | std::ios::binary);
+
+  Eigen::Matrix4f Tn = Tn.inverse().transpose();
+
+  for (unsigned int i = 0; i < surfels.numPoints; i++) {
+    Eigen::Vector4f pos = (*surfels.data)[(i * 3) + 0];
+    float conf = pos[3];
+    pos[3] = 1;
+
+    if (conf > conf_threshold) {
+      Eigen::Vector4f col = (*surfels.data)[(i * 3) + 1];
+      Eigen::Vector4f nor = (*surfels.data)[(i * 3) + 2];
+      pos = pose * pos;
+      float radius = nor[3];
+      nor[3] = 0;
+      nor = Tn * nor;
+
+      nor[0] *= -1;
+      nor[1] *= -1;
+      nor[2] *= -1;
+
+      float value;
+      memcpy(&value, &pos[0], sizeof(float));
+      fpout.write(reinterpret_cast<const char*>(&value), sizeof(float));
+
+      memcpy(&value, &pos[1], sizeof(float));
+      fpout.write(reinterpret_cast<const char*>(&value), sizeof(float));
+
+      memcpy(&value, &pos[2], sizeof(float));
+      fpout.write(reinterpret_cast<const char*>(&value), sizeof(float));
+
+      unsigned char r = int(col[0]) >> 16 & 0xFF;
+      unsigned char g = int(col[0]) >> 8 & 0xFF;
+      unsigned char b = int(col[0]) & 0xFF;
+
+      fpout.write(reinterpret_cast<const char*>(&r), sizeof(unsigned char));
+      fpout.write(reinterpret_cast<const char*>(&g), sizeof(unsigned char));
+      fpout.write(reinterpret_cast<const char*>(&b), sizeof(unsigned char));
+
+      memcpy(&value, &nor[0], sizeof(float));
+      fpout.write(reinterpret_cast<const char*>(&value), sizeof(float));
+
+      memcpy(&value, &nor[1], sizeof(float));
+      fpout.write(reinterpret_cast<const char*>(&value), sizeof(float));
+
+      memcpy(&value, &nor[2], sizeof(float));
+      fpout.write(reinterpret_cast<const char*>(&value), sizeof(float));
+
+      memcpy(&value, &radius, sizeof(float));
+      fpout.write(reinterpret_cast<const char*>(&value), sizeof(float));
+    }
+  }
+
+  // Close file
+  fs.close();
+}
+
+void Model::exportModelPLY(const std::string &export_dir, const Eigen::Isometry3f &global_pose) const {
+  SurfelMap surfelMap = downloadMap();
+  surfelMap.countValid(getConfidenceThreshold());
+
+  exportModelPLY(surfelMap, getConfidenceThreshold(), export_dir + "cloud-"+std::to_string(getID())+".ply", Eigen::Isometry3f(global_pose.matrix() * getPose().inverse()));
+}
+
 void Model::performFillIn(GPUTexture* rawRGB, GPUTexture* rawDepth, bool frameToFrameRGB, bool lost) {
   if (fillIn) {
     TICK("FillIn");
@@ -923,4 +1611,80 @@ void Model::performFillIn(GPUTexture* rawRGB, GPUTexture* rawDepth, bool frameTo
     fillIn->image(getRGBProjection(), rawRGB, lost || frameToFrameRGB);
     TOCK("FillIn");
   }
+}
+
+void Model::store(const fs::path &model_db_path, const Eigen::Isometry3f &pose, bool clear) {
+  if (!tracks_local.empty()) {
+    // model has been stored before, skip
+    return;
+  }
+  const fs::path model_dir = model_db_path / fs::path("model-"+std::to_string(getID()));
+  if (!fs::exists(model_dir)) {
+    fs::create_directories(model_dir);
+  }
+
+  // project camera tracks to local frames
+  // this will only store the tracks (keypoint views) since the last model instantiation,
+  // i.e. this will override the keypoint views from the previous "sessions",
+  // so that only the latest keypoint views will be available for re-detection
+  // TODO: append to previous local tracks
+  tracks_local = computeTrackProjectionFirstFrame();
+
+  // export dense and sparse representation to disk
+  SurfelMap surfelMap = downloadMap();
+  surfelMap.countValid(getConfidenceThreshold());
+  exportModelPLY(surfelMap, getConfidenceThreshold(), model_dir / fs::path("cloud.ply"), pose);
+
+  exportTracksPLY(tracks_local, model_dir / fs::path("tracks.ply"), pose, true, true);
+
+  // clear camera tracks
+  if (clear)
+    tracks.clear();
+}
+
+void Model::activate(const Eigen::Isometry3f &pose, const int64_t& timestamp) {
+  // restore tracks
+  tracks.clear();
+  tracks.insert(tracks_local.cbegin(), tracks_local.cend());
+  // set new pose with current timestamp
+  overridePose(pose.matrix());
+  poses.clear();
+  poses.push_back(pose);
+  timestamp_ns.clear();
+  timestamp_ns.push_back(timestamp);
+}
+
+bool Model::load(const fs::path &model_path) {
+  // sparse data
+  happly::PLYData sparse(model_path / fs::path("tracks.ply"));
+  sparse.validate();
+
+  // keypoint coordinates and descriptors
+  const std::vector<std::array<double, 3>> coordinates = sparse.getVertexPositions();
+  const std::vector<std::vector<float>> descriptors = sparse.getElement("vertex").getListProperty<float>("descriptor");
+  const std::vector<std::vector<uint32_t>> tracks = sparse.getElement("track").getListProperty<uint32_t>("vertex_index");
+
+  this->tracks.clear();
+  static constexpr uint32_t uint32_max = std::numeric_limits<uint32_t>::max();
+  for (const std::vector<uint32_t> &track_ids : tracks) {
+    tracker::TrackPtr track = std::make_shared<tracker::Track>();
+    for (const uint32_t &kpid : track_ids) {
+      tracker::KeypointPtr kp;
+      if (kpid == uint32_max) {
+        // invalid
+        kp = nullptr;
+      }
+      else {
+        // valid
+        kp = std::make_shared<tracker::Keypoint>();
+        kp->coordinate = Eigen::Map<const Eigen::RowVector3d>(coordinates[kpid].data());
+        kp->descriptor = Eigen::Map<const Eigen::RowVectorXf>(descriptors[kpid].data(), descriptors[kpid].size()).cast<double>();
+      }
+      track->push_back(kp);
+    }
+
+    this->tracks_local.push_back(track);
+  }
+
+  return true;
 }

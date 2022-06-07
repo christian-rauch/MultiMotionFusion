@@ -26,6 +26,7 @@
 #endif
 #ifdef ROSNODE
 #include "Tools/RosNodeReader.hpp"
+#include "Tools/RosStatePublisher.hpp"
 #endif
 
 #include <boost/algorithm/string.hpp>
@@ -59,6 +60,7 @@
     -o      Open loop mode.
     -rl     Enable relocalisation.
     -fs     Frame skip if processing a log to simulate real-time.
+    -skip   Skip frames in regular intervals
     -fo     Fast odometry (single level pyramid).
     -nso    Disables SO(3) pre-alignment in tracking.
     -r      Rewind and loop log forever.
@@ -68,12 +70,27 @@
     -vxf    Use together with visionx point cloud reader option. Provide the name for the file.
 
     -static        Disable multi-model fusion.
+    -redetection   Re-detect previously modelled objects.
+    -restore       Load models from disk (default: /tmp/model_db/model-$ID)
     -confO         Initial surfel confidence threshold for objects (default 0.01).
     -confG         Initial surfel confidence threshold for scene (default 10.00).
     -segMinNew     Min size of new object segments (relative to image size)
     -segMaxNew     Max size of new object segments (relative to image size)
     -offset        Offset between creating models
     -keep          Keep all models (even bad, deactivated)
+    -model         Path to trained model for keypoint prediction
+    -lvl_init      image level [0...NUM_PYRS) for estimation initialisation
+    -lvl_segm      image level [0...NUM_PYRS) for flow-crf segmentation
+    -segm_mode      Mode for motion segmentation
+                    1. <empty>: reprojection of dense depth (default)
+                    2. "flow_crf": sparse keypoint reprojection with optical flow CRF
+    -segm_sp_size   size (edge length in pixels) of super pixel (default: 16 pixel)
+    -init           initialise ICP odometry
+                    - (empty): do not initialise, effectively sets initial transformation to identity
+                    - "kp": transformation between keypoint tracks
+                    - "tf": transformation from log file
+    -init_frame     frame name as "tf" initialisation source (default: colour optical frame)
+    -icp_refine     refine via ICP after initialisation (only considered if 'track_init' is set)
 
     -l             Processes a log-file (*.klg/pangolin/rosbag).
     -topic_colour  ROS topic for colour images (sensor_msgs/CompressedImage)
@@ -103,7 +120,7 @@
  */
 
 MainController::MainController(int argc, char* argv[])
-    : good(true), coFusion(0), gui(0), groundTruthOdometry(0), logReader(nullptr), framesToSkip(0), resetButton(false), resizeStream(0) {
+    : good(true), mmf(0), gui(0), groundTruthOdometry(0), logReader(nullptr), framesToSkip(0), resetButton(false), resizeStream(0) {
   std::string empty;
   float tmpFloat;
   iclnuim = Parse::get().arg(argc, argv, "-icl", empty) > -1;
@@ -156,6 +173,13 @@ MainController::MainController(int argc, char* argv[])
     }
   }
 
+  Parse::get().arg(argc, argv, "-init", odom_cfg.init);
+  Parse::get().arg(argc, argv, "-init_frame", odom_cfg.init_frame);
+  odom_cfg.icp_refine = Parse::get().arg(argc, argv, "-icp_refine", empty) > -1;
+
+  Parse::get().arg(argc, argv, "-lvl_init", odom_cfg.init_lvl);
+  Parse::get().arg(argc, argv, "-lvl_segm", odom_cfg.segm_lvl);
+
   Parse::get().arg(argc, argv, "-l", logFile);
   if (logFile.length()) {
     if (std::filesystem::exists(logFile) && boost::algorithm::ends_with(logFile, ".klg")) {
@@ -171,7 +195,8 @@ MainController::MainController(int argc, char* argv[])
                                                  topic_img_depth,
                                                  topic_info_camera,
                                                  Parse::get().arg(argc, argv, "-f", empty) > -1,
-                                                 target_dim);
+                                                 target_dim,
+                                                 odom_cfg.init_frame);
 #endif
     } else {
       logReader = std::make_unique<PangolinReader>(logFile, Parse::get().arg(argc, argv, "-f", empty) > -1);
@@ -217,10 +242,18 @@ MainController::MainController(int argc, char* argv[])
   }
 
 #ifdef ROSNODE
-  if (!logReader && Parse::get().arg(argc, argv, "-ros", empty) > 0) {
+  if (Parse::get().arg(argc, argv, "-ros", empty) > 0) {
+    // instantiate MultiMotionFusion node
     ros::init(argc, argv, "MMF");
-    logReader = std::make_unique<RosNodeReader>(15, Parse::get().arg(argc, argv, "-f", empty) > -1, target_dim);
-    logReaderReady = true;
+    // read RGB-D data
+    if (!logReader) {
+      logReader = std::make_unique<RosNodeReader>(15, Parse::get().arg(argc, argv, "-f", empty) > -1, target_dim);
+      logReaderReady = true;
+    }
+    // publish segmentation and point clouds
+    // TODO: get camera frame from input images
+    state_publisher = std::make_unique<RosStatePublisher>("rgb_camera_link");
+    ui_control = std::make_unique<RosInterface>(&gui, &mmf);
   }
 #endif
 
@@ -234,15 +267,24 @@ MainController::MainController(int argc, char* argv[])
     loadCalibration(logReader->getIntinsicsFile());
   }
 
-  if (Parse::get().arg(argc, argv, "-p", poseFile) > 0) {
+  // initially assume we use "tf" init
+  gt_init = dynamic_cast<GroundTruthOdometryInterface *>(logReader.get());
+
+  if (Parse::get().arg(argc, argv, "-p", poseFile) > 0 || odom_cfg.init == "tf") {
     if (std::filesystem::exists(poseFile)) {
       groundTruthOdometry = new GroundTruthOdometry(poseFile);
       gt_odom = dynamic_cast<GroundTruthOdometryInterface *>(groundTruthOdometry);
     }
+    else if (!gt_init) {
+      throw std::invalid_argument("log reader does not provide ground truth poses");
+    }
+
+    if (odom_cfg.init == "tf") {
+      gt_odom = nullptr;
+    }
     else {
-      gt_odom = dynamic_cast<GroundTruthOdometryInterface *>(logReader.get());
-      if (!gt_odom)
-        throw std::invalid_argument("log reader does not provide ground truth poses");
+      gt_odom = gt_init;
+      gt_init = nullptr;
     }
   }
 
@@ -277,6 +319,7 @@ MainController::MainController(int argc, char* argv[])
   openLoop = true;  // FIXME //!groundTruthOdometry && (Parse::get().arg(argc, argv, "-o", empty) > -1);
   reloc = Parse::get().arg(argc, argv, "-rl", empty) > -1;
   frameskip = Parse::get().arg(argc, argv, "-fs", empty) > -1;
+  Parse::get().arg(argc, argv, "-skip", min_frame_skip);
   quit = Parse::get().arg(argc, argv, "-q", empty) > -1;
   fastOdom = Parse::get().arg(argc, argv, "-fo", empty) > -1;
   rewind = Parse::get().arg(argc, argv, "-r", empty) > -1;
@@ -305,9 +348,19 @@ MainController::MainController(int argc, char* argv[])
   if (Parse::get().arg(argc, argv, "-thNew", tmpFloat) > -1) gui->thresholdNew->Ref()->Set(tmpFloat);
   if (Parse::get().arg(argc, argv, "-k", tmpFloat) > -1) gui->unaryErrorK->Ref()->Set(tmpFloat);
 
+  Parse::get().arg(argc, argv, "-model", keypoint_model_path);
+
+  Parse::get().arg(argc, argv, "-segm_mode", segm_cfg.mode);
+
+  Parse::get().arg(argc, argv, "-segm_sp_size", segm_cfg.sp_size);
+
+
   gui->flipColors->Ref()->Set(logReader->flipColors);
   gui->rgbOnly->Ref()->Set(false);
   gui->enableMultiModel->Ref()->Set(Parse::get().arg(argc, argv, "-static", empty) <= -1);
+  if (Parse::get().arg(argc, argv, "-redetection", empty) > 0) {
+    gui->enableRedetection->Ref()->Set(true);
+  }
   gui->enableSmartDelete->Ref()->Set(Parse::get().arg(argc, argv, "-keep", empty) <= -1);
   gui->pyramid->Ref()->Set(true);
   gui->fastOdom->Ref()->Set(fastOdom);
@@ -317,6 +370,8 @@ MainController::MainController(int argc, char* argv[])
   gui->pause->Ref()->Set((Parse::get().arg(argc, argv, "-run", empty) <= -1));
   // gui->pause->Ref()->Set(logFile.length());
   // gui->pause->Ref()->Set(!showcaseMode);
+
+  restore = Parse::get().arg(argc, argv, "-restore", empty) > 0;
 
   resizeStream = new GPUResize(Resolution::getInstance().width(), Resolution::getInstance().height(), Resolution::getInstance().width() / 2,
                                Resolution::getInstance().height() / 2);
@@ -348,8 +403,8 @@ MainController::MainController(int argc, char* argv[])
 }
 
 MainController::~MainController() {
-  if (coFusion) {
-    delete coFusion;
+  if (mmf) {
+    delete mmf;
   }
 
   if (gui) {
@@ -388,33 +443,51 @@ void MainController::loadCalibration(const std::string& filename) {
 
 void MainController::launch() {
   while (good) {
-    if (coFusion) {
+    if (mmf) {
       run();
     }
 
-    if (coFusion == 0 || resetButton) {
+    if (mmf == 0 || resetButton) {
       resetButton = false;
 
-      if (coFusion) {
-        delete coFusion;
+      if (mmf) {
+        delete mmf;
         cudaCheckError();
       }
 
-      coFusion = new CoFusion(openLoop ? std::numeric_limits<int>::max() / 2 : timeDelta, icpCountThresh, icpErrThresh, covThresh,
+#ifdef ROSNODE
+    if (state_publisher) {
+      state_publisher->reset();
+    }
+#endif
+
+      mmf = new MultiMotionFusion(openLoop ? std::numeric_limits<int>::max() / 2 : timeDelta, icpCountThresh, icpErrThresh, covThresh,
                               !openLoop, iclnuim, reloc, photoThresh, confGlobalInit, confObjectInit, gui->depthCutoff->Get(),
                               gui->icpWeight->Get(), fastOdom, fernThresh, so3, frameToFrameRGB, gui->modelSpawnOffset->Get(),
-                              Model::MatchingType::Drost, exportDir, exportSegmentation);
+                              Model::MatchingType::Drost, exportDir, exportSegmentation, keypoint_model_path, odom_cfg, segm_cfg);
 
-      coFusion->preallocateModels(preallocatedModelsCount);
+      if (restore) {
+        mmf->loadModels();
+      }
 
-      auto globalModel = coFusion->getBackgroundModel();
+      mmf->preallocateModels(preallocatedModelsCount);
+
+      auto globalModel = mmf->getBackgroundModel();
       gui->addModel(globalModel->getID(), globalModel->getConfidenceThreshold());
 
-      coFusion->addNewModelListener(
+      mmf->addNewModelListener(
           [this](std::shared_ptr<Model> model) { gui->addModel(model->getID(), model->getConfidenceThreshold()); });
       // eFusion->addNewModelListener([this](std::shared_ptr<Model> model){
       //    gui->addModel(model->getID(), model->getConfidenceThreshold());}
       //);
+
+#ifdef ROSNODE
+    if (state_publisher) {
+      MultiMotionFusion::StatusMessageHandler send_status_message = std::bind(&RosStatePublisher::send_status_message, state_publisher.get(), std::placeholders::_1);
+      mmf->setStatusMessageHandler(send_status_message);
+      send_status_message("modelling initialised");
+    }
+#endif
     } else {
       break;
     }
@@ -422,9 +495,9 @@ void MainController::launch() {
 }
 
 void MainController::run() {
-  while (!pangolin::ShouldQuit() && !((!logReader->hasMore()) && quit) && !(coFusion->getTick() == end && quit)) {
+  while (!pangolin::ShouldQuit() && !((!logReader->hasMore()) && quit) && !(mmf->getTick() == end && quit)) {
     if (!gui->pause->Get() || pangolin::Pushed(*gui->step)) {
-      if ((logReader->hasMore() || rewind) && coFusion->getTick() < end) {
+      if ((logReader->hasMore() || rewind) && mmf->getTick() < end) {
         TICK("LogRead");
         if (rewind) {
           if (!logReader->hasMore()) {
@@ -441,15 +514,15 @@ void MainController::run() {
         }
         TOCK("LogRead");
 
-        if (coFusion->getTick() < start) {
-          coFusion->setTick(start);
+        if (mmf->getTick() < start) {
+          mmf->setTick(start);
           logReader->fastForward(start);
         }
 
         float weightMultiplier = framesToSkip + 1;
 
         if (framesToSkip > 0) {
-          coFusion->setTick(coFusion->getTick() + framesToSkip);
+          mmf->setTick(mmf->getTick() + framesToSkip);
           logReader->fastForward(logReader->currentFrame + framesToSkip);
           framesToSkip = 0;
         }
@@ -462,22 +535,25 @@ void MainController::run() {
           *currentPose = gt_odom->getIncrementalTransformation(logReader->getFrameData().timestamp);
         }
 
-        if (coFusion->processFrame(logReader->getFrameData(), currentPose, weightMultiplier) && !showcaseMode) {
+        if (mmf->processFrame(logReader->getFrameData(), currentPose, weightMultiplier, gt_init) && !showcaseMode) {
           gui->pause->Ref()->Set(true);
+        }
+        if (Stopwatch::getInstance().getTimings().count("Run")) {
+          gui->timing->Ref()->Set(Stopwatch::getInstance().getTimings().at("Run"));
         }
 
         if (exportLabels) {
-          gui->saveColorImage(exportDir + "Labels" + std::to_string(coFusion->getTick() - 1));
+          gui->saveColorImage(exportDir + "Labels" + std::to_string(mmf->getTick() - 1));
           drawScene(DRAW_COLOR, DRAW_LABEL);
         }
 
         if (exportNormals) {
-          gui->saveColorImage(exportDir + "Normals" + std::to_string(coFusion->getTick() - 1));
+          gui->saveColorImage(exportDir + "Normals" + std::to_string(mmf->getTick() - 1));
           drawScene(DRAW_NORMALS, DRAW_NORMALS);
         }
 
         if (exportViewport) {
-          gui->saveColorImage(exportDir + "Viewport" + std::to_string(coFusion->getTick() - 1));
+          gui->saveColorImage(exportDir + "Viewport" + std::to_string(mmf->getTick() - 1));
           // drawScene();
         }
 
@@ -488,64 +564,60 @@ void MainController::run() {
         if (frameskip && Stopwatch::getInstance().getTimings().at("Run") > 1000.f / 30.f) {
           framesToSkip = int(Stopwatch::getInstance().getTimings().at("Run") / (1000.f / 30.f));
         }
+        framesToSkip = std::max(framesToSkip, min_frame_skip);
       }
     } else if (pangolin::Pushed(*gui->skip)) {
-      coFusion->setTick(coFusion->getTick() + 1);
+      mmf->setTick(mmf->getTick() + 1);
       logReader->fastForward(logReader->currentFrame + 1);
-    } else {
-      coFusion->predict();
-
-      // TODO Only if relevant setting changed (Deactivate when writing (debug/visualisation) images to hd
-      if (logReader->getFrameData().timestamp && (logReader->getFrameData().rgb.size().area()!=0)) {
-        coFusion->performSegmentation(logReader->getFrameData());
-      }
     }
 
     TICK("GUI");
 
     std::stringstream stri;
-    stri << coFusion->getModelToModel().lastICPCount;
+    stri << mmf->getModelToModel().lastICPCount;
     gui->trackInliers->Ref()->Set(stri.str());
 
     std::stringstream stre;
-    stre << (std::isnan(coFusion->getModelToModel().lastICPError) ? 0 : coFusion->getModelToModel().lastICPError);
+    stre << (std::isnan(mmf->getModelToModel().lastICPError) ? 0 : mmf->getModelToModel().lastICPError);
     gui->trackRes->Ref()->Set(stre.str());
 
     if (!gui->pause->Get()) {
-      gui->resLog.Log((std::isnan(coFusion->getModelToModel().lastICPError) ? std::numeric_limits<float>::max()
-                                                                            : coFusion->getModelToModel().lastICPError),
+      gui->resLog.Log((std::isnan(mmf->getModelToModel().lastICPError) ? std::numeric_limits<float>::max()
+                                                                            : mmf->getModelToModel().lastICPError),
                       icpErrThresh);
-      gui->inLog.Log(coFusion->getModelToModel().lastICPCount, icpCountThresh);
+      gui->inLog.Log(mmf->getModelToModel().lastICPCount, icpCountThresh);
     }
 
     drawScene();
 
     // SET PARAMETERS / SETTINGS
     logReader->flipColors = gui->flipColors->Get();
-    coFusion->setEnableMultipleModels(gui->enableMultiModel->Get());
-    coFusion->setEnableSmartModelDelete(gui->enableSmartDelete->Get());
-    coFusion->setRgbOnly(gui->rgbOnly->Get());
-    coFusion->setPyramid(gui->pyramid->Get());
-    coFusion->setFastOdom(gui->fastOdom->Get());
-    coFusion->setDepthCutoff(gui->depthCutoff->Get());
-    coFusion->setIcpWeight(gui->icpWeight->Get());
-    coFusion->setOutlierCoefficient(gui->outlierCoefficient->Get());
-    coFusion->setSo3(gui->so3->Get());
-    coFusion->setFrameToFrameRGB(gui->frameToFrameRGB->Get());
+    mmf->setEnableMultipleModels(gui->enableMultiModel->Get());
+    mmf->setEnableRedetection(gui->enableRedetection->Get());
+    mmf->setSetInhibit(gui->inhibitModels->Get());
+    mmf->setEnableSmartModelDelete(gui->enableSmartDelete->Get());
+    mmf->setRgbOnly(gui->rgbOnly->Get());
+    mmf->setPyramid(gui->pyramid->Get());
+    mmf->setFastOdom(gui->fastOdom->Get());
+    mmf->setDepthCutoff(gui->depthCutoff->Get());
+    mmf->setIcpWeight(gui->icpWeight->Get());
+    mmf->setOutlierCoefficient(gui->outlierCoefficient->Get());
+    mmf->setSo3(gui->so3->Get());
+    mmf->setFrameToFrameRGB(gui->frameToFrameRGB->Get());
 
-    coFusion->setModelSpawnOffset(gui->modelSpawnOffset->Get());
-    coFusion->setModelDeactivateCount(gui->modelDeactivateCnt->Get());
-    coFusion->setNewModelMinRelativeSize(gui->minRelSizeNew->Get());
-    coFusion->setNewModelMaxRelativeSize(gui->maxRelSizeNew->Get());
-    coFusion->setCrfPairwiseWeightAppearance(gui->pairwiseAppearanceWeight->Get());
-    coFusion->setCrfPairwiseWeightSmoothness(gui->pairwiseSmoothnessWeight->Get());
-    coFusion->setCrfPairwiseSigmaDepth(gui->pairwiseDepthSTD->Get());
-    coFusion->setCrfPairwiseSigmaPosition(gui->pairwisePosSTD->Get());
-    coFusion->setCrfPairwiseSigmaRGB(gui->pairwiseRGBSTD->Get());
-    coFusion->setCrfThresholdNew(gui->thresholdNew->Get());
-    coFusion->setCrfUnaryKError(gui->unaryErrorK->Get());
-    coFusion->setCrfUnaryWeightError(gui->unaryErrorWeight->Get());
-    coFusion->setCrfIteration(gui->crfIterations->Get());
+    mmf->setModelSpawnOffset(gui->modelSpawnOffset->Get());
+    mmf->setModelDeactivateCount(gui->modelDeactivateCnt->Get());
+    mmf->setNewModelMinRelativeSize(gui->minRelSizeNew->Get());
+    mmf->setNewModelMaxRelativeSize(gui->maxRelSizeNew->Get());
+    mmf->setCrfPairwiseWeightAppearance(gui->pairwiseAppearanceWeight->Get());
+    mmf->setCrfPairwiseWeightSmoothness(gui->pairwiseSmoothnessWeight->Get());
+    mmf->setCrfPairwiseSigmaDepth(gui->pairwiseDepthSTD->Get());
+    mmf->setCrfPairwiseSigmaPosition(gui->pairwisePosSTD->Get());
+    mmf->setCrfPairwiseSigmaRGB(gui->pairwiseRGBSTD->Get());
+    mmf->setCrfThresholdNew(gui->thresholdNew->Get());
+    mmf->setCrfUnaryKError(gui->unaryErrorK->Get());
+    mmf->setCrfUnaryWeightError(gui->unaryErrorWeight->Get());
+    mmf->setCrfIteration(gui->crfIterations->Get());
 
     resetButton = pangolin::Pushed(*gui->reset);
 
@@ -565,9 +637,9 @@ void MainController::run() {
       break;
     }
 
-    if (pangolin::Pushed(*gui->saveCloud)) coFusion->savePly();
+    if (pangolin::Pushed(*gui->saveCloud)) mmf->savePly();
     // if(pangolin::Pushed(*gui->saveDepth)) eFusion->saveDepth();
-    if (pangolin::Pushed(*gui->savePoses)) coFusion->exportPoses();
+    if (pangolin::Pushed(*gui->savePoses)) mmf->exportPoses();
     if (pangolin::Pushed(*gui->saveView)) {
       static int index = 0;
       std::string viewPath;
@@ -577,17 +649,25 @@ void MainController::run() {
       gui->saveColorImage(viewPath);
     }
 
+#ifdef ROSNODE
+    if (state_publisher) {
+      const int64_t time = logReader->getFrameData().timestamp;
+      state_publisher->pub_segmentation(mmf->getTextures()[GPUTexture::MASK_COLOR]->downloadTexture(), time);
+      state_publisher->pub_models(mmf->getModels(), time);
+    }
+#endif
+
     TOCK("GUI");
   }
-  if (exportPoses) coFusion->exportPoses();
-  if (exportModels) coFusion->savePly();
+  if (exportPoses) mmf->exportPoses();
+  if (exportModels) mmf->savePly();
 }
 
 void MainController::drawScene(DRAW_COLOR_TYPE backgroundColor, DRAW_COLOR_TYPE objectColor) {
   if (gui->followPose->Get()) {
     pangolin::OpenGlMatrix mv;
 
-    Eigen::Matrix4f currPose = coFusion->getCurrPose();
+    Eigen::Matrix4f currPose = mmf->getCurrPose();
     Eigen::Matrix3f currRot = currPose.topLeftCorner(3, 3);
 
     Eigen::Quaternionf currQuat(currRot);
@@ -617,22 +697,22 @@ void MainController::drawScene(DRAW_COLOR_TYPE backgroundColor, DRAW_COLOR_TYPE 
 
   gui->preCall();
 
-  Eigen::Matrix4f pose = coFusion->getCurrPose();
+  Eigen::Matrix4f pose = mmf->getCurrPose();
   Eigen::Matrix4f viewprojection =
       Eigen::Map<Eigen::Matrix<pangolin::GLprecision, 4, 4>>(gui->s_cam.GetProjectionModelViewMatrix().m).cast<float>();
 
   if (gui->drawRawCloud->Get() || gui->drawFilteredCloud->Get()) {
-    coFusion->computeFeedbackBuffers();
+    mmf->computeFeedbackBuffers();
   }
 
   if (gui->drawRawCloud->Get()) {
-    coFusion->getFeedbackBuffers()
+    mmf->getFeedbackBuffers()
         .at(FeedbackBuffer::RAW)
         ->render(gui->s_cam.GetProjectionModelViewMatrix(), pose, gui->drawNormals->Get(), gui->drawColors->Get());
   }
 
   if (gui->drawFilteredCloud->Get()) {
-    coFusion->getFeedbackBuffers()
+    mmf->getFeedbackBuffers()
         .at(FeedbackBuffer::FILTERED)
         ->render(gui->s_cam.GetProjectionModelViewMatrix(), pose, gui->drawNormals->Get(), gui->drawColors->Get());
   }
@@ -642,7 +722,7 @@ void MainController::drawScene(DRAW_COLOR_TYPE backgroundColor, DRAW_COLOR_TYPE 
     TICK("FXAA");
 
     gui->drawFXAA(viewprojection,  // gui->s_cam.GetProjectionModelViewMatrix(),
-                  pose, gui->s_cam.GetModelViewMatrix(), coFusion->getModels(), coFusion->getTick(), coFusion->getTimeDelta(), iclnuim);
+                  pose, gui->s_cam.GetModelViewMatrix(), mmf->getModels(), mmf->getTick(), mmf->getTimeDelta(), iclnuim);
 
     TOCK("FXAA");
 
@@ -656,19 +736,19 @@ void MainController::drawScene(DRAW_COLOR_TYPE backgroundColor, DRAW_COLOR_TYPE 
     if (objectColor != DRAW_USER_DEFINED) objectColorType = objectColor;
 
     if (gui->drawGlobalModel->Get()) {
-      coFusion->getBackgroundModel()->renderPointCloud(viewprojection, gui->drawUnstable->Get(), gui->drawPoints->Get(),
-                                                       gui->drawWindow->Get(), globalColorType, coFusion->getTick(),
-                                                       coFusion->getTimeDelta());
+      mmf->getBackgroundModel()->renderPointCloud(viewprojection, gui->drawUnstable->Get(), gui->drawPoints->Get(),
+                                                       gui->drawWindow->Get(), globalColorType, mmf->getTick(),
+                                                       mmf->getTimeDelta());
     }
 
-    auto itBegin = coFusion->getModels().begin();
+    auto itBegin = mmf->getModels().begin();
     itBegin++;  // Skip global
-    auto itEnd = coFusion->getModels().end();
+    auto itEnd = mmf->getModels().end();
     // int i = 0;
     for (auto model = itBegin; model != itEnd; model++) {
       if (gui->drawObjectModels->Get()) {
         (*model)->renderPointCloud(viewprojection * pose * (*model)->getPose().inverse(), gui->drawUnstable->Get(), gui->drawPoints->Get(),
-                                   gui->drawWindow->Get(), objectColorType, coFusion->getTick(), coFusion->getTimeDelta());
+                                   gui->drawWindow->Get(), objectColorType, mmf->getTick(), mmf->getTimeDelta());
 
         glFinish();
       }
@@ -676,7 +756,7 @@ void MainController::drawScene(DRAW_COLOR_TYPE backgroundColor, DRAW_COLOR_TYPE 
   }
   if (gui->drawPoseLog->Get()) {
     bool object = false;
-    for (auto& model : coFusion->getModels()) {
+    for (auto& model : mmf->getModels()) {
       const std::vector<Model::PoseLogItem>& poseLog = model->getPoseLog();
 
       glColor3f(0, 1, 1);
@@ -696,7 +776,7 @@ void MainController::drawScene(DRAW_COLOR_TYPE backgroundColor, DRAW_COLOR_TYPE 
 
   const bool drawCamera = true;
   if (drawCamera) {
-    coFusion->getLost() ? glColor3f(1, 1, 0) : glColor3f(1, 0, 1);
+    mmf->getLost() ? glColor3f(1, 1, 0) : glColor3f(1, 0, 1);
     gui->drawFrustum(pose);
 
     // Draw axis
@@ -722,16 +802,16 @@ void MainController::drawScene(DRAW_COLOR_TYPE backgroundColor, DRAW_COLOR_TYPE 
 
   if (gui->drawFerns->Get()) {
     glColor3f(0, 0, 0);
-    for (size_t i = 0; i < coFusion->getFerns().frames.size(); i++) {
-      if ((int)i == coFusion->getFerns().lastClosest) continue;
+    for (size_t i = 0; i < mmf->getFerns().frames.size(); i++) {
+      if ((int)i == mmf->getFerns().lastClosest) continue;
 
-      gui->drawFrustum(coFusion->getFerns().frames.at(i)->pose);
+      gui->drawFrustum(mmf->getFerns().frames.at(i)->pose);
     }
     glColor3f(1, 1, 1);
   }
 
   if (gui->drawDefGraph->Get()) {
-    const std::vector<GraphNode*>& graph = coFusion->getLocalDeformation().getGraph();
+    const std::vector<GraphNode*>& graph = mmf->getLocalDeformation().getGraph();
 
     for (size_t i = 0; i < graph.size(); i++) {
       pangolin::glDrawCross(graph.at(i)->position(0), graph.at(i)->position(1), graph.at(i)->position(2), 0.1);
@@ -744,13 +824,13 @@ void MainController::drawScene(DRAW_COLOR_TYPE backgroundColor, DRAW_COLOR_TYPE 
     }
   }
 
-  if (coFusion->getFerns().lastClosest != -1) {
+  if (mmf->getFerns().lastClosest != -1) {
     glColor3f(1, 0, 0);
-    gui->drawFrustum(coFusion->getFerns().frames.at(coFusion->getFerns().lastClosest)->pose);
+    gui->drawFrustum(mmf->getFerns().frames.at(mmf->getFerns().lastClosest)->pose);
     glColor3f(1, 1, 1);
   }
 
-  const std::vector<PoseMatch>& poseMatches = coFusion->getPoseMatches();
+  const std::vector<PoseMatch>& poseMatches = mmf->getPoseMatches();
 
   int maxDiff = 0;
   for (size_t i = 0; i < poseMatches.size(); i++) {
@@ -777,11 +857,11 @@ void MainController::drawScene(DRAW_COLOR_TYPE backgroundColor, DRAW_COLOR_TYPE 
 
   if (!showcaseMode) {
     // Generate textures, which are specifically for visualisation
-    coFusion->normaliseDepth(0.3f, gui->depthCutoff->Get());
-    coFusion->coloriseMasks();
+    mmf->normaliseDepth(0.3f, gui->depthCutoff->Get());
+    mmf->coloriseMasks();
 
     // Render textures to viewports
-    for (std::map<std::string, GPUTexture*>::const_iterator it = coFusion->getTextures().begin(); it != coFusion->getTextures().end();
+    for (std::map<std::string, GPUTexture*>::const_iterator it = mmf->getTextures().begin(); it != mmf->getTextures().end();
          ++it) {
       if (it->second->draw) {
         gui->displayImg(it->first, it->second);
@@ -789,15 +869,21 @@ void MainController::drawScene(DRAW_COLOR_TYPE backgroundColor, DRAW_COLOR_TYPE 
     }
 
     // gui->displayImg("IcpError", eFusion->getTextures()["ICP_ERROR"]);
-    gui->displayImg("ModelImg", coFusion->getIndexMap().getSplatImageTex());
+    gui->displayImg("ModelImg", mmf->getIndexMap().getSplatImageTex());
     // gui->displayImg("Model", eFusion->getIndexMap().getDrawTex());
 
-    auto itBegin = coFusion->getModels().begin();
-    auto itEnd = coFusion->getModels().end();
+    auto itBegin = mmf->getModels().begin();
+    auto itEnd = mmf->getModels().end();
     int i = 0;
     for (auto model = itBegin; model != itEnd; model++) {
       gui->displayImg("ICP" + std::to_string(++i), (*model)->getICPErrorTexture());
       // gui->displayImg("P" + std::to_string(i), (*model)->getUnaryConfTexture());
+      if (gui->showModProj->Get()) {
+        gui->displayImg("P" + std::to_string(i), (*model)->getRGBProjection());
+      }
+      else {
+        gui->displayImg("P" + std::to_string(i), (*model)->getRGBErrorTexture());
+      }
       if (i >= 4) break;
     }
     for (; i < 4;) {
@@ -807,32 +893,32 @@ void MainController::drawScene(DRAW_COLOR_TYPE backgroundColor, DRAW_COLOR_TYPE 
   }
 
   std::stringstream strs;
-  strs << coFusion->getBackgroundModel()->lastCount();
+  strs << mmf->getBackgroundModel()->lastCount();
 
   gui->totalPoints->operator=(strs.str());
 
   std::stringstream strs2;
-  strs2 << coFusion->getLocalDeformation().getGraph().size();
+  strs2 << mmf->getLocalDeformation().getGraph().size();
 
   gui->totalNodes->operator=(strs2.str());
 
   std::stringstream strs3;
-  strs3 << coFusion->getFerns().frames.size();
+  strs3 << mmf->getFerns().frames.size();
 
   gui->totalFerns->operator=(strs3.str());
 
   std::stringstream strs4;
-  strs4 << coFusion->getDeforms();
+  strs4 << mmf->getDeforms();
 
   gui->totalDefs->operator=(strs4.str());
 
   std::stringstream strs5;
-  strs5 << coFusion->getTick() << "/" << logReader->getNumFrames();
+  strs5 << mmf->getTick() << "/" << logReader->getNumFrames();
 
   gui->logProgress->operator=(strs5.str());
 
   std::stringstream strs6;
-  strs6 << coFusion->getFernDeforms();
+  strs6 << mmf->getFernDeforms();
 
   gui->totalFernDefs->operator=(strs6.str());
 

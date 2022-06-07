@@ -19,7 +19,9 @@
 
 #include "Slic.h"
 #include "../FrameData.h"
+#include "../Utils/PointTracker.hpp"
 #include <Eigen/Core>
+#include <list>
 #include <thread>
 #include <opencv2/imgproc/imgproc.hpp>
 
@@ -67,18 +69,33 @@ struct SegmentationResult {
   std::vector<ModelData> modelData;
 };
 
+struct SegmentationConfiguration {
+  // segmentation mode:
+  // <empty>: reprojection of dense depth (default)
+  // "flow_crf": sparse keypoint reprojection with optical flow CRF
+  std::string mode;
+
+  // super pixel size (pixel)
+  int sp_size = 16;
+};
+
 class Segmentation {
  public:
   enum class METHOD { CONNECTED_COMPONENTS, TEMPORAL };
 
  public:
-  void init(int width, int height, METHOD method);
+  void init(int width, int height, METHOD method, const SegmentationConfiguration &cfg = {});
+
+  void setMode(const std::string &mode);
 
   SegmentationResult performSegmentation(std::list<std::shared_ptr<Model>>& models, const FrameData& frame, unsigned char nextModelID,
-                                         bool allowNew);
+                                         bool allowNew, const tracker::Tracks &tracks);
 
   SegmentationResult performSegmentationCRF(std::list<std::shared_ptr<Model>>& models, const FrameData& frame, unsigned char nextModelID,
                                             bool allowNew);
+
+  SegmentationResult performSegmentationFlowCRF(std::list<std::shared_ptr<Model>>& models, const FrameData& frame, unsigned char nextModelID,
+                                                bool allowNew, const tracker::Tracks &tracks);
 
   /**
      * @brief denseCRF Compute a segmentation of labels based on a fully connected CRF, using icp+projection unary terms and rgb+position+depth pairwise terms
@@ -141,8 +158,11 @@ class Segmentation {
   float maxRelSizeNew = 0.4;
   float minRelSizeNew = 0.07;
 
+  SegmentationConfiguration cfg;
+  std::mutex lock_cfg;
+
  private:
   Slic slic;
-  Eigen::MatrixXf lastRawCRF;
+  FrameData prev_frame;
   METHOD method = METHOD::CONNECTED_COMPONENTS;
 };

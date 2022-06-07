@@ -1,88 +1,202 @@
-# Co-Fusion
+# Sparse-Dense Motion Modelling and Tracking for Manipulation without Prior Object Models
 
-This repository contains Co-Fusion, a dense SLAM system that takes a live stream of RGB-D images as input and segments the scene into different objects.
+MultiMotionFusion implements an online tracking and modelling approach for multiple rigid objects, including the environment. It enables the reconstruction and pose estimation of previously unseen objects with respect to the world and the camera. The segmentation of the scene and the detection of new objects relies on motion and thus does not require prior information about objects or the environment.
 
-Crucially, we use a multiple model fitting approach where each object can move independently from the background and still be effectively tracked and its shape fused over time using only the information from pixels associated with that object label. Previous attempts to deal with dynamic scenes have typically considered moving regions as outliers that are of no interest to the robot, and consequently do not model their shape or track their motion over time. In contrast, we enable the robot to maintain 3D models for each of the segmented objects and to improve them over time through fusion. As a result, our system has the benefit to enable a robot to maintain a scene description at the object level which has the potential to allow interactions with its working environment; even in the case of dynamic scenes.
+| camera tracking | object tracking |
+| :---: | :---: |
+| ![](doc/camera_tracking.webp) | ![](doc/object_tracking.webp) |
 
-To run Co-Fusion in real-time, you have to use our approach based no motion cues. If you prefer to use semantic cues for segmentation, please pre-process the segmentation in advance and feed the resulting segmentation masks into Co-Fusion.
+- paper: https://doi.org/10.48550/arXiv.2204.11923
+- video: https://www.youtube.com/watch?v=b8pov4DKLsY
+- example data: https://conferences.inf.ed.ac.uk/MultiMotionFusion
 
-More information and the paper can be found [here](http://visual.cs.ucl.ac.uk/pubs/cofusion/index.html).
+This project is based on [Co-Fusion](https://github.com/martinruenz/co-fusion) by Martin Rünz et al.
 
-If you would like to see a short video comparing ElasticFusion and Co-Fusion, click on the following image:
-[![Figure of Co-Fusion](figure.jpg "Click me to see a video.")](http://visual.cs.ucl.ac.uk/pubs/cofusion/ef-cf-compare.webm)
+## Citation
+This work has been accepted for publication in the IEEE Robotics and Automation Letters 2022. If you use this work, please cite our paper:
+```bibtex
+@misc{Rauch2022,
+  doi = {10.48550/ARXIV.2204.11923},
+  author = {Rauch, Christian and Long, Ran and Ivan, Vladimir and Vijayakumar, Sethu},
+  title = {Sparse-Dense Motion Modelling and Tracking for Manipulation without Prior Object Models},
+  publisher = {arXiv},
+  year = {2022},
+}
+```
 
-## Publication
+## Quick Start
 
-Please cite this publication, when using Co-Fusion (bibtex can be found on project webpage):
+MultiMotionFusion is built as a colcon workspace to simplify dependency management. MultiMotionFusion needs a Nvidia GPU that supports CUDA 11. The instructions are for a fresh installation of Ubuntu 20.04.
 
-* Co-Fusion: **Real-time Segmentation, Tracking and Fusion of Multiple Objects**, Martin Rünz and Lourdes Agapito, 2017 IEEE International Conference on Robotics and Automation (ICRA)
+1. Install system dependencies (CUDA, ROS, vcstool, rosdep, colcon) using [`setup.sh`](doc/setup.sh). If any of these system dependencies are already installed, skip this step and install the remaining dependencies manually.
+    ```sh
+    curl -s https://raw.githubusercontent.com/christian-rauch/MultiMotionFusion/master/doc/setup.sh | bash
+    sudo apt install cuda-drivers
+    ```
 
-## Building Co-Fusion
+2. Create a workspace at `~/mmf_ws/`, download sources and build using [`install.sh`](doc/install.sh).
+    ```sh
+    curl -s https://raw.githubusercontent.com/christian-rauch/MultiMotionFusion/master/doc/install.sh | bash
+    ```
 
-The script `Scripts/install.sh` shows step-by-step how Co-Fusion is build. A python-based install script is also available, see `Scripts\install.py`.
+3. Run example:
+    ```sh
+    # source workspace
+    source ~/mmf_ws/install/setup.bash
+    # run keypoint tracking example
+    wget https://conferences.inf.ed.ac.uk/MultiMotionFusion/estimation/nx_estim2_rotation.bag
+    mmf_bag_tracking.sh nx_estim2_rotation.bag
+    # run segmentation example
+    wget https://conferences.inf.ed.ac.uk/MultiMotionFusion/segmentation/nx_segm4_jaffa_down.bag
+    mmf_bag_tracking_segmentation.sh nx_segm4_jaffa_down.bag
+    ```
 
-## Dataset and evaluation tools
+## Installation
 
-### Tools
-* Recorder for klg files: https://github.com/mp3guy/Logger2
-* Viewer for klg files: https://github.com/mp3guy/LogView
-* Images -> klg converter: https://github.com/martinruenz/dataset-tools/tree/master/convert_imagesToKlg
-* klg -> images/pointclouds: https://github.com/martinruenz/dataset-tools/tree/master/convert_klg
-* Evaluate segmentation (intersection-over-union): https://github.com/martinruenz/dataset-tools/tree/master/evaluate_segmentation
-* Automated evaluation of Co-Fusion: https://github.com/martinruenz/dataset-tools/tree/master/automatisation
-* Scripts to create synthetic datasets with blender: https://github.com/martinruenz/dataset-tools/tree/master/blender
+### Requirements
 
-### Synthetic sequences:
-* http://visual.cs.ucl.ac.uk/pubs/cofusion/data/car4-noise.klg
-* http://visual.cs.ucl.ac.uk/pubs/cofusion/data/car4-full.tar.gz
-* http://visual.cs.ucl.ac.uk/pubs/cofusion/data/room4-noise.klg
-* http://visual.cs.ucl.ac.uk/pubs/cofusion/data/room4-full.tar.gz
+The following packages have to be installed manually:
+- [CUDA](https://developer.nvidia.com/cuda-toolkit) and [cuDNN](https://developer.nvidia.com/cudnn) for dense ICP and sparse keypoint prediction, [installation instructions](https://developer.nvidia.com/cuda-downloads?target_os=Linux&target_arch=x86_64&Distribution=Ubuntu&target_version=20.04&target_type=deb_network)
+- [ROS 1](https://www.ros.org/blog/getting-started/) (optionally) to read example data and live RGB-D feed from camera, [installation instructions](http://wiki.ros.org/noetic/Installation/Ubuntu)
+- [vcstool](http://wiki.ros.org/vcstool) to download source repositories
+- [rosdep](http://wiki.ros.org/rosdep) to automatically resolve binary dependencies
+- [colcon](https://colcon.readthedocs.io) to build the workspace, [installation instructions](https://colcon.readthedocs.io/en/released/user/installation.html)
 
-### Real (Asus Xtion) sequences, in [klg](https://github.com/mp3guy/LogView) format:
-* http://visual.cs.ucl.ac.uk/pubs/cofusion/data/teddy-handover.klg
-* http://visual.cs.ucl.ac.uk/pubs/cofusion/data/sliding-clock.klg
-* http://visual.cs.ucl.ac.uk/pubs/cofusion/data/place-items.klg
+You can install these system dependencies using the [`setup.sh`](doc/setup.sh) script:
+```sh
+curl -s https://raw.githubusercontent.com/christian-rauch/MultiMotionFusion/master/doc/setup.sh | bash
+```
+You may also need to update your nvidia driver via `sudo apt install cuda-drivers` to support the required CUDA version.
 
-## Hardware
+MultiMotionFusion can be used without ROS (see CMake options `ROSBAG` and `ROSNODE`). But it's highly recommended to use the example data and the live RGB-D feed. Otherwise, MultiMotionFusion supports the same inputs as Co-Fusion (klg logs, image files).
 
-In order to run Co-Fusion smoothly, you need a fast GPU with enough memory to store multiple models simultaneously. We used an Nvidia TitanX for most experiments, but also successfully tested Co-Fusion on a laptop computer with an Nvidia GeForce™ GTX 960M. If your GPU memory is limited, the `COFUSION_NUM_SURFELS` CMake option can help reduce the memory footprint per model.
-While the tracking stage of Co-Fusion calls for a fast GPU, the motion based segmentation performance depends on the CPU and accordingly, having a nice processor helps as well.
+### Build colcon workspace
 
-## Reformatting code:
-The code-formatting rules for this project are defined `.clang-format`. Run:
+The [`install.sh`](doc/install.sh) script will create the workspace in `~/mmf_ws/` and download the source and binary dependencies and finally build the workspace in `Release` mode:
+```sh
+curl -s https://raw.githubusercontent.com/christian-rauch/MultiMotionFusion/master/doc/install.sh | bash
+```
 
-    clang-format -i -style=file Core/**/*.cpp Core/**/*.h Core/**/*.hpp GUI/**/*.cpp GUI/**/*.h GUI/**/*.hpp
+To manually rebuild the workspace, e.g. after changing the source code, run:
+```sh
+cd ~/mmf_ws/
+colcon build --cmake-args "-DCMAKE_BUILD_TYPE=Release"
+```
 
-## ElasticFusion
-The overall architecture and terminal-interface of Co-Fusion is based on [ElasticFusion](https://github.com/mp3guy/ElasticFusion) and the ElasticFusion [readme file](https://github.com/mp3guy/ElasticFusion/blob/master/README.md) contains further useful information.
+All packages will be installed to `install`. To use the workspace you have to source it via `source ~/mmf_ws/install/setup.bash`.
 
-## New command line parameters (see [source-file](https://github.com/martinruenz/co-fusion/blob/master/GUI/MainController.cpp#L29-L90))
+## Usage
 
-* **-run**:           Run dataset immediately (otherwise start paused).
-* **-static**:        Disable multi-model fusion.
-* **-confO**:         Initial surfel confidence threshold for objects (default 0.01).
-* **-confG**:         Initial surfel confidence threshold for scene (default 10.00).
-* **-segMinNew**:     Min size of new object segments (relative to image size)
-* **-segMaxNew**:     Max size of new object segments (relative to image size)
-* **-offset**:        Offset between creating models
-* **-keep**:          Keep all models (even bad, deactivated)
-* **-dir**:           Processes a log-directory (Default: Color####.png + Depth####.exr [+ Mask####.png])
-* **-depthdir**:      Separate depth directory (==dir if not provided)
-* **-maskdir**:       Separate mask directory (==dir if not provided)
-* **-exportdir**:     Export results to this directory, otherwise not exported
-* **-basedir**:       Treat the above paths relative to this one (like depthdir = basedir + depthdir, default "")
-* **-colorprefix**:   Specify prefix of color files (=="" or =="Color" if not provided)
-* **-depthprefix**:   Specify prefix of depth files (=="" or =="Depth" if not provided)
-* **-maskprefix**:    Specify prefix of mask files (=="" or =="Mask" if not provided)
-* **-indexW**:        Number of digits of the indexes (==4 if not provided)
-* **-nm**:            Ignore Mask####.png images as soon as the provided frame was reached.
-* **-es**:            Export segmentation
-* **-ev**:            Export viewport images
-* **-el**:            Export label images
-* **-em**:            Export models (point-cloud)
-* **-en**:            Export normal images
-* **-ep**:            Export poses after finishing run (just before quitting if '-q')
-* **-or**:            Outlier rejection strength (default 3).
+After sourcing the workspace (`source ~/mmf_ws/install/setup.bash`), you can run the `MultiMotionFusion` executable with different sets of parameters. By default, without any parameters, this will run the baseline Co-Fusion approach.
 
-## Acknowledgements
-This work has been supported by the SecondHands project, funded from the EU Horizon 2020 Research and Innovation programme under grant agreement No 643950.
+### Input
+
+In the following, we will use the parameters `-run` to start tracking and modelling right ahead (otherwise it will start paused) and `-dim 640x480` to crop and scale the input image to the target resolution.
+
+Additionally to the input formats supported by Co-Fusion, we support reading from ROS topics and bag files. For bag files you have the choice to process them in real-time by playing them back via `rosbag play` or reading them deterministically frame-by-frame directly from the bag file.
+
+#### Example bag files
+The bag files used in the paper are available at https://conferences.inf.ed.ac.uk/MultiMotionFusion. They contain the topics:
+- `/rgb/image_raw/compressed`: jpeg-compressed colour image
+- `/rgb/camera_info`: camera intrinsics
+- `/depth_to_rgb/image_raw/compressed`: original png-compressed depth image
+- `/depth_to_rgb/image_raw/filtered/compressed`: depth image without visible robot links
+- `/tf` and `/tf_static`: transformations for the Nextage and Vicon kinematic tree
+
+The paper uses the `filtered` depth images. These images have depth observations from the robot links removed using the [`realtime_urdf_filter`](https://github.com/blodow/realtime_urdf_filter) package.
+
+Enable simulation time via `rosparam set use_sim_time true` and play the bags via `rosbag play --clock $BAG` to communicate the log time via the `/clock` topic.
+
+#### Run as ROS node
+Executing with parameter `-ros` will register the process as ROS node and subscribe to colour and depth image topics from an RGB-D camera or ROS bag file. This supports the usual ROS remapping arguments. For a [Azure Kinect DK](https://github.com/microsoft/Azure_Kinect_ROS_Driver), you have to provide the following remapping arguments:
+```sh
+MultiMotionFusion -run -dim 640x480 \
+  -ros \
+  colour:=/rgb/image_raw \
+  depth:=/depth_to_rgb/image_raw/filtered \
+  camera_info:=/rgb/camera_info \
+  _image_transport:=compressed
+```
+This will read images in real-time as they are published by the RGB-D driver or ROS bag. The node will wait for the first `sensor_msgs/CameraInfo` message on the `camera_info` topic to initialise the image dimensions and show the GUI.
+
+For convenience, create a script that sets the subset of input parameters and accepts additional parameters:
+```sh
+cat <<EOF > mmf_ros.sh
+#!/usr/bin/env bash
+MultiMotionFusion -run -dim 640x480 -ros \
+  colour:=/rgb/image_raw \
+  depth:=/depth_to_rgb/image_raw/filtered \
+  camera_info:=/rgb/camera_info \
+  _image_transport:=compressed \
+  \$@
+EOF
+chmod +x mmf_ros.sh
+```
+This script will then always run `MultiMotionFusion` as ROS node and accept additional parameters: `./mmf_ros.sh <param_1> ... <param_N>`.
+
+#### Read from ROS bag
+For a deterministic behaviour, you can also read directly frame-by-frame from a ROS bag file by providing its path to the `-l` parameter and setting the topic names:
+```sh
+MultiMotionFusion -run -dim 640x480 \
+  -topic_colour /rgb/image_raw/compressed \
+  -topic_depth /depth_to_rgb/image_raw/filtered/compressed \
+  -topic_info /rgb/camera_info \
+  -l estimation/nx_estim1_manipulation.bag
+```
+
+### Sparse-Dense Estimation, Segmentation and Redetection
+
+The contributions of the paper can be enabled individually:
+- `-model $MODEL_PATH`: SuperPoint keypoint extraction
+- `-init kp`: sparse keypoint initialisation
+- `-icp_refine`: dense refinement
+- `-segm_mode flow_crf`: sparse-dense CRF motion segmentation
+- `-redetection`: model redetection
+
+The final pick&place experiment used the full set of features:
+```sh
+./mmf_ros.sh \
+  -model ~/mmf_ws/install/super_point_inference/share/weights/SuperPointNet.pt \
+  -init kp \
+  -icp_refine \
+  -segm_mode flow_crf \
+  -redetection
+```
+
+This will enable the keypoint extraction (`-model SuperPointNet.pt`), use the keypoints to initialise tracking (`-init kp`), refine this further using dense ICP (`-icp_refine`), segment the scene using the sparse keypoint reprojection error as unary potential and the dense optical flow as pairwise potential in a dense CRF (`-segm_mode flow_crf`) and redetect lost models (`-redetection`).
+
+Instead of using the keypoints for initialisation (`-init kp`), you can also use the pose of a coordinate frame via `-init tf`. By default, this will use the colour camera frame provided in the `frame_id` of the colour image header. The coordinate frame can be changed by setting `-init_frame $FRAME`.
+
+### Reproduce results
+
+#### Ground Truth
+
+The provided bag files contain the ground truth camera frame, as reported by Vicon, as frame `camera_true`. To create a ground truth reconstruction, chose this frame for initialisation without the additional dense refinement:
+```sh
+./mmf_ros.sh -init tf -init_frame camera_true
+```
+
+#### Transformation Estimation
+Run the sparse initialisation and dense refinement:
+```sh
+./mmf_ros.sh \
+  -model ~/mmf_ws/install/super_point_inference/share/weights/SuperPointNet.pt \
+  -init kp -icp_refine
+```
+and play back the `estimation` bag files:
+```sh
+rosbag play --clock nx_estim2_rotation.bag
+```
+
+#### Motion Segmentation
+Run additionally the sparse-dence CRF:
+```sh
+./mmf_ros.sh \
+  -model ~/mmf_ws/install/super_point_inference/share/weights/SuperPointNet.pt \
+  -init kp -icp_refine \
+  -segm_mode flow_crf
+```
+and play back the `segmentation` bag files:
+```sh
+rosbag play --clock nx_segm1_jaffa_up.bag
+```

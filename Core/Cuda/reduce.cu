@@ -823,7 +823,7 @@ struct RGBResidual
                                     corres.valid = true;
                                     value.x = 1;
                                     value.y = corres.diff * corres.diff;
-                                    if(outErrorSurface) surf2Dwrite(0.00001f * value.y, outErrorSurface, x*sizeof(float), y);
+                                    if(outErrorSurface) surf2Dwrite(0.001f * value.y, outErrorSurface, x*sizeof(float), y);
                                 }
                             }
                         }

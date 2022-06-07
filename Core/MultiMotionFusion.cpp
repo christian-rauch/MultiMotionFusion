@@ -16,18 +16,20 @@
  *
  */
 
-#include "CoFusion.h"
+#include "MultiMotionFusion.h"
 
-CoFusion::CoFusion(const int timeDelta, const int countThresh, const float errThresh, const float covThresh, const bool closeLoops,
+MultiMotionFusion::MultiMotionFusion(const int timeDelta, const int countThresh, const float errThresh, const float covThresh, const bool closeLoops,
                    const bool iclnuim, const bool reloc, const float photoThresh, const float initConfidenceGlobal,
                    const float initConfidenceObject, const float depthCut, const float icpThresh, const bool fastOdom,
                    const float fernThresh, const bool so3, const bool frameToFrameRGB, const unsigned modelSpawnOffset,
-                   const Model::MatchingType matchingType, const std::string& exportDirectory, const bool exportSegmentationResults)
+                   const Model::MatchingType matchingType, const std::string& exportDirectory, const bool exportSegmentationResults,
+                   const std::string keypoint_predictor_path, const OdometryConfig &odom_cfg, const SegmentationConfiguration &segm_cfg)
     : modelMatchingType(matchingType),
       newModelListeners(0),
       inactiveModelListeners(0),
       modelToModel(Resolution::getInstance().width(), Resolution::getInstance().height(), Intrinsics::getInstance().cx(),
                    Intrinsics::getInstance().cy(), Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy()),
+      odom_cfg(odom_cfg),
       ferns(500, depthCut * 1000, photoThresh),
       tick(1),
       timeDelta(timeDelta),
@@ -66,17 +68,35 @@ CoFusion::CoFusion(const int timeDelta, const int countThresh, const float errTh
   createCompute();
   createFeedbackBuffers();
 
-  labelGenerator.init(Resolution::getInstance().width(), Resolution::getInstance().height(), Segmentation::METHOD::CONNECTED_COMPONENTS);
-  globalModel = std::make_shared<Model>(getNextModelID(true), initConfidenceGlobal, true, true, enablePoseLogging);
+  labelGenerator.init(Resolution::getInstance().width(), Resolution::getInstance().height(), Segmentation::METHOD::CONNECTED_COMPONENTS, segm_cfg);
+  globalModel = std::make_shared<Model>(getNextModelID(true), initConfidenceGlobal, odom_cfg, true, true, enablePoseLogging);
   models.push_back(globalModel);
 
   Stopwatch::getInstance().setCustomSignature(12431231);
+
+  if (!keypoint_predictor_path.empty()) {
+    kp_predictor = std::make_shared<SuperPoint>(keypoint_predictor_path);
+  }
+
+  if (kp_predictor) {
+    const CameraModel cm(Intrinsics::getInstance().fx(), Intrinsics::getInstance().fy(), Intrinsics::getInstance().cx(), Intrinsics::getInstance().cy());
+    for(int i=0; i<RGBDOdometry::NUM_PYRS; i++) {
+      if (i==odom_cfg.init_lvl || i==odom_cfg.segm_lvl)
+        tracker[i] = tracker::PointTracker(cm(i));
+    }
+  }
+
+  model_db_path = fs::path(exportDir) / "model_db";
+
+  if (!fs::exists(model_db_path)) {
+    fs::create_directories(model_db_path);
+  }
 
   std::cout << "Initialised Multi-Object Fusion. Each model can have up to " << Model::MAX_VERTICES
             << " surfel (TEXTURE_DIMENSION: " << Model::TEXTURE_DIMENSION << "x" << Model::TEXTURE_DIMENSION << ")." << std::endl;
 }
 
-CoFusion::~CoFusion() {
+MultiMotionFusion::~MultiMotionFusion() {
   if (iclnuim) {
     savePly();
   }
@@ -102,17 +122,33 @@ CoFusion::~CoFusion() {
   cudaCheckError();
 }
 
-void CoFusion::preallocateModels(unsigned count) {
+void MultiMotionFusion::preallocateModels(unsigned count) {
   for (unsigned i = 0; i < count; ++i)
     preallocatedModels.push_back(
-        std::make_shared<Model>(getNextModelID(true), initConfThresObject, false, true, enablePoseLogging, modelMatchingType));
+        std::make_shared<Model>(getNextModelID(true), initConfThresObject, odom_cfg, false, true, enablePoseLogging, modelMatchingType));
 }
 
-SegmentationResult CoFusion::performSegmentation(const FrameData& frame) {
-  return labelGenerator.performSegmentation(models, frame, getNextModelID(), spawnOffset >= modelSpawnOffset);
+void MultiMotionFusion::loadModels() {
+  // load all models from the database and add them to the set of inactive models, until they are re-detected
+  for (size_t id=0; id<256; id++) {
+    const fs::path model_path = model_db_path / fs::path("model-"+std::to_string(id));
+    if (fs::exists(model_path) && id>0) {
+      // create a new object model and set data
+      std::cout << "restoring model " << int(id) << " from disk" << std::endl;
+      const ModelPointer m = std::make_shared<Model>(getNextModelID(true), initConfThresObject, odom_cfg, false, true, enablePoseLogging, modelMatchingType);
+      m->load(model_path);
+      // keep this new model for the next 5 frames
+      m->decrementUnseenCount(5);
+      inactiveModels.push_back(m);
+    }
+  }
 }
 
-void CoFusion::createTextures() {
+SegmentationResult MultiMotionFusion::performSegmentation(const FrameData& frame) {
+  return labelGenerator.performSegmentation(models, frame, getNextModelID(), spawnOffset >= modelSpawnOffset, tracker[odom_cfg.segm_lvl].getTracks());
+}
+
+void MultiMotionFusion::createTextures() {
   textures[GPUTexture::RGB] =
       new GPUTexture(Resolution::getInstance().width(), Resolution::getInstance().height(), GL_RGBA, GL_RGB, GL_UNSIGNED_BYTE, true, true);
 
@@ -136,7 +172,7 @@ void CoFusion::createTextures() {
       new GPUTexture(Resolution::getInstance().width(), Resolution::getInstance().height(), GL_RGB, GL_RGB, GL_UNSIGNED_BYTE, true);
 }
 
-void CoFusion::createCompute() {
+void MultiMotionFusion::createCompute() {
   computePacks[ComputePack::FILTER] = new ComputePack(loadProgramFromFile("empty.vert", "depth_bilateral_metric.frag", "quad.geom"),
                                                       textures[GPUTexture::DEPTH_METRIC_FILTERED]->texture);
 
@@ -152,13 +188,13 @@ void CoFusion::createCompute() {
       new ComputePack(loadProgramFromFile("empty.vert", "int_to_color.frag", "quad.geom"), textures[GPUTexture::MASK_COLOR]->texture);
 }
 
-void CoFusion::createFeedbackBuffers() {
+void MultiMotionFusion::createFeedbackBuffers() {
   feedbackBuffers[FeedbackBuffer::RAW] =
       new FeedbackBuffer(loadProgramGeomFromFile("vertex_feedback.vert", "vertex_feedback.geom"));  // Used to render raw depth data
   feedbackBuffers[FeedbackBuffer::FILTERED] = new FeedbackBuffer(loadProgramGeomFromFile("vertex_feedback.vert", "vertex_feedback.geom"));
 }
 
-void CoFusion::computeFeedbackBuffers() {
+void MultiMotionFusion::computeFeedbackBuffers() {
   TICK("feedbackBuffers");
   feedbackBuffers[FeedbackBuffer::RAW]->compute(textures[GPUTexture::RGB]->texture, textures[GPUTexture::DEPTH_METRIC]->texture, tick,
                                                 maxDepthProcessed);
@@ -168,8 +204,9 @@ void CoFusion::computeFeedbackBuffers() {
   TOCK("feedbackBuffers");
 }
 
-bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPose, const float weightMultiplier, const bool bootstrap) {
-  if (frame.rgb.empty() || frame.depth.empty()) {
+bool MultiMotionFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPose, const float weightMultiplier,
+                            GroundTruthOdometryInterface* const gt_pose, const bool bootstrap) {
+  if (frame.depth.empty() || frame.rgb.empty() || frame.timestamp < 0) {
     std::cerr << "invalid image data" << std::endl;
     return false;
   }
@@ -182,6 +219,42 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
 
   // Upload RGB to graphics card
   textures[GPUTexture::RGB]->texture->Upload(frame.rgb.data, GL_RGB, GL_UNSIGNED_BYTE);
+
+  if (kp_predictor) {
+    std::vector<Eigen::MatrixX2d> coordinates(RGBDOdometry::NUM_PYRS);
+    std::vector<Eigen::MatrixXd> descriptors(RGBDOdometry::NUM_PYRS);
+
+    TICK("Keypoints");
+    // get normalised keypoints and feature maps
+    for(int i=0; i<RGBDOdometry::NUM_PYRS; i++) {
+      if (i==odom_cfg.init_lvl || i==odom_cfg.segm_lvl) {
+        cv::Mat img;
+        cv::resize(frame.rgb, img, cv::Size(frame.rgb.cols >> i, frame.rgb.rows >> i));
+        std::tie(coordinates[i], descriptors[i]) = kp_predictor->getFeatures(img);
+      }
+    }
+
+    TOCK("Keypoints");
+
+    TICK("Point Matching");
+    for(int i=0; i<RGBDOdometry::NUM_PYRS; i++) {
+      if (i==odom_cfg.init_lvl || i==odom_cfg.segm_lvl) {
+        cv::Mat depth;
+        cv::resize(frame.depth, depth, cv::Size(frame.depth.cols >> i, frame.depth.rows >> i), 0, 0, cv::INTER_NEAREST);
+        tracker[i].addKeypoints(coordinates[i], descriptors[i], frame.timestamp, depth, 0.7f, 30);
+        // remove all tracks older than 1s with less than 30 keypoints
+        tracker[i].prune(30, uint64_t(std::max<int64_t>(frame.timestamp - 1*1e9, 0)));
+      }
+    }
+    TOCK("Point Matching");
+#if 0
+    for(int i=0; i<RGBDOdometry::NUM_PYRS; i++) {
+      cv::Mat img;
+      cv::resize(frame.rgb, img, cv::Size(frame.rgb.cols >> i, frame.rgb.rows >> i));
+      cv::imshow("tracks L"+std::to_string(i), tracker[i].drawTracks(img, 2));
+    }
+#endif
+  }
 
   TICK("Preprocess");
 
@@ -203,11 +276,24 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
 
   TOCK("Preprocess");
 
+  // deactivate models that have been scheduled for deactivation
+  for (const ModelPointer &model : scheduled_model_deactivation) {
+    inactivateModel(model);
+    models.remove(model);
+  }
+  scheduled_model_deactivation.clear();
+
+  // "global" tracks in image and camera space
+  const tracker::Tracks &tracks = tracker[odom_cfg.init_lvl].getTracks();
+
   // First run
   if (tick == 1) {
     computeFeedbackBuffers();
     globalModel->initialise(*feedbackBuffers[FeedbackBuffer::RAW], *feedbackBuffers[FeedbackBuffer::FILTERED]);
     globalModel->getFrameOdometry().initFirstRGB(textures[GPUTexture::RGB]);
+
+    // assign all initial tracks in camera frame to global model
+    globalModel->initGlobalTracks(tracks, Eigen::Isometry3f::Identity(), frame.timestamp);
   } else {
     bool trackingOk = true;
 
@@ -215,12 +301,101 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
     if (bootstrap || !inPose) {
       Model::generateCUDATextures(textures[GPUTexture::DEPTH_METRIC_FILTERED], textures[GPUTexture::MASK]);
 
+      lock_odom_cfg.lock();
+      const std::string odom_init = odom_cfg.init;
+      lock_odom_cfg.unlock();
+
+      assert((odom_init != "tf") ^ ((odom_init == "tf") && gt_pose));
+
       TICK("odom");
-      for (auto model : models) {
-        model->performTracking(frameToFrameRGB, rgbOnly, icpWeight, pyramid, fastOdom, so3, maxDepthProcessed, textures[GPUTexture::RGB],
-                               frame.timestamp, requiresFillIn(model));
+      ModelList lost_models;
+      for (ModelPointer &model : models) {
+        // initialise by track transformation
+        bool do_icp = true;
+        if (!odom_init.empty()) {
+          do_icp = odom_cfg.icp_refine;
+
+          Eigen::Matrix4f Tnew;
+
+          if (odom_init == "kp") {
+            // transformation between keypoints in global camera frame
+            const RigidRANSAC::Result res = model->getLastTrackTransform();
+
+            // detect tracking failures and stop tracking to prevent model corruption
+            if (res.inlier.count()==0) {
+              std::cout << "model " << model->getID() << " keypoint initialisation failed (" << frame.timestamp << ")" << std::endl;
+            }
+
+            if (model->getID()==0) {
+              Tnew = model->getPose() * res.transformation.matrix();
+            }
+            else {
+              Tnew = res.transformation.matrix() * model->getPose();
+            }
+          }
+          else if (odom_init == "tf") {
+            // use log ground truth pose
+            if (model->getID()==0) {
+              // currently, only the camera pose can be used for ground truth
+              Tnew = gt_pose->getIncrementalTransformation(frame.timestamp);
+            }
+            else {
+              // logs do not provide ground truth for any other poses than the camera (id: 0)
+              // use regular ICP without initialisation
+              Tnew = model->getPose();
+              do_icp = true;
+            }
+          }
+          else {
+            throw std::invalid_argument("invalid initialisation method: " + odom_init);
+          }
+
+          model->overridePose(Tnew);
+
+          if (!frameToFrameRGB) {
+            model->combinedPredict(maxDepthProcessed, lastFrameRecovery ? 0 : tick, tick, timeDelta, ModelProjection::ACTIVE);
+
+            model->performFillIn(textures[GPUTexture::RGB], textures[GPUTexture::DEPTH_METRIC_FILTERED], frameToFrameRGB, lost);
+
+            model->predictIndices(tick, maxDepthProcessed, timeDelta);
+
+            model->fuse(tick, textures[GPUTexture::RGB], textures[GPUTexture::MASK], textures[GPUTexture::DEPTH_METRIC],
+                        textures[GPUTexture::DEPTH_METRIC_FILTERED], maxDepthProcessed, weightMultiplier);
+
+            model->predictIndices(tick, maxDepthProcessed, timeDelta);
+
+            std::vector<float> rawGraph;
+            bool fernAccepted = false;
+            model->clean(tick, rawGraph, timeDelta, maxDepthProcessed, fernAccepted, textures[GPUTexture::DEPTH_METRIC_FILTERED],
+                         textures[GPUTexture::MASK]);
+          }
+          else {
+            // TODO: warp previous depth and colour image to new initialised pose
+            throw std::runtime_error("ICP initialisation not supported in frame-to-frame mode");
+          }
+        } // track init
+
+        if (do_icp) {
+          // refine initial pose via ICP odometry
+          model->performTracking(frameToFrameRGB, rgbOnly, icpWeight, pyramid, fastOdom, so3, maxDepthProcessed, textures[GPUTexture::RGB],
+                                 frame.timestamp, requiresFillIn(model));
+        }
+        else {
+          // no refinement, use initial pose directly
+          model->appendPoses(Eigen::Isometry3f(model->getPose()), frame.timestamp);
+        }
       }
       TOCK("odom");
+
+      // deactivate lost models
+      for (const ModelPointer &model : lost_models) {
+        inactivateModel(model);
+        // the model is lost because of a failed keypoint transformation estimation
+        // remove the last set of keypoints from the failed frame
+        model->removeLastTrackKeypoint();
+        models.remove(model);
+      }
+      lost_models.clear();
 
       if (bootstrap) {
         assert(inPose);
@@ -235,6 +410,9 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
         if (spawnOffset < modelSpawnOffset) spawnOffset++;
 
         SegmentationResult segmentationResult = performSegmentation(frame);
+        if (inhibitModels) {
+          segmentationResult.hasNewLabel = false;
+        }
         textures[GPUTexture::MASK]->texture->Upload(segmentationResult.fullSegmentation.data, GL_LUMINANCE_INTEGER_EXT, GL_UNSIGNED_BYTE);
 
         if (exportSegmentation) {
@@ -242,6 +420,48 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
           cv::threshold(segmentationResult.fullSegmentation, output, 254, 255, cv::THRESH_TOZERO_INV);
           cv::imwrite(exportDir + "Segmentation" + std::to_string(tick) + ".png", output);
           // cv::imwrite(exportDir + "RGB" + std::to_string(tick) + ".png", rgb);
+        }
+
+        // associate tracks to segments via their last keypoint location
+        const cv::Mat &segm = segmentationResult.fullSegmentation;
+        std::unordered_map<uint8_t, tracker::Tracks> segm_tracks;
+        for (const tracker::TrackPtr &track : tracks) {
+          if (track->back()!=nullptr) {
+            // visible tracks, associated by segments
+            const cv::Point &p = track->back()->xy;
+            if (cv::Rect(cv::Point(), segm.size()).contains(p)) {
+              segm_tracks[segm.at<uint8_t>(p)].push_back(track);
+            }
+          }
+        }
+
+        // visualise segmentation and last keypoint location
+        if (!segm_tracks.empty()) {
+          cv::Mat segm_tracks_img(segm.size(), CV_8UC3);
+          pangolin::ColourWheel colour_spacing;
+          // segments
+          for (const auto &[id, tracks] : segm_tracks) {
+            const pangolin::Colour c = colour_spacing.GetColourBin(id);
+            segm_tracks_img.setTo(cv::Scalar(c.b*255, c.g*255, c.r*255), segm==id);
+          }
+          cv::Mat gprev;
+          cv::cvtColor(frame.rgb, gprev, cv::COLOR_RGB2GRAY);
+          cv::cvtColor(gprev, gprev, cv::COLOR_GRAY2BGR);
+          cv::addWeighted(gprev, 1, segm_tracks_img, 0.5, 0, segm_tracks_img);
+
+          // tracks
+          for (const auto &[id, tracks] : segm_tracks) {
+            const pangolin::Colour c = colour_spacing.GetColourBin(id);
+            for (const tracker::TrackPtr &track : tracks) {
+              if (track->back()!=nullptr) {
+                // only show currently visible track
+                cv::circle(segm_tracks_img, track->back()->xy, 4, cv::Scalar(), 1);
+                cv::circle(segm_tracks_img, track->back()->xy, 3, cv::Scalar(c.b*255, c.g*255, c.r*255), cv::FILLED);
+              }
+            }
+          }
+
+          cv::imshow("segm tracks", segm_tracks_img);
         }
 
         // Spawn new model
@@ -255,12 +475,87 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
           }
 
           // New model
-          std::cout << "Found new model." << std::endl;
+          std::stringstream msg;
+          msg << "Found new model " << newModelData.id;
+          std::cout << msg.str() << " (" << frame.timestamp << ")" << std::endl;
+          sendStatusMessage(msg.str());
 
           spawnObjectModel();
           spawnOffset = 0;
 
           newModel->setMaxDepth(getMaxDepth(newModelData));
+        }
+
+        // redetection via keypoints
+        if (enableRedetection) {
+          TICK("re-detect");
+          // match all inactive models at every timestamp to new model
+          constexpr size_t min_tracks = 3;
+          for (auto &[segm_label, segm_tracks] : segm_tracks) {
+            // skip the environment segment
+            if (segm_label == 0 || segm_label == 255) { continue; }
+
+            // keypoints at last track position within segment
+            std::vector<tracker::KeypointPtr> keypoints;
+            for (const tracker::TrackPtr &track : segm_tracks) {
+              if (track->back() && track->back()->coordinate.allFinite()) {
+                keypoints.push_back(track->back());
+              }
+            }
+
+            // skip too small segments
+            if (keypoints.size() < min_tracks) { continue; }
+
+            std::list<ModelPointer> model_inact_rm;
+            for (const ModelPointer &model : inactiveModels) {
+              // try to match last keypoints against inactive models tracks
+              // this provides the best inactive model view with the lowest least-squares error
+              const RigidRANSAC::Config cfg{.iterations = 10, .inlier_threshold = 0.03, .inlier_fraction = 0.8};
+              const RigidRANSAC::Result best = model->getBestMatch(keypoints, cfg);
+              // need at least 10 matches and less than 1cm errors
+              if (best.error < 0.01 && best.inlier.count() > 5) {
+                std::stringstream msg;
+                msg << ">> replace current model " << int(segm_label) << " with previous model " << model->getID();
+                std::cout << "\033[1m\033[31m" << msg.str() << "\033[0m" << std::endl;
+                sendStatusMessage(msg.str());
+
+                if (segmentationResult.hasNewLabel) {
+                  segmentationResult.hasNewLabel = false;
+                }
+
+                // find current active model to be removed
+                // if model is not found, it only exists as segment and has not been spawned yet
+                ModelPointer model_act_rm = nullptr;
+                for (const ModelPointer &model_curr : models) {
+                  if (model_curr->getID() == segm_label) {
+                    model_act_rm = model_curr;
+                    break;
+                  }
+                }
+
+                if (model_act_rm) {
+                  if (model_act_rm->getID() < model->getID()) {
+                    // we can not replace an older model with a newer model
+                    std::cout << "... will not replace older (" << model_act_rm->getID() << ") with newer (" << model->getID() << ") model" << std::endl;
+                    continue;
+                  }
+                  models.remove(model_act_rm);
+                }
+                models.push_back(model);
+                model->activate(best.transformation.inverse(), frame.timestamp);
+                model_inact_rm.push_back(model);
+                // stop searching
+                // TODO: search for inactive model with lowest error
+                continue;
+              }
+            }
+
+            // remove model that become active
+            for (const ModelPointer &model : model_inact_rm) {
+              inactiveModels.remove(model);
+            }
+          }
+          TOCK("re-detect");
         }
 
         // Set max-depth
@@ -286,10 +581,32 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
           moveNewModelToList();
         }
 
+        // update model-specific set of tracks for currently visible models
+        for (const auto &model : models) {
+          const uint8_t uid = uint8_t(model->getID());
+          if (segm_tracks.count(uid)) {
+            // gather tracks that are not associated to the segment
+            tracker::Tracks tracks_remove;
+            for (const auto &[id, tracks] : segm_tracks) {
+              if (id!=uid) {
+                tracks_remove.insert(tracks_remove.end(), tracks.begin(), tracks.end());
+              }
+            }
+
+            // initialise the poses of a new model
+            if (segmentationResult.hasNewLabel && model->getID()==segmentationResult.modelData.back().id) {
+              model->refineTrackSubset(segm_tracks[uid], globalModel, 2);
+            }
+
+            // update the model-specific tracks
+            model->updateTracks(segm_tracks[uid], tracks_remove);
+          }
+        } // models
+
         for (auto& m : segmentationResult.modelData) {  // FIXME reduce count somewhere
           if (m.superPixelCount <= 0 && (*m.modelListIterator)->incrementUnseenCount() > 0) {
             if (m.id != 0) {
-              std::cout << "Lost a model." << std::endl;
+              std::cout << "Lost model " << m.id << " (" << frame.timestamp << ")" << std::endl;
               inactivateModel(m.modelListIterator);
             }
           }
@@ -300,6 +617,12 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
         for (unsigned i = 1; i < models.size(); i++) {
           const float oldConf = (*++it)->getConfidenceThreshold();
           (*it)->setConfidenceThreshold(std::min(std::max(oldConf, segmentationResult.modelData[i].avgConfidence), 9.0f));
+        }
+      }
+      else {
+        // single model, add all tracks
+        for (const auto &model : models) {
+          model->updateTracks(tracks, {});
         }
       }
 
@@ -525,17 +848,19 @@ bool CoFusion::processFrame(const FrameData& frame, const Eigen::Matrix4f* inPos
 
   TOCK("Run");
 
+  cv::waitKey(1);
+
   return false;
 }
 
-void CoFusion::processFerns() {
+void MultiMotionFusion::processFerns() {
   TICK("Ferns::addFrame");
   ferns.addFrame(globalModel->getFillInImageTexture(), globalModel->getFillInVertexTexture(), globalModel->getFillInNormalTexture(),
                  globalModel->getPose(), tick, fernThresh);
   TOCK("Ferns::addFrame");
 }
 
-void CoFusion::predict() {
+void MultiMotionFusion::predict() {
   TICK("IndexMap::ACTIVE");
 
   for (auto& model : models) {
@@ -549,7 +874,7 @@ void CoFusion::predict() {
   TOCK("IndexMap::ACTIVE");
 }
 
-bool CoFusion::requiresFillIn(ModelPointer model, float ratio) {
+bool MultiMotionFusion::requiresFillIn(ModelPointer model, float ratio) {
   if (!model->allowsFillIn()) return false;
 
   TICK("autoFill");
@@ -569,7 +894,7 @@ bool CoFusion::requiresFillIn(ModelPointer model, float ratio) {
   return float(sum) / float(imageBuff.rows * imageBuff.cols) < ratio;
 }
 
-void CoFusion::filterDepth() {
+void MultiMotionFusion::filterDepth() {
   std::vector<Uniform> uniforms;
   uniforms.push_back(Uniform("cols", (float)Resolution::getInstance().cols()));
   uniforms.push_back(Uniform("rows", (float)Resolution::getInstance().rows()));
@@ -578,7 +903,7 @@ void CoFusion::filterDepth() {
                                              &uniforms);  // Writes to GPUTexture::DEPTH_METRIC_FILTERED
 }
 
-void CoFusion::normaliseDepth(const float& minVal, const float& maxVal) {
+void MultiMotionFusion::normaliseDepth(const float& minVal, const float& maxVal) {
   std::vector<Uniform> uniforms;
   uniforms.push_back(Uniform("maxVal", maxVal));
   uniforms.push_back(Uniform("minVal", minVal));
@@ -586,27 +911,47 @@ void CoFusion::normaliseDepth(const float& minVal, const float& maxVal) {
                                                  &uniforms);  // Writes to GPUTexture::DEPTH_NORM
 }
 
-void CoFusion::coloriseMasks() {
+void MultiMotionFusion::coloriseMasks() {
   computePacks[ComputePack::COLORISE_MASKS]->compute(textures[GPUTexture::MASK]->texture);  // Writes to GPUTexture::MASK_COLOR
 }
 
-void CoFusion::spawnObjectModel() {
+void MultiMotionFusion::scheduleDeactivation(const ModelPointer& m) {
+  scheduled_model_deactivation.insert(m);
+}
+
+void MultiMotionFusion::setOdomInit(const std::string &init) {
+  lock_odom_cfg.lock();
+  odom_cfg.init = init;
+  lock_odom_cfg.unlock();
+}
+
+void MultiMotionFusion::setOdomRefine(const bool &refine) {
+  lock_odom_cfg.lock();
+  odom_cfg.icp_refine = refine;
+  lock_odom_cfg.unlock();
+}
+
+void MultiMotionFusion::setSegmMode(const std::string &mode) {
+  labelGenerator.setMode(mode);
+}
+
+void MultiMotionFusion::spawnObjectModel() {
   assert(!newModel);
   if (preallocatedModels.size()) {
     newModel = preallocatedModels.front();
     preallocatedModels.pop_front();
   } else {
-    newModel = std::make_shared<Model>(getNextModelID(true), initConfThresObject, false, true, enablePoseLogging, modelMatchingType);
+    newModel = std::make_shared<Model>(getNextModelID(true), initConfThresObject, odom_cfg, false, true, enablePoseLogging, modelMatchingType);
   }
   newModel->getFrameOdometry().initFirstRGB(textures[GPUTexture::RGB]);
 }
 
-bool CoFusion::redetectModels(const FrameData& frame, const SegmentationResult& segmentationResult) {
+bool MultiMotionFusion::redetectModels(const FrameData& frame, const SegmentationResult& segmentationResult) {
   // [Removed code]
   return false;
 }
 
-void CoFusion::moveNewModelToList() {
+void MultiMotionFusion::moveNewModelToList() {
   if (newModel) {
     models.push_back(newModel);
     newModelListeners.callListenersDirect(newModel);
@@ -614,23 +959,28 @@ void CoFusion::moveNewModelToList() {
   }
 }
 
-ModelListIterator CoFusion::inactivateModel(const ModelListIterator& it) {
-  std::shared_ptr<Model> m = *it;
-  std::cout << "Deactivating model... ";
+void MultiMotionFusion::inactivateModel(const ModelPointer& m) {
+  std::cout << "Deactivating model " << m->getID() << " ... ";
   if (!enableSmartModelDelete || (m->lastCount() >= modelKeepMinSurfels && m->getConfidenceThreshold() > modelKeepConfThreshold)) {
     std::cout << "keeping data";
-    // [Removed code]
     inactiveModels.push_back(m);
+
+    // deactivate the model for later re-detection
+    m->store(model_db_path, Eigen::Isometry3f{globalModel->getPose() * m->getPose().inverse()});
   } else {
     std::cout << "deleting data";
   }
   std::cout << ". Surfels: " << m->lastCount() << " confidence threshold: " << m->getConfidenceThreshold() << std::endl;
 
   inactiveModelListeners.callListenersDirect(m);
+}
+
+ModelListIterator MultiMotionFusion::inactivateModel(const ModelListIterator& it) {
+  inactivateModel(*it);
   return --models.erase(it);
 }
 
-unsigned char CoFusion::getNextModelID(bool assign) {
+unsigned char MultiMotionFusion::getNextModelID(bool assign) {
   unsigned char next = nextID;
   if (assign) {
     if (models.size() == 256)
@@ -648,120 +998,26 @@ unsigned char CoFusion::getNextModelID(bool assign) {
   return next;
 }
 
-void CoFusion::savePly() {
+void MultiMotionFusion::savePly() {
   std::cout << "Exporting PLYs..." << std::endl;
 
-  auto exportModelPLY = [this](ModelPointer& model) {
+  const Eigen::Isometry3f global_pose(globalModel->getPose());
 
-    std::string filename = exportDir + "cloud-" + std::to_string(model->getID()) + ".ply";
-    std::cout << "Storing PLY-cloud to " << filename << std::endl;
-
-    // Open file
-    std::ofstream fs;
-    fs.open(filename.c_str());
-
-    Model::SurfelMap surfelMap = model->downloadMap();
-    surfelMap.countValid(model->getConfidenceThreshold());
-
-    std::cout << "Extarcted " << surfelMap.numValid << " out of " << surfelMap.numPoints << " points." << std::endl;
-
-    // Write header
-    fs << "ply";
-    fs << "\nformat "
-       << "binary_little_endian"
-       << " 1.0";
-
-    // Vertices
-    fs << "\nelement vertex " << surfelMap.numValid;
-    fs << "\nproperty float x"
-          "\nproperty float y"
-          "\nproperty float z";
-
-    fs << "\nproperty uchar red"
-          "\nproperty uchar green"
-          "\nproperty uchar blue";
-
-    fs << "\nproperty float nx"
-          "\nproperty float ny"
-          "\nproperty float nz";
-
-    fs << "\nproperty float radius";
-
-    fs << "\nend_header\n";
-
-    // Close the file
-    fs.close();
-
-    // Open file in binary appendable
-    std::ofstream fpout(filename.c_str(), std::ios::app | std::ios::binary);
-
-    Eigen::Vector4f center(0, 0, 0, 0);
-    Eigen::Matrix4f gP = globalModel->getPose();
-    Eigen::Matrix4f Tp = gP * model->getPose().inverse();
-    Eigen::Matrix4f Tn = Tn.inverse().transpose();
-
-    for (unsigned int i = 0; i < surfelMap.numPoints; i++) {
-      Eigen::Vector4f pos = (*surfelMap.data)[(i * 3) + 0];
-      float conf = pos[3];
-      pos[3] = 1;
-
-      if (conf > model->getConfidenceThreshold()) {
-        Eigen::Vector4f col = (*surfelMap.data)[(i * 3) + 1];
-        Eigen::Vector4f nor = (*surfelMap.data)[(i * 3) + 2];
-        center += pos;
-        pos = Tp * pos;
-        float radius = nor[3];
-        nor[3] = 0;
-        nor = Tn * nor;
-
-        nor[0] *= -1;
-        nor[1] *= -1;
-        nor[2] *= -1;
-
-        float value;
-        memcpy(&value, &pos[0], sizeof(float));
-        fpout.write(reinterpret_cast<const char*>(&value), sizeof(float));
-
-        memcpy(&value, &pos[1], sizeof(float));
-        fpout.write(reinterpret_cast<const char*>(&value), sizeof(float));
-
-        memcpy(&value, &pos[2], sizeof(float));
-        fpout.write(reinterpret_cast<const char*>(&value), sizeof(float));
-
-        unsigned char r = int(col[0]) >> 16 & 0xFF;
-        unsigned char g = int(col[0]) >> 8 & 0xFF;
-        unsigned char b = int(col[0]) & 0xFF;
-
-        fpout.write(reinterpret_cast<const char*>(&r), sizeof(unsigned char));
-        fpout.write(reinterpret_cast<const char*>(&g), sizeof(unsigned char));
-        fpout.write(reinterpret_cast<const char*>(&b), sizeof(unsigned char));
-
-        memcpy(&value, &nor[0], sizeof(float));
-        fpout.write(reinterpret_cast<const char*>(&value), sizeof(float));
-
-        memcpy(&value, &nor[1], sizeof(float));
-        fpout.write(reinterpret_cast<const char*>(&value), sizeof(float));
-
-        memcpy(&value, &nor[2], sizeof(float));
-        fpout.write(reinterpret_cast<const char*>(&value), sizeof(float));
-
-        memcpy(&value, &radius, sizeof(float));
-        fpout.write(reinterpret_cast<const char*>(&value), sizeof(float));
-      }
+  auto export_all = [this, &global_pose](const ModelList &models) {
+    for (auto &m : models) {
+      // store dense and sparse model for visualisation
+      m->exportModelPLY(exportDir, global_pose);
+      m->exportTracksPLY(exportDir, global_pose);
+      // store full model for re-detection
+      m->store(model_db_path, Eigen::Isometry3f{global_pose * m->getPose().inverse()}, false);
     }
-
-    center /= surfelMap.numValid;
-    std::cout << "Exported model with center: \n" << center << std::endl;
-
-    // Close file
-    fs.close();
   };
 
-  for (auto& m : models) exportModelPLY(m);
-  for (auto& m : inactiveModels) exportModelPLY(m);
+  export_all(models);
+  export_all(inactiveModels);
 }
 
-void CoFusion::exportPoses() {
+void MultiMotionFusion::exportPoses() {
   std::cout << "Exporting poses..." << std::endl;
 
   auto exportModelPoses = [&](ModelList list) {
@@ -789,82 +1045,82 @@ void CoFusion::exportPoses() {
 }
 
 // Sad times ahead
-ModelProjection& CoFusion::getIndexMap() { return globalModel->getIndexMap(); }
+ModelProjection& MultiMotionFusion::getIndexMap() { return globalModel->getIndexMap(); }
 
-std::shared_ptr<Model> CoFusion::getBackgroundModel() { return globalModel; }
+std::shared_ptr<Model> MultiMotionFusion::getBackgroundModel() { return globalModel; }
 
-std::list<std::shared_ptr<Model>>& CoFusion::getModels() { return models; }
+std::list<std::shared_ptr<Model>>& MultiMotionFusion::getModels() { return models; }
 
-Ferns& CoFusion::getFerns() { return ferns; }
+Ferns& MultiMotionFusion::getFerns() { return ferns; }
 
-Deformation& CoFusion::getLocalDeformation() { return localDeformation; }
+Deformation& MultiMotionFusion::getLocalDeformation() { return localDeformation; }
 
-std::map<std::string, GPUTexture*>& CoFusion::getTextures() { return textures; }
+std::map<std::string, GPUTexture*>& MultiMotionFusion::getTextures() { return textures; }
 
-const std::vector<PoseMatch>& CoFusion::getPoseMatches() { return poseMatches; }
+const std::vector<PoseMatch>& MultiMotionFusion::getPoseMatches() { return poseMatches; }
 
-const RGBDOdometry& CoFusion::getModelToModel() { return modelToModel; }
+const RGBDOdometry& MultiMotionFusion::getModelToModel() { return modelToModel; }
 
-void CoFusion::setRgbOnly(const bool& val) { rgbOnly = val; }
+void MultiMotionFusion::setRgbOnly(const bool& val) { rgbOnly = val; }
 
-void CoFusion::setIcpWeight(const float& val) { icpWeight = val; }
+void MultiMotionFusion::setIcpWeight(const float& val) { icpWeight = val; }
 
-void CoFusion::setOutlierCoefficient(const float& val) { Model::GPUSetup::getInstance().outlierCoefficient = val; }
+void MultiMotionFusion::setOutlierCoefficient(const float& val) { Model::GPUSetup::getInstance().outlierCoefficient = val; }
 
-void CoFusion::setPyramid(const bool& val) { pyramid = val; }
+void MultiMotionFusion::setPyramid(const bool& val) { pyramid = val; }
 
-void CoFusion::setFastOdom(const bool& val) { fastOdom = val; }
+void MultiMotionFusion::setFastOdom(const bool& val) { fastOdom = val; }
 
-void CoFusion::setSo3(const bool& val) { so3 = val; }
+void MultiMotionFusion::setSo3(const bool& val) { so3 = val; }
 
-void CoFusion::setFrameToFrameRGB(const bool& val) { frameToFrameRGB = val; }
+void MultiMotionFusion::setFrameToFrameRGB(const bool& val) { frameToFrameRGB = val; }
 
-void CoFusion::setModelSpawnOffset(const unsigned& val) { modelSpawnOffset = val; }
+void MultiMotionFusion::setModelSpawnOffset(const unsigned& val) { modelSpawnOffset = val; }
 
-void CoFusion::setModelDeactivateCount(const unsigned& val) { modelDeactivateCount = val; }
+void MultiMotionFusion::setModelDeactivateCount(const unsigned& val) { modelDeactivateCount = val; }
 
-void CoFusion::setCrfPairwiseSigmaRGB(const float& val) { labelGenerator.setPairwiseSigmaRGB(val); }
+void MultiMotionFusion::setCrfPairwiseSigmaRGB(const float& val) { labelGenerator.setPairwiseSigmaRGB(val); }
 
-void CoFusion::setCrfPairwiseSigmaPosition(const float& val) { labelGenerator.setPairwiseSigmaPosition(val); }
+void MultiMotionFusion::setCrfPairwiseSigmaPosition(const float& val) { labelGenerator.setPairwiseSigmaPosition(val); }
 
-void CoFusion::setCrfPairwiseSigmaDepth(const float& val) { labelGenerator.setPairwiseSigmaDepth(val); }
+void MultiMotionFusion::setCrfPairwiseSigmaDepth(const float& val) { labelGenerator.setPairwiseSigmaDepth(val); }
 
-void CoFusion::setCrfPairwiseWeightAppearance(const float& val) { labelGenerator.setPairwiseWeightAppearance(val); }
+void MultiMotionFusion::setCrfPairwiseWeightAppearance(const float& val) { labelGenerator.setPairwiseWeightAppearance(val); }
 
-void CoFusion::setCrfPairwiseWeightSmoothness(const float& val) { labelGenerator.setPairwiseWeightSmoothness(val); }
+void MultiMotionFusion::setCrfPairwiseWeightSmoothness(const float& val) { labelGenerator.setPairwiseWeightSmoothness(val); }
 
-void CoFusion::setCrfThresholdNew(const float& val) { labelGenerator.setUnaryThresholdNew(val); }
+void MultiMotionFusion::setCrfThresholdNew(const float& val) { labelGenerator.setUnaryThresholdNew(val); }
 
-void CoFusion::setCrfUnaryWeightError(const float& val) { labelGenerator.setUnaryWeightError(val); }
+void MultiMotionFusion::setCrfUnaryWeightError(const float& val) { labelGenerator.setUnaryWeightError(val); }
 
-void CoFusion::setCrfIteration(const unsigned& val) { labelGenerator.setIterationsCRF(val); }
+void MultiMotionFusion::setCrfIteration(const unsigned& val) { labelGenerator.setIterationsCRF(val); }
 
-void CoFusion::setCrfUnaryKError(const float& val) { labelGenerator.setUnaryKError(val); }
+void MultiMotionFusion::setCrfUnaryKError(const float& val) { labelGenerator.setUnaryKError(val); }
 
-void CoFusion::setNewModelMinRelativeSize(const float& val) { labelGenerator.setNewModelMinRelativeSize(val); }
+void MultiMotionFusion::setNewModelMinRelativeSize(const float& val) { labelGenerator.setNewModelMinRelativeSize(val); }
 
-void CoFusion::setNewModelMaxRelativeSize(const float& val) { labelGenerator.setNewModelMaxRelativeSize(val); }
+void MultiMotionFusion::setNewModelMaxRelativeSize(const float& val) { labelGenerator.setNewModelMaxRelativeSize(val); }
 
-void CoFusion::setFernThresh(const float& val) { fernThresh = val; }
+void MultiMotionFusion::setFernThresh(const float& val) { fernThresh = val; }
 
-void CoFusion::setDepthCutoff(const float& val) { depthCutoff = val; }
+void MultiMotionFusion::setDepthCutoff(const float& val) { depthCutoff = val; }
 
-const bool& CoFusion::getLost() {  // lel
+const bool& MultiMotionFusion::getLost() {  // lel
   return lost;
 }
 
-const int& CoFusion::getTick() { return tick; }
+const int& MultiMotionFusion::getTick() { return tick; }
 
-const int& CoFusion::getTimeDelta() { return timeDelta; }
+const int& MultiMotionFusion::getTimeDelta() { return timeDelta; }
 
-void CoFusion::setTick(const int& val) { tick = val; }
+void MultiMotionFusion::setTick(const int& val) { tick = val; }
 
-const float& CoFusion::getMaxDepthProcessed() { return maxDepthProcessed; }
+const float& MultiMotionFusion::getMaxDepthProcessed() { return maxDepthProcessed; }
 
-const Eigen::Matrix4f& CoFusion::getCurrPose() { return globalModel->getPose(); }
+const Eigen::Matrix4f& MultiMotionFusion::getCurrPose() { return globalModel->getPose(); }
 
-const int& CoFusion::getDeforms() { return deforms; }
+const int& MultiMotionFusion::getDeforms() { return deforms; }
 
-const int& CoFusion::getFernDeforms() { return fernDeforms; }
+const int& MultiMotionFusion::getFernDeforms() { return fernDeforms; }
 
-std::map<std::string, FeedbackBuffer*>& CoFusion::getFeedbackBuffers() { return feedbackBuffers; }
+std::map<std::string, FeedbackBuffer*>& MultiMotionFusion::getFeedbackBuffers() { return feedbackBuffers; }
