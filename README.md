@@ -6,21 +6,26 @@ MultiMotionFusion implements an online tracking and modelling approach for multi
 | :---: | :---: |
 | ![](doc/camera_tracking.webp) | ![](doc/object_tracking.webp) |
 
-- paper: https://doi.org/10.48550/arXiv.2204.11923
+- paper:
+  - arXiv: https://doi.org/10.48550/arXiv.2204.11923
+  - RA-L: https://doi.org/10.1109/LRA.2022.3200177
 - video: https://www.youtube.com/watch?v=b8pov4DKLsY
 - example data: https://conferences.inf.ed.ac.uk/MultiMotionFusion
 
 This project is based on [Co-Fusion](https://github.com/martinruenz/co-fusion) by Martin Rünz et al.
 
 ## Citation
-This work has been accepted for publication in the IEEE Robotics and Automation Letters 2022. If you use this work, please cite our paper:
+If you use this work, please cite our paper:
 ```bibtex
-@misc{Rauch2022,
-  doi = {10.48550/ARXIV.2204.11923},
-  author = {Rauch, Christian and Long, Ran and Ivan, Vladimir and Vijayakumar, Sethu},
-  title = {Sparse-Dense Motion Modelling and Tracking for Manipulation without Prior Object Models},
-  publisher = {arXiv},
-  year = {2022},
+@ARTICLE{Rauch2022,
+  author={Rauch, Christian and Long, Ran and Ivan, Vladimir and Vijayakumar, Sethu},
+  journal={IEEE Robotics and Automation Letters},
+  title={Sparse-Dense Motion Modelling and Tracking for Manipulation Without Prior Object Models},
+  year={2022},
+  volume={7},
+  number={4},
+  pages={11394-11401},
+  doi={10.1109/LRA.2022.3200177}
 }
 ```
 
