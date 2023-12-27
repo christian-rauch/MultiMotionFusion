@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 
+set -e
+
 echo "setup workspace"
 source /opt/ros/noetic/setup.bash
-mkdir ~/mmf_ws/
+mkdir -p ~/mmf_ws/
 cd ~/mmf_ws/
 vcs import << EOF
 repositories:
