@@ -15,7 +15,7 @@ find_package(ZLIB REQUIRED)
 find_package(CUDA REQUIRED)
 find_package(OpenNI2 REQUIRED)
 find_package(OpenCV REQUIRED )
-find_package(Boost REQUIRED)
+find_package(Boost REQUIRED filesystem)
 find_package(JPEG REQUIRED)
 
 # TODO: Why do we have to do this here again?
@@ -89,8 +89,7 @@ target_link_libraries(MultiMotionFusionTools
                       ${CUDA_LIBRARIES}
                       ${OPENNI2_LIBRARY}
                       ${OpenCV_LIBRARIES}
-                      boost_filesystem
-                      boost_system
+                      Boost::filesystem
                       pthread
 )
 

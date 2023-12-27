@@ -47,6 +47,7 @@
   <depend>gslicr</depend>
   <depend>densecrf</depend>
   <depend>libboost-dev</depend>
+  <depend>libboost-filesystem-dev</depend>
   <depend>pangolin</depend>
   <depend>suitesparse</depend>
   <depend>libopenni2-dev</depend>
