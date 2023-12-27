@@ -1465,7 +1465,7 @@ void Model::exportTracksPLY(const tracker::Tracks &tracks, const std::string &pa
   ss_hdr << "ply" << std::endl << "format " << fmt << " 1.0" << std::endl;
 
   ss_hdr << "element vertex " << vert_id << std::endl;
-  for(const std::string &c : {"x", "y", "z"}) {
+  for(const char *c : {"x", "y", "z"}) {
     ss_hdr << "property float32 " << c << std::endl;
   }
   if (with_descriptor) {
