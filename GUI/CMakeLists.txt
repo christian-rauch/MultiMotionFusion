@@ -58,7 +58,7 @@ message(STATUS "CMAKE_CURRENT_SOURCE_DIR/../Core: ${${CMAKE_CURRENT_SOURCE_DIR}/
 file(GLOB srcs *.cpp)
 file(GLOB tools_srcs Tools/*.cpp)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -msse -msse2 -msse3")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse -msse2 -msse3")
 
 if(CMAKE_BUILD_TYPE MATCHES Debug)
     message(STATUS "Debug build.")
@@ -103,6 +103,8 @@ target_include_directories(MultiMotionFusionTools PUBLIC
                             ${OpenCV_INCLUDE_DIRS}
                             ${BOOST_INCLUDE_DIRS}
 )
+
+set_property(TARGET MultiMotionFusionTools PROPERTY CXX_STANDARD 17)
 
 if(ROSBAG)
     target_include_directories(MultiMotionFusionTools PUBLIC
