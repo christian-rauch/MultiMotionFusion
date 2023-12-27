@@ -13,7 +13,7 @@ repositories:
   src/Pangolin:
     type: git
     url: https://github.com/stevenlovegrove/Pangolin.git
-    version: master
+    version: v0.8
   src/densecrf:
     type: git
     url: https://github.com/christian-rauch/densecrf.git
