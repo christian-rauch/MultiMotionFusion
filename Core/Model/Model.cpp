@@ -20,6 +20,7 @@
 #include "ModelMatching.h"
 
 #include <opencv2/opencv.hpp>
+#include <opencv2/viz/types.hpp>
 #include <opencv2/core/eigen.hpp>
 
 #include "Utils/RigidRANSAC.h"
