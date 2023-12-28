@@ -37,6 +37,5 @@ rosdep install --from-paths src --ignore-src -y
 
 echo "build workspace"
 source /opt/ros/noetic/setup.bash
-export CUDACXX=/usr/local/cuda-11.3/bin/nvcc
 cd ~/mmf_ws/
-colcon build --cmake-args "-DCMAKE_BUILD_TYPE=Release"
+colcon build --cmake-args -D CMAKE_BUILD_TYPE=Release -D CMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc
