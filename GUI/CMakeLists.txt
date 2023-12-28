@@ -6,16 +6,20 @@ set(CMAKE_CXX_STANDARD 17)
 
 message(STATUS "Evaluating GUI/CMAKE")
 
-option(ROSBAG "rosbag reader" ON)
+if($ENV{ROS_VERSION} EQUAL 1)
+    set(HASROS1 ON)
+endif()
 
-option(ROSNODE "read images live as ROS node" ON)
+option(ROSBAG "rosbag reader" ${HASROS1})
+
+option(ROSNODE "read images live as ROS node" ${HASROS1})
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}")
 find_package(ZLIB REQUIRED)
 find_package(CUDA REQUIRED)
 find_package(OpenNI2 REQUIRED)
 find_package(OpenCV REQUIRED )
-find_package(Boost REQUIRED)
+find_package(Boost REQUIRED filesystem)
 find_package(JPEG REQUIRED)
 
 # TODO: Why do we have to do this here again?
@@ -58,7 +62,7 @@ message(STATUS "CMAKE_CURRENT_SOURCE_DIR/../Core: ${${CMAKE_CURRENT_SOURCE_DIR}/
 file(GLOB srcs *.cpp)
 file(GLOB tools_srcs Tools/*.cpp)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -msse -msse2 -msse3")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse -msse2 -msse3")
 
 if(CMAKE_BUILD_TYPE MATCHES Debug)
     message(STATUS "Debug build.")
@@ -89,8 +93,7 @@ target_link_libraries(MultiMotionFusionTools
                       ${CUDA_LIBRARIES}
                       ${OPENNI2_LIBRARY}
                       ${OpenCV_LIBRARIES}
-                      boost_filesystem
-                      boost_system
+                      Boost::filesystem
                       pthread
 )
 
@@ -103,6 +106,8 @@ target_include_directories(MultiMotionFusionTools PUBLIC
                             ${OpenCV_INCLUDE_DIRS}
                             ${BOOST_INCLUDE_DIRS}
 )
+
+set_property(TARGET MultiMotionFusionTools PROPERTY CXX_STANDARD 17)
 
 if(ROSBAG)
     target_include_directories(MultiMotionFusionTools PUBLIC

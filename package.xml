@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<package format="2">
+<package format="3">
   <name>mmf</name>
   <version>0.0.0</version>
   <description>The MultiMotionFusion package</description>
@@ -43,28 +43,16 @@
   <!--   <doc_depend>doxygen</doc_depend> -->
   <buildtool_depend>cmake</buildtool_depend>
 
-  <build_depend>eigen</build_depend>
-  <build_depend>gslicr</build_depend>
-  <build_depend>densecrf</build_depend>
-  <build_depend>libboost-dev</build_depend>
-  <build_depend>pangolin</build_depend>
-  <build_depend>suitesparse</build_depend>
-  <build_depend>libopenni2-dev</build_depend>
-  <build_export_depend>eigen</build_export_depend>
-  <build_export_depend>gslicr</build_export_depend>
-  <build_export_depend>libboost-dev</build_export_depend>
-  <build_export_depend>pangolin</build_export_depend>
-  <build_export_depend>suitesparse</build_export_depend>
-  <build_export_depend>libopenni2-dev</build_export_depend>
-  <exec_depend>eigen</exec_depend>
-  <exec_depend>gslicr</exec_depend>
-  <exec_depend>densecrf</exec_depend>
-  <exec_depend>libboost-dev</exec_depend>
-  <exec_depend>pangolin</exec_depend>
-  <exec_depend>suitesparse</exec_depend>
-  <exec_depend>libopenni2-dev</exec_depend>
+  <depend>eigen</depend>
+  <depend>gslicr</depend>
+  <depend>densecrf</depend>
+  <depend>libboost-dev</depend>
+  <depend>libboost-filesystem-dev</depend>
+  <depend>pangolin</depend>
+  <depend>suitesparse</depend>
+  <depend>libopenni2-dev</depend>
 
-  <depend>rosbag</depend>
+  <depend condition="$ROS_VERSION == 1">rosbag</depend>
   <depend>tf2</depend>
   <depend>tf2_msgs</depend>
   <depend>tf2_eigen</depend>
@@ -73,7 +61,7 @@
   <depend>cv_bridge</depend>
   <depend>image_geometry</depend>
   <depend>super_point_inference</depend>
-  <depend>eigen_conversions</depend>
+  <depend condition="$ROS_VERSION == 1">eigen_conversions</depend>
   <depend>cob_srvs</depend>
 
   <export>
