@@ -15,6 +15,10 @@ fi
 
 source /opt/ros/${ROS_DIST}/setup.bash
 
+# determine repo from environment variables inside CI or use defaults
+MMF_REPO_URL="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-christian-rauch/MultiMotionFusion}"
+MMF_BRANCH="${GITHUB_HEAD_REF:-master}"
+
 echo "setup workspace"
 mkdir -p ~/mmf_ws/
 cd ~/mmf_ws/
@@ -22,8 +26,8 @@ vcs import << EOF
 repositories:
   src/MultiMotionFusion:
     type: git
-    url: https://github.com/christian-rauch/MultiMotionFusion.git
-    version: master
+    url: ${MMF_REPO_URL}.git
+    version: ${MMF_BRANCH}
   src/Pangolin:
     type: git
     url: https://github.com/stevenlovegrove/Pangolin.git
