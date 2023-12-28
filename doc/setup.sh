@@ -1,20 +1,42 @@
 #!/usr/bin/env bash
 
-echo "install CUDA"
-wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-ubuntu2004.pin
-sudo mv cuda-ubuntu2004.pin /etc/apt/preferences.d/cuda-repository-pin-600
-sudo apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/3bf863cc.pub
-sudo add-apt-repository "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/ /"
-sudo apt install --no-install-recommends -y cuda-libraries-dev-11-3 cuda-compiler-11-3 cuda-nvtx-11-3 libcudnn8-dev
+set -e
 
-echo "install ROS"
-sudo sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/ros-latest.list'
-curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | sudo apt-key add -
 sudo apt update
-sudo apt install --no-install-recommends -y ros-noetic-ros-base
-echo "source /opt/ros/noetic/setup.bash" >> ~/.bashrc
+sudo -E apt install -y software-properties-common
+sudo add-apt-repository -y universe
+sudo apt update
+sudo -E apt install -y curl wget
 
-echo "install vcstool, rosdep, colcon"
-sudo pip3 install -U vcstool rosdep colcon-common-extensions
+source /etc/lsb-release
+
+if [ "$DISTRIB_RELEASE" = "20.04" ]; then
+    CUDA_REPO_VER="ubuntu2004"
+    ROS_VER=""
+    ROS_DIST="noetic"
+elif [ "$DISTRIB_RELEASE" = "22.04" ]; then
+    CUDA_REPO_VER="ubuntu2204"
+    ROS_VER="2"
+    ROS_DIST="humble"
+else
+    echo "unsupported Ubuntu distribution"
+    exit 1
+fi
+
+echo "install CUDA"
+wget https://developer.download.nvidia.com/compute/cuda/repos/${CUDA_REPO_VER}/x86_64/cuda-keyring_1.1-1_all.deb
+sudo dpkg -i cuda-keyring_1.1-1_all.deb
+rm cuda-keyring_1.1-1_all.deb
+sudo apt update
+sudo apt install --no-install-recommends -y cuda-libraries-dev-11-8 cuda-compiler-11-8 cuda-nvtx-11-8 libcudnn8-dev
+
+echo "install ROS ${ROS_VER}"
+sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros${ROS_VER}/ubuntu $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/ros${ROS_VER}.list > /dev/null
+sudo apt update
+sudo -E apt install --no-install-recommends -y ros-${ROS_DIST}-ros-base ros-dev-tools
+echo "source /opt/ros/${ROS_DIST}/setup.bash" >> ~/.bashrc
+
+echo "initialise rosdep"
 sudo rosdep init
 rosdep update

@@ -100,7 +100,7 @@ add_definitions(-DNVIDIA_VARYINGS)
 
 CUDA_COMPILE(cuda_objs ${cuda})
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -msse -msse2 -msse3 -DSHADER_DIR=${MULTIMOTIONFUSION_SHADER_DIR}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse -msse2 -msse3 -DSHADER_DIR=${MULTIMOTIONFUSION_SHADER_DIR}")
 
 if(CMAKE_BUILD_TYPE MATCHES Debug)
     message(STATUS "Debug build.")

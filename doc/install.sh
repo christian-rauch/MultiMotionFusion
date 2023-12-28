@@ -1,19 +1,37 @@
 #!/usr/bin/env bash
 
+set -e
+
+source /etc/lsb-release
+
+if [ "$DISTRIB_RELEASE" = "20.04" ]; then
+    ROS_DIST="noetic"
+elif [ "$DISTRIB_RELEASE" = "22.04" ]; then
+    ROS_DIST="humble"
+else
+    echo "unsupported Ubuntu distribution"
+    exit 1
+fi
+
+source /opt/ros/${ROS_DIST}/setup.bash
+
+# determine repo from environment variables inside CI or use defaults
+MMF_REPO_URL="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-christian-rauch/MultiMotionFusion}"
+MMF_BRANCH="${GITHUB_HEAD_REF:-master}"
+
 echo "setup workspace"
-source /opt/ros/noetic/setup.bash
-mkdir ~/mmf_ws/
+mkdir -p ~/mmf_ws/
 cd ~/mmf_ws/
 vcs import << EOF
 repositories:
   src/MultiMotionFusion:
     type: git
-    url: https://github.com/christian-rauch/MultiMotionFusion.git
-    version: master
+    url: ${MMF_REPO_URL}.git
+    version: ${MMF_BRANCH}
   src/Pangolin:
     type: git
     url: https://github.com/stevenlovegrove/Pangolin.git
-    version: master
+    version: v0.8
   src/densecrf:
     type: git
     url: https://github.com/christian-rauch/densecrf.git
@@ -34,7 +52,5 @@ EOF
 rosdep install --from-paths src --ignore-src -y
 
 echo "build workspace"
-source /opt/ros/noetic/setup.bash
-export CUDACXX=/usr/local/cuda-11.3/bin/nvcc
 cd ~/mmf_ws/
-colcon build --cmake-args "-DCMAKE_BUILD_TYPE=Release"
+colcon build --cmake-args -D CMAKE_BUILD_TYPE=Release -D CMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc
