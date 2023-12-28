@@ -2,8 +2,20 @@
 
 set -e
 
+source /etc/lsb-release
+
+if [ "$DISTRIB_RELEASE" = "20.04" ]; then
+    ROS_DIST="noetic"
+elif [ "$DISTRIB_RELEASE" = "22.04" ]; then
+    ROS_DIST="humble"
+else
+    echo "unsupported Ubuntu distribution"
+    exit 1
+fi
+
+source /opt/ros/${ROS_DIST}/setup.bash
+
 echo "setup workspace"
-source /opt/ros/noetic/setup.bash
 mkdir -p ~/mmf_ws/
 cd ~/mmf_ws/
 vcs import << EOF
@@ -36,6 +48,5 @@ EOF
 rosdep install --from-paths src --ignore-src -y
 
 echo "build workspace"
-source /opt/ros/noetic/setup.bash
 cd ~/mmf_ws/
 colcon build --cmake-args -D CMAKE_BUILD_TYPE=Release -D CMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc
