@@ -6,9 +6,13 @@ set(CMAKE_CXX_STANDARD 17)
 
 message(STATUS "Evaluating GUI/CMAKE")
 
-option(ROSBAG "rosbag reader" ON)
+if($ENV{ROS_VERSION} EQUAL 1)
+    set(HASROS1 ON)
+endif()
 
-option(ROSNODE "read images live as ROS node" ON)
+option(ROSBAG "rosbag reader" ${HASROS1})
+
+option(ROSNODE "read images live as ROS node" ${HASROS1})
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}")
 find_package(ZLIB REQUIRED)

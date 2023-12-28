@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<package format="2">
+<package format="3">
   <name>mmf</name>
   <version>0.0.0</version>
   <description>The MultiMotionFusion package</description>
@@ -52,7 +52,7 @@
   <depend>suitesparse</depend>
   <depend>libopenni2-dev</depend>
 
-  <depend>rosbag</depend>
+  <depend condition="$ROS_VERSION == 1">rosbag</depend>
   <depend>tf2</depend>
   <depend>tf2_msgs</depend>
   <depend>tf2_eigen</depend>
@@ -61,7 +61,7 @@
   <depend>cv_bridge</depend>
   <depend>image_geometry</depend>
   <depend>super_point_inference</depend>
-  <depend>eigen_conversions</depend>
+  <depend condition="$ROS_VERSION == 1">eigen_conversions</depend>
   <depend>cob_srvs</depend>
 
   <export>
