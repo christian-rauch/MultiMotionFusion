@@ -8,11 +8,27 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
+
+    env:
+      DEBIAN_FRONTEND: noninteractive
+
+    container:
+      image: ${{ matrix.docker_image }}
+
+    strategy:
+      matrix:
+        include:
+          - docker_image: ubuntu:20.04
 
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v3
+
+      - name: install sudo
+        run: |
+          apt update
+          apt install -y sudo
+
+      - uses: actions/checkout@v4
 
       - name: setup
         run: |
