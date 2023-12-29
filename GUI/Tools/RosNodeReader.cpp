@@ -1,4 +1,4 @@
-#ifdef ROSNODE
+#ifdef ROSREADER
 
 #include "RosNodeReader.hpp"
 #include <sensor_msgs/CameraInfo.h>

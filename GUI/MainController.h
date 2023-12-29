@@ -25,8 +25,10 @@
 #include "Tools/GroundTruthOdometry.h"
 #include "Tools/LogReader.h"
 
-#ifdef ROSNODE
+#ifdef ROSSTATE
 #include "Tools/RosStatePublisher.hpp"
+#endif
+#ifdef ROSUI
 #include "Tools/RosInterface.hpp"
 #endif
 
@@ -66,8 +68,10 @@ class MainController {
   bool exportModels;
   bool restore;
 
-#ifdef ROSNODE
+#ifdef ROSSTATE
   std::unique_ptr<RosStatePublisher> state_publisher;
+#endif
+#ifdef ROSUI
   std::unique_ptr<RosInterface> ui_control;
 #endif
 

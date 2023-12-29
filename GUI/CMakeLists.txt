@@ -6,13 +6,20 @@ set(CMAKE_CXX_STANDARD 17)
 
 message(STATUS "Evaluating GUI/CMAKE")
 
-if($ENV{ROS_VERSION} AND $ENV{ROS_VERSION} EQUAL 1)
+if($ENV{ROS_VERSION})
+set(HASROS ON)
+if($ENV{ROS_VERSION} EQUAL 1)
     set(HASROS1 ON)
+    add_compile_options(-DROS1)
+elseif($ENV{ROS_VERSION} EQUAL 2)
+    set(HASROS2 ON)
+    add_compile_options(-DROS2)
+endif()
 endif()
 
 option(ROSBAG "rosbag reader" ${HASROS1})
 
-option(ROSNODE "read images live as ROS node" ${HASROS1})
+option(ROSNODE "read images live as ROS node" ${HASROS})
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}")
 find_package(ZLIB REQUIRED)
@@ -32,10 +39,13 @@ if(ROSBAG)
 endif()
 
 if(ROSNODE)
-    find_package(roscpp REQUIRED)
+    if(HASROS1)
+        find_package(roscpp REQUIRED)
+        find_package(eigen_conversions REQUIRED)
+        add_compile_options(-DROSREADER -DROSUI -DROSSTATE)
+    endif()
     find_package(image_transport REQUIRED)
     find_package(tf2_ros REQUIRED)
-    find_package(eigen_conversions REQUIRED)
     find_package(cob_srvs REQUIRED)
 endif()
 
@@ -154,6 +164,11 @@ if(ROSBAG OR ROSNODE)
         ${tf2_eigen_LIBRARIES}
         ${image_geometry_LIBRARIES}
     )
+if(HASROS2)
+    target_link_libraries(MultiMotionFusionTools
+        image_geometry::image_geometry
+    )
+endif()
     add_definitions(-DROSCOMMON)
 endif()
 
