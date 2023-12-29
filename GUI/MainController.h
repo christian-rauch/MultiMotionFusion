@@ -31,6 +31,10 @@
 #ifdef ROSUI
 #include "Tools/RosInterface.hpp"
 #endif
+#if defined(ROS2)
+#include <rclcpp/executors/multi_threaded_executor.hpp>
+#include <thread>
+#endif
 
 class MainController {
  public:
@@ -73,6 +77,15 @@ class MainController {
 #endif
 #ifdef ROSUI
   std::unique_ptr<RosInterface> ui_control;
+#endif
+
+#ifdef ROSNODE
+#ifdef ROS1
+  std::unique_ptr<ros::AsyncSpinner> executor;
+#elif defined(ROS2)
+  std::unique_ptr<rclcpp::executors::MultiThreadedExecutor> executor;
+  std::thread spinner;
+#endif
 #endif
 
   float confGlobalInit, confObjectInit, icpErrThresh, covThresh, photoThresh, fernThresh;

@@ -248,12 +248,33 @@ MainController::MainController(int argc, char* argv[])
     // instantiate MultiMotionFusion node
 #ifdef ROS1
     ros::init(argc, argv, "MMF");
+    executor = std::make_unique<ros::AsyncSpinner>(1);
+    executor->start();
+#elif defined(ROS2)
+    const std::vector<std::string> args_non_ros = rclcpp::init_and_remove_ros_arguments(argc, argv);
+    // reset argv without the parsed ROS args
+    for (int i = 0; i < argc; i++) {
+        memset(argv[i], 0, strlen(argv[i]));
+    }
+    argc = args_non_ros.size();
+    for (size_t i=0; i<args_non_ros.size(); i++) {
+      strcpy(argv[i], args_non_ros[i].c_str());
+    }
+
+    executor = std::make_unique<rclcpp::executors::MultiThreadedExecutor>(rclcpp::ExecutorOptions{}, 1);
+    spinner = std::thread([this](){ executor->spin(); });
 #endif
 #ifdef ROSREADER
     // read RGB-D data
     if (!logReader) {
-      logReader = std::make_unique<RosNodeReader>(15, Parse::get().arg(argc, argv, "-f", empty) > -1, target_dim);
-      logReaderReady = true;
+      try {
+        logReader = std::make_unique<RosNodeReader>(15, Parse::get().arg(argc, argv, "-f", empty) > -1, target_dim);
+        logReaderReady = true;
+      } catch (const std::runtime_error& e) {
+        std::cerr << "cannot create ROS RGB-D reader: " << e.what() << std::endl;
+        logReader = nullptr;
+        logReaderReady = false;
+      }
     }
 #endif
 #ifdef ROSSTATE
@@ -263,6 +284,14 @@ MainController::MainController(int argc, char* argv[])
 #endif
 #ifdef ROSUI
     ui_control = std::make_unique<RosInterface>(&gui, &mmf);
+#endif
+#if defined(ROS2)
+    // add nodes to executor
+#ifdef ROSREADER
+    if (logReader) {
+      executor->add_node(dynamic_cast<RosNodeReader*>(logReader.get())->n);
+    }
+#endif
 #endif
   }
 #endif
@@ -413,6 +442,14 @@ MainController::MainController(int argc, char* argv[])
 }
 
 MainController::~MainController() {
+#ifdef ROSNODE
+#ifdef ROS1
+  executor->stop();
+#elif defined(ROS2)
+  executor->cancel();
+  spinner.join();
+#endif
+#endif
   if (mmf) {
     delete mmf;
   }

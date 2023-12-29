@@ -42,8 +42,9 @@ if(ROSNODE)
     if(HASROS1)
         find_package(roscpp REQUIRED)
         find_package(eigen_conversions REQUIRED)
-        add_compile_options(-DROSREADER -DROSUI -DROSSTATE)
+        add_compile_options(-DROSUI -DROSSTATE)
     endif()
+    add_compile_options(-DROSREADER)
     find_package(image_transport REQUIRED)
     find_package(tf2_ros REQUIRED)
     find_package(cob_srvs REQUIRED)
@@ -148,6 +149,12 @@ if(ROSNODE)
         ${eigen_conversions_LIBRARIES}
         ${cob_srvs_LIBRARIES}
     )
+if(HASROS2)
+    target_link_libraries(MultiMotionFusionTools
+        image_geometry::image_geometry
+        image_transport::image_transport
+    )
+endif()
     # to find "gSLICr.h" and "super_point_inference.hpp"
     target_link_libraries(MultiMotionFusionTools gSLICr_lib super_point_inference)
     add_definitions(-DROSNODE)
@@ -167,6 +174,7 @@ if(ROSBAG OR ROSNODE)
 if(HASROS2)
     target_link_libraries(MultiMotionFusionTools
         image_geometry::image_geometry
+        cv_bridge::cv_bridge
     )
 endif()
     add_definitions(-DROSCOMMON)

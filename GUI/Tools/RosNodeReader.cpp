@@ -1,9 +1,22 @@
 #ifdef ROSREADER
 
 #include "RosNodeReader.hpp"
-#include <sensor_msgs/CameraInfo.h>
 #include <cv_bridge/cv_bridge.h>
-#include <tf2_eigen/tf2_eigen.h>
+
+#if defined(ROS1)
+    #include <tf2_eigen/tf2_eigen.h>
+    #include <sensor_msgs/CameraInfo.h>
+    #include <std_msgs/Header.h>
+    using namespace sensor_msgs;
+    using namespace std_msgs;
+#elif defined(ROS2)
+    #include <tf2_eigen/tf2_eigen.hpp>
+    #include <rclcpp/wait_for_message.hpp>
+    #include <sensor_msgs/msg/camera_info.hpp>
+    #include <std_msgs/msg/header.hpp>
+    using namespace sensor_msgs::msg;
+    using namespace std_msgs::msg;
+#endif
 
 
 RosNodeReader::RosNodeReader(const uint32_t synchroniser_queue_size,
@@ -12,21 +25,39 @@ RosNodeReader::RosNodeReader(const uint32_t synchroniser_queue_size,
   LogReader(std::string(), flipColors),
   frame_gt_camera(frame_gt_camera)
 {
+#if defined(ROS1)
   n = std::make_unique<ros::NodeHandle>();
   it = std::make_unique<image_transport::ImageTransport>(*n);
+#elif defined(ROS2)
+  n = std::make_shared<rclcpp::Node>("MMF");
+  const std::string transport = n->declare_parameter("image_transport", "raw");
+#endif
 
   tf_listener = std::make_unique<tf2_ros::TransformListener>(tf_buffer);
 
-  sub_colour.subscribe(*it, ros::names::resolve("colour"), 1);
-  sub_depth.subscribe(*it, ros::names::resolve("depth"), 1);
+#if defined(ROS1)
+  sub_colour.subscribe(*it, resolve("colour"), 1);
+  sub_depth.subscribe(*it, resolve("depth"), 1);
+#elif defined(ROS2)
+  sub_colour.subscribe(n.get(), resolve("colour"), transport);
+  sub_depth.subscribe(n.get(), resolve("depth"), transport);
+#endif
 
   sync = std::make_unique<message_filters::Synchronizer<ApproximateTimePolicy>>(ApproximateTimePolicy(synchroniser_queue_size));
   sync->connectInput(sub_colour, sub_depth);
   sync->registerCallback(&RosNodeReader::on_rgbd, this);
 
   // wait for single CameraInfo message to get intrinsics
-  std::cout << "waiting for 'sensor_msgs/CameraInfo' message on '" + ros::names::resolve("camera_info") + "'" << std::endl;
-  sensor_msgs::CameraInfo::ConstPtr ci = ros::topic::waitForMessage<sensor_msgs::CameraInfo>("camera_info", *n);
+  std::cout << "waiting for 'sensor_msgs/CameraInfo' message on '" + resolve("camera_info") + "'" << std::endl;
+
+#if defined(ROS1)
+  CameraInfo::ConstPtr ci = ros::topic::waitForMessage<CameraInfo>("camera_info", *n);
+#elif defined(ROS2)
+  CameraInfo::Ptr ci = std::make_shared<CameraInfo>();
+  if(!rclcpp::wait_for_message(*ci, n, "camera_info")) {
+    throw std::runtime_error("error while waiting for message");
+  }
+#endif
 
   image_crop_target = ImageCropTarget(ci, target_dimensions);
 
@@ -35,19 +66,16 @@ RosNodeReader::RosNodeReader(const uint32_t synchroniser_queue_size,
   numPixels = width * height;
 
   ref_pose.matrix().array() = 0;
-
-  spinner = std::make_unique<ros::AsyncSpinner>(1);
-  spinner->start();
 }
 
-RosNodeReader::~RosNodeReader() {
-  spinner->stop();
-}
-
-void RosNodeReader::on_rgbd(const sensor_msgs::Image::ConstPtr& msg_colour, const sensor_msgs::Image::ConstPtr& msg_depth) {
+void RosNodeReader::on_rgbd(const Image::ConstPtr& msg_colour, const Image::ConstPtr& msg_depth) {
   mutex.lock();
-  const std_msgs::Header hdr_colour = msg_colour->header;
+  const Header hdr_colour = msg_colour->header;
+#if defined(ROS1)
   data.timestamp = int64_t(hdr_colour.stamp.toNSec());
+#elif defined(ROS2)
+  data.timestamp = int64_t(hdr_colour.stamp.sec * 1e9 + hdr_colour.stamp.nanosec);
+#endif
   data.rgb = cv_bridge::toCvCopy(msg_colour, "rgb8")->image;
 
   data.depth = cv_bridge::toCvCopy(msg_depth)->image;
@@ -105,8 +133,12 @@ FrameData RosNodeReader::getFrameData() {
 
 Eigen::Matrix4f RosNodeReader::getIncrementalTransformation(uint64_t timestamp) {
   // camera pose at requested time with respect to root frame
+#if defined(ROS1)
   ros::Time time;
   time.fromNSec(timestamp);
+#elif defined(ROS2)
+  tf2::TimePoint time{std::chrono::nanoseconds(timestamp)};
+#endif
   Eigen::Isometry3d pose;
   try {
     pose = tf2::transformToEigen(tf_buffer.lookupTransform(frame_gt_root, frame_gt_camera, time));
@@ -122,6 +154,14 @@ Eigen::Matrix4f RosNodeReader::getIncrementalTransformation(uint64_t timestamp) 
 
   // provide the camera poses with respect to the reference pose
   return (ref_pose.inverse() * pose).matrix().cast<float>();
+}
+
+std::string RosNodeReader::resolve(const std::string &topic) {
+#if defined(ROS1)
+  return ros::names::resolve(topic);
+#elif defined(ROS2)
+  return this->n->get_node_base_interface()->resolve_topic_or_service_name(topic, false);
+#endif
 }
 
 #endif
