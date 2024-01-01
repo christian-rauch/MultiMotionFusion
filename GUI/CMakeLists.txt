@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 
 message(STATUS "Evaluating GUI/CMAKE")
 
-if($ENV{ROS_VERSION} EQUAL 1)
+if($ENV{ROS_VERSION} AND $ENV{ROS_VERSION} EQUAL 1)
     set(HASROS1 ON)
 endif()
 
