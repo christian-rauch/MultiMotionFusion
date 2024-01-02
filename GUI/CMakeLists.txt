@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.5)
 
-project(multimotionfusion-gui)
+project(multimotionfusion-gui LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -23,7 +23,6 @@ option(ROSNODE "read images live as ROS node" ${HASROS})
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}")
 find_package(ZLIB REQUIRED)
-find_package(CUDA REQUIRED)
 find_package(OpenNI2 REQUIRED)
 find_package(OpenCV REQUIRED )
 find_package(Boost REQUIRED filesystem)
@@ -57,7 +56,7 @@ if(ROSBAG OR ROSNODE)
 endif()
 
 include_directories(${ZLIB_INCLUDE_DIR})
-include_directories(${CUDA_INCLUDE_DIRS})
+include_directories(${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../Core)
 include_directories(${OPENNI2_INCLUDE_DIR})
 include_directories(${Pangolin_INCLUDE_DIRS})
@@ -66,7 +65,7 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 
 message(STATUS "Include-directories: ")
 message(STATUS "ZLIB_INCLUDE_DIR: ${ZLIB_INCLUDE_DIR}")
-message(STATUS "CUDA_INCLUDE_DIRS: ${CUDA_INCLUDE_DIRS}")
+message(STATUS "CUDA_INCLUDE_DIRS: ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}")
 message(STATUS "OPENNI2_INCLUDE_DIR: ${OPENNI2_INCLUDE_DIR}")
 message(STATUS "CMAKE_CURRENT_SOURCE_DIR/../Core: ${${CMAKE_CURRENT_SOURCE_DIR}/../Core}")
 
@@ -112,7 +111,7 @@ target_include_directories(MultiMotionFusionTools PUBLIC
                             ${CMAKE_CURRENT_SOURCE_DIR}
                             ${ZLIB_INCLUDE_DIR}
                             ${Pangolin_INCLUDE_DIRS}
-                            ${CUDA_INCLUDE_DIRS}
+                            ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
                             ${OPENNI2_INCLUDE_DIR}
                             ${OpenCV_INCLUDE_DIRS}
                             ${BOOST_INCLUDE_DIRS}

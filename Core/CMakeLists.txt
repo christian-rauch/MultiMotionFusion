@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0.2)
 
-project(multimotionfusion)
+project(multimotionfusion LANGUAGES CXX CUDA)
 
 message(STATUS "Evaluating Core/CMAKE")
 
@@ -9,7 +9,6 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}")
 include(GNUInstallDirs)
 
 ## External packages
-find_package(CUDA REQUIRED)
 find_package(SuiteSparse REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(OpenMP)
@@ -65,7 +64,7 @@ message(STATUS "MULTIMOTIONFUSION_SHADER_DIR: ${MULTIMOTIONFUSION_SHADER_DIR}")
 
 ## Includes
 include_directories(${Pangolin_INCLUDE_DIRS})
-include_directories(${CUDA_INCLUDE_DIRS})
+include_directories(${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
 include_directories(${SUITESPARSE_INCLUDE_DIRS})
 include_directories(${PCL_INCLUDE_DIRS})
 include_directories(${OpenCV_INCLUDE_DIRS})
@@ -98,8 +97,6 @@ endif(CMAKE_BUILD_TYPE MATCHES Debug)
 # disable to use standard 'glTransformFeedbackVaryings' in palce of 'glTransformFeedbackVaryingsNV'
 add_definitions(-DNVIDIA_VARYINGS)
 
-CUDA_COMPILE(cuda_objs ${cuda})
-
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse -msse2 -msse3 -DSHADER_DIR=${MULTIMOTIONFUSION_SHADER_DIR}")
 
 if(CMAKE_BUILD_TYPE MATCHES Debug)
@@ -117,7 +114,6 @@ add_library(${PROJECT_NAME} SHARED
     ${utils_srcs}
     ${shader_srcs}
     ${cuda}
-    ${cuda_objs}
     ${containers}
     ${segmentation}
 )
@@ -126,7 +122,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${ZLIB_INCLUDE_DIR}
     ${Pangolin_INCLUDE_DIRS}
-    ${CUDA_INCLUDE_DIRS}
+    ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
     ${OPENNI2_INCLUDE_DIR}
     ${OpenCV_INCLUDE_DIRS}
     ${BOOST_INCLUDE_DIRS}
@@ -141,6 +137,9 @@ target_link_libraries(${PROJECT_NAME}
     ${OpenCV_LIBRARIES}
     super_point_inference
 )
+
+target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_11)
+set_target_properties(${PROJECT_NAME} PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
 add_library(ransac STATIC "Utils/RigidRANSAC.cpp")
 target_link_libraries(ransac Eigen3::Eigen)
