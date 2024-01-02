@@ -34,7 +34,7 @@ If you use this work, please cite our paper:
 
 ## Quick Start
 
-MultiMotionFusion is built as a colcon workspace to simplify dependency management. MultiMotionFusion needs a Nvidia GPU that supports CUDA 11. The instructions are for a fresh installation of Ubuntu 20.04.
+MultiMotionFusion is built as a colcon workspace to simplify dependency management. MultiMotionFusion needs a Nvidia GPU that supports CUDA 11. The instructions are for a fresh installation of Ubuntu 20.04 or 22.04.
 
 1. Install system dependencies (CUDA, ROS, vcstool, rosdep, colcon) using [`setup.sh`](doc/setup.sh). If any of these system dependencies are already installed, skip this step and install the remaining dependencies manually.
     ```sh
@@ -66,6 +66,7 @@ MultiMotionFusion is built as a colcon workspace to simplify dependency manageme
 The following packages have to be installed manually:
 - [CUDA](https://developer.nvidia.com/cuda-toolkit) and [cuDNN](https://developer.nvidia.com/cudnn) for dense ICP and sparse keypoint prediction, [installation instructions](https://developer.nvidia.com/cuda-downloads?target_os=Linux&target_arch=x86_64&Distribution=Ubuntu&target_version=20.04&target_type=deb_network)
 - [ROS 1](https://www.ros.org/blog/getting-started/) (optionally) to read example data and live RGB-D feed from camera, [installation instructions](http://wiki.ros.org/noetic/Installation/Ubuntu)
+- [ROS](https://www.ros.org/blog/getting-started/) (optionally) to read example data and live RGB-D feed from camera, [ROS 1](http://wiki.ros.org/noetic/Installation/Ubuntu) (Ubuntu 20.04) or [ROS 2](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debians.html) (Ubuntu 22.04)
 - [vcstool](http://wiki.ros.org/vcstool) to download source repositories
 - [rosdep](http://wiki.ros.org/rosdep) to automatically resolve binary dependencies
 - [colcon](https://colcon.readthedocs.io) to build the workspace, [installation instructions](https://colcon.readthedocs.io/en/released/user/installation.html)
@@ -113,22 +114,32 @@ The bag files used in the paper are available at https://conferences.inf.ed.ac.u
 
 The paper uses the `filtered` depth images. These images have depth observations from the robot links removed using the [`realtime_urdf_filter`](https://github.com/blodow/realtime_urdf_filter) package.
 
-Enable simulation time via `rosparam set use_sim_time true` and play the bags via `rosbag play --clock $BAG` to communicate the log time via the `/clock` topic.
+On ROS 1, enable simulation time via `rosparam set use_sim_time true` and play the bags via `rosbag play --clock $FILE.bag` to communicate the log time via the `/clock` topic.
 
-#### Run as ROS node
-Executing with parameter `-ros` will register the process as ROS node and subscribe to colour and depth image topics from an RGB-D camera or ROS bag file. This supports the usual ROS remapping arguments. For a [Azure Kinect DK](https://github.com/microsoft/Azure_Kinect_ROS_Driver), you have to provide the following remapping arguments:
+On ROS 2, first convert the bag files via the [`rosbags`](https://gitlab.com/ternaris/rosbags) tool (`pip install rosbags` and `rosbags-convert $FILE.bag`) and then play them back via `ros2 bag play --clock 100 $FILE`.
+
+#### Run as ROS node (ROS 1 and 2)
+Executing with parameter `-ros` will register the process as ROS node and subscribe to colour and depth image topics from an RGB-D camera or ROS bag file. This supports the usual ROS 1 and 2 remapping arguments. For a [Azure Kinect DK](https://github.com/microsoft/Azure_Kinect_ROS_Driver), you have to provide the following remapping arguments:
 ```sh
-MultiMotionFusion -run -dim 640x480 \
-  -ros \
+# ROS 1
+MultiMotionFusion -run -dim 640x480 -ros \
   colour:=/rgb/image_raw \
   depth:=/depth_to_rgb/image_raw/filtered \
   camera_info:=/rgb/camera_info \
   _image_transport:=compressed
+# ROS 2
+MultiMotionFusion -run -dim 640x480 -ros \
+  --ros-args \
+  -r colour:=/rgb/image_raw \
+  -r depth:=/depth_to_rgb/image_raw/filtered \
+  -r camera_info:=/rgb/camera_info \
+  -p image_transport:=compressed
 ```
 This will read images in real-time as they are published by the RGB-D driver or ROS bag. The node will wait for the first `sensor_msgs/CameraInfo` message on the `camera_info` topic to initialise the image dimensions and show the GUI.
 
 For convenience, create a script that sets the subset of input parameters and accepts additional parameters:
 ```sh
+# ROS 1
 cat <<EOF > mmf_ros.sh
 #!/usr/bin/env bash
 MultiMotionFusion -run -dim 640x480 -ros \
@@ -138,11 +149,22 @@ MultiMotionFusion -run -dim 640x480 -ros \
   _image_transport:=compressed \
   \$@
 EOF
+# ROS 2
+cat <<EOF > mmf_ros.sh
+#!/usr/bin/env bash
+MultiMotionFusion -run -dim 640x480 -ros \
+  \$@ \
+  --ros-args \
+  -r colour:=/rgb/image_raw \
+  -r depth:=/depth_to_rgb/image_raw/filtered \
+  -r camera_info:=/rgb/camera_info \
+  -p image_transport:=compressed
+EOF
 chmod +x mmf_ros.sh
 ```
 This script will then always run `MultiMotionFusion` as ROS node and accept additional parameters: `./mmf_ros.sh <param_1> ... <param_N>`.
 
-#### Read from ROS bag
+#### Read from ROS bag (ROS 1)
 For a deterministic behaviour, you can also read directly frame-by-frame from a ROS bag file by providing its path to the `-l` parameter and setting the topic names:
 ```sh
 MultiMotionFusion -run -dim 640x480 \
