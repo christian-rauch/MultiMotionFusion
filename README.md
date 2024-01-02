@@ -10,7 +10,10 @@ MultiMotionFusion implements an online tracking and modelling approach for multi
   - arXiv: https://doi.org/10.48550/arXiv.2204.11923
   - RA-L: https://doi.org/10.1109/LRA.2022.3200177
 - video: https://www.youtube.com/watch?v=b8pov4DKLsY
-- example data: https://conferences.inf.ed.ac.uk/MultiMotionFusion
+- example data:
+  - https://conferences.inf.ed.ac.uk/MultiMotionFusion
+  - https://github.com/christian-rauch/MultiMotionFusion-data
+  - https://gitlab.com/christian-rauch/MultiMotionFusion-data
 
 This project is based on [Co-Fusion](https://github.com/martinruenz/co-fusion) by Martin Rünz et al.
 
