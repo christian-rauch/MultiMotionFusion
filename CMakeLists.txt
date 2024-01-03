@@ -4,7 +4,12 @@ project(multimotionfusion)
 set(CMAKE_CXX_STANDARD 17)
 
 # Warnings / Errors
-add_compile_options(-Wall -Werror -Wno-write-strings -Wno-deprecated-declarations)
+add_compile_options(
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall>
+    $<$<COMPILE_LANGUAGE:CXX>:-Werror>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wno-write-strings>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wno-deprecated-declarations>
+)
 
 # Don't follow symlinks when FILE GLOB_RECURSE (and don't warn)
 cmake_policy(SET CMP0009 NEW)

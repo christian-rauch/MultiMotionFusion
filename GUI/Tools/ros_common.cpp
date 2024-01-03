@@ -4,6 +4,7 @@
 #include <Eigen/Core>
 #include <Utils/Resolution.h>
 #include <Utils/Intrinsics.h>
+#include <iostream>
 
 static std::tuple<cv::Rect, double>
 get_crop_roi(const cv::Size &source_dimensions, const cv::Size &target_dimensions) {
@@ -43,7 +44,7 @@ get_crop_roi(const cv::Size &source_dimensions, const cv::Size &target_dimension
   return {crop_roi, scale};
 }
 
-ImageCropTarget::ImageCropTarget(const sensor_msgs::CameraInfo::ConstPtr &camera_info,
+ImageCropTarget::ImageCropTarget(const CameraInfo::ConstPtr &camera_info,
                                  const cv::Size &target_dimensions)
   : target_dimensions(target_dimensions)
 {
@@ -57,8 +58,13 @@ ImageCropTarget::ImageCropTarget(const sensor_msgs::CameraInfo::ConstPtr &camera
   // source intrinsics
   const cv::Size source_dimensions(camera_info->width, camera_info->height);
   // 'P' row-major 3x4 projection matrix: (fx, 0, cx, Tx, 0, fy, cy, Ty, 0, 0, 1, 0)
+#if defined(ROS1)
   const Eigen::Vector2d src_f = {camera_info->P[0], camera_info->P[5]}; // focal length
   const Eigen::Vector2d src_c = {camera_info->P[2], camera_info->P[6]}; // centre
+#elif defined(ROS2)
+  const Eigen::Vector2d src_f = {camera_info->p[0], camera_info->p[5]}; // focal length
+  const Eigen::Vector2d src_c = {camera_info->p[2], camera_info->p[6]}; // centre
+#endif
 
   // source field-of-view (FoV)
   const Eigen::Vector2d src_d = {camera_info->width, camera_info->height}; // dimension

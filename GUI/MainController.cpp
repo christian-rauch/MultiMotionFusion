@@ -24,8 +24,10 @@
 #ifdef ROSBAG
 #include "Tools/RosBagReader.hpp"
 #endif
-#ifdef ROSNODE
+#ifdef ROSREADER
 #include "Tools/RosNodeReader.hpp"
+#endif
+#ifdef ROSSTATE
 #include "Tools/RosStatePublisher.hpp"
 #endif
 
@@ -244,16 +246,53 @@ MainController::MainController(int argc, char* argv[])
 #ifdef ROSNODE
   if (Parse::get().arg(argc, argv, "-ros", empty) > 0) {
     // instantiate MultiMotionFusion node
+#ifdef ROS1
     ros::init(argc, argv, "MMF");
+    executor = std::make_unique<ros::AsyncSpinner>(1);
+    executor->start();
+#elif defined(ROS2)
+    const std::vector<std::string> args_non_ros = rclcpp::init_and_remove_ros_arguments(argc, argv);
+    // reset argv without the parsed ROS args
+    for (int i = 0; i < argc; i++) {
+        memset(argv[i], 0, strlen(argv[i]));
+    }
+    argc = args_non_ros.size();
+    for (size_t i=0; i<args_non_ros.size(); i++) {
+      strcpy(argv[i], args_non_ros[i].c_str());
+    }
+
+    executor = std::make_unique<rclcpp::executors::MultiThreadedExecutor>(rclcpp::ExecutorOptions{}, 1);
+    spinner = std::thread([this](){ executor->spin(); });
+#endif
+#ifdef ROSREADER
     // read RGB-D data
     if (!logReader) {
-      logReader = std::make_unique<RosNodeReader>(15, Parse::get().arg(argc, argv, "-f", empty) > -1, target_dim);
-      logReaderReady = true;
+      try {
+        logReader = std::make_unique<RosNodeReader>(15, Parse::get().arg(argc, argv, "-f", empty) > -1, target_dim);
+        logReaderReady = true;
+      } catch (const std::runtime_error& e) {
+        std::cerr << "cannot create ROS RGB-D reader: " << e.what() << std::endl;
+        logReader = nullptr;
+        logReaderReady = false;
+      }
     }
+#endif
+#ifdef ROSSTATE
     // publish segmentation and point clouds
     // TODO: get camera frame from input images
     state_publisher = std::make_unique<RosStatePublisher>("rgb_camera_link");
+#endif
+#ifdef ROSUI
     ui_control = std::make_unique<RosInterface>(&gui, &mmf);
+#endif
+#if defined(ROS2)
+    // add nodes to executor
+#ifdef ROSREADER
+    if (logReader) {
+      executor->add_node(dynamic_cast<RosNodeReader*>(logReader.get())->n);
+    }
+#endif
+#endif
   }
 #endif
 
@@ -403,6 +442,14 @@ MainController::MainController(int argc, char* argv[])
 }
 
 MainController::~MainController() {
+#ifdef ROSNODE
+#ifdef ROS1
+  executor->stop();
+#elif defined(ROS2)
+  executor->cancel();
+  spinner.join();
+#endif
+#endif
   if (mmf) {
     delete mmf;
   }
@@ -455,7 +502,7 @@ void MainController::launch() {
         cudaCheckError();
       }
 
-#ifdef ROSNODE
+#ifdef ROSSTATE
     if (state_publisher) {
       state_publisher->reset();
     }
@@ -481,7 +528,7 @@ void MainController::launch() {
       //    gui->addModel(model->getID(), model->getConfidenceThreshold());}
       //);
 
-#ifdef ROSNODE
+#ifdef ROSSTATE
     if (state_publisher) {
       MultiMotionFusion::StatusMessageHandler send_status_message = std::bind(&RosStatePublisher::send_status_message, state_publisher.get(), std::placeholders::_1);
       mmf->setStatusMessageHandler(send_status_message);
@@ -649,7 +696,7 @@ void MainController::run() {
       gui->saveColorImage(viewPath);
     }
 
-#ifdef ROSNODE
+#ifdef ROSSTATE
     if (state_publisher) {
       const int64_t time = logReader->getFrameData().timestamp;
       state_publisher->pub_segmentation(mmf->getTextures()[GPUTexture::MASK_COLOR]->downloadTexture(), time);
