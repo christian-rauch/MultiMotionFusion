@@ -1,4 +1,4 @@
-#ifdef ROSNODE
+#ifdef ROSUI
 
 #include "RosInterface.hpp"
 

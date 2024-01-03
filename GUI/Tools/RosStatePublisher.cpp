@@ -1,4 +1,4 @@
-#ifdef ROSNODE
+#ifdef ROSSTATE
 
 #include "RosStatePublisher.hpp"
 #include <sensor_msgs/Image.h>

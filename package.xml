@@ -58,6 +58,7 @@
   <depend>tf2_eigen</depend>
   <depend>tf2_ros</depend>
   <depend>image_transport</depend>
+  <depend>compressed_image_transport</depend>
   <depend>cv_bridge</depend>
   <depend>image_geometry</depend>
   <depend>super_point_inference</depend>
