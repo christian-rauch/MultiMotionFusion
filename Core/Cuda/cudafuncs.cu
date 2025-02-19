@@ -621,9 +621,7 @@ void verticesToDepth(DeviceArray<float>& vmap_src, DeviceArray2D<float> & dst, f
     cudaCheckError();
 }
 
-texture<uchar4, 2, cudaReadModeElementType> inTex;
-
-__global__ void bgr2IntensityKernel(PtrStepSz<unsigned char> dst)
+__global__ void bgr2IntensityKernel(cudaTextureObject_t inTex, PtrStepSz<unsigned char> dst)
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -631,7 +629,7 @@ __global__ void bgr2IntensityKernel(PtrStepSz<unsigned char> dst)
     if (x >= dst.cols || y >= dst.rows)
         return;
 
-    uchar4 src = tex2D(inTex, x, y);
+    uchar4 src = tex2D<uchar4>(inTex, x, y);
 
     int value = (float)src.x * 0.114f + (float)src.y * 0.299f + (float)src.z * 0.587f;
 
@@ -643,13 +641,26 @@ void imageBGRToIntensity(cudaArray * cuArr, DeviceArray2D<unsigned char> & dst)
     dim3 block (32, 8);
     dim3 grid (getGridDim (dst.cols (), block.x), getGridDim (dst.rows (), block.y));
 
-    cudaSafeCall(cudaBindTextureToArray(inTex, cuArr));
+    // create and bind a texture object
+    // https://developer.nvidia.com/blog/cuda-pro-tip-kepler-texture-objects-improve-performance-and-flexibility/
 
-    bgr2IntensityKernel<<<grid, block>>>(dst);
+    cudaResourceDesc resDesc;
+    memset(&resDesc, 0, sizeof(resDesc));
+    resDesc.resType = cudaResourceTypeArray;
+    resDesc.res.array.array = cuArr;
+
+    cudaTextureDesc texDesc;
+    memset(&texDesc, 0, sizeof(texDesc));
+    texDesc.readMode = cudaReadModeElementType;
+
+    cudaTextureObject_t inTex = 0;
+    cudaSafeCall(cudaCreateTextureObject(&inTex, &resDesc, &texDesc, nullptr));
+
+    bgr2IntensityKernel<<<grid, block>>>(inTex, dst);
 
     cudaCheckError();
 
-    cudaSafeCall(cudaUnbindTexture(inTex));
+    cudaSafeCall(cudaDestroyTextureObject(inTex));
 }
 
 __constant__ float gsobel_x3x3[9];
