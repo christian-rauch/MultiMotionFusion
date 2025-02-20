@@ -34,7 +34,7 @@ If you use this work, please cite our paper:
 
 ## Quick Start
 
-MultiMotionFusion is built as a colcon workspace to simplify dependency management. MultiMotionFusion needs a Nvidia GPU that supports CUDA 11. The instructions are for a fresh installation of Ubuntu 20.04 or 22.04.
+MultiMotionFusion is built as a colcon workspace to simplify dependency management. MultiMotionFusion needs a Nvidia GPU that supports CUDA 11 or 12. The instructions are for a fresh installation of Ubuntu 20.04, 22.04 or 24.04.
 
 1. Install system dependencies (CUDA, ROS, vcstool, rosdep, colcon) using [`setup.sh`](doc/setup.sh). If any of these system dependencies are already installed, skip this step and install the remaining dependencies manually.
     ```sh

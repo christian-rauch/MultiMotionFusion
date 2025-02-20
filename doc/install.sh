@@ -4,12 +4,14 @@ set -e
 
 source /etc/lsb-release
 
-if [ "$DISTRIB_RELEASE" = "20.04" ]; then
+if [ "$DISTRIB_RELEASE" == "20.04" ]; then
     ROS_DIST="noetic"
-elif [ "$DISTRIB_RELEASE" = "22.04" ]; then
+elif [ "$DISTRIB_RELEASE" == "22.04" ]; then
     ROS_DIST="humble"
+elif [ "$DISTRIB_RELEASE" == "24.04" ]; then
+    ROS_DIST="jazzy"
 else
-    echo "unsupported Ubuntu distribution"
+    echo "unsupported Ubuntu distribution ($DISTRIB_RELEASE)"
     exit 1
 fi
 
@@ -31,7 +33,7 @@ repositories:
   src/Pangolin:
     type: git
     url: https://github.com/stevenlovegrove/Pangolin.git
-    version: v0.8
+    version: v0.9.1
   src/densecrf:
     type: git
     url: https://github.com/christian-rauch/densecrf.git

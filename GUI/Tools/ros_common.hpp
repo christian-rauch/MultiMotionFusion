@@ -3,8 +3,17 @@
 #pragma once
 
 #include <opencv2/core.hpp>
+
+#if __has_include(<image_geometry/pinhole_camera_model.h>)
 #include <image_geometry/pinhole_camera_model.h>
+#elif __has_include(<image_geometry/pinhole_camera_model.hpp>)
+#include <image_geometry/pinhole_camera_model.hpp>
+#else
+#error "no 'pinhole_camera_model' header"
+#endif
+
 #include <Core/FrameData.h>
+
 #if defined(ROS1)
     #include <sensor_msgs/CameraInfo.h>
     using namespace sensor_msgs;
