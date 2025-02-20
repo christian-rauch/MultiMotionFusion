@@ -135,39 +135,39 @@ void RosBagReader::getNext() {
 
   // scale and crop images in place
   image_crop_target.map_target(data);
-};
+}
 
 int RosBagReader::getNumFrames() {
   // get number of colour and depth image pairs
   return matches.size();
-};
+}
 
 bool RosBagReader::hasMore() {
   return iter_sync != matches.cend();
-};
+}
 
 bool RosBagReader::rewind() {
   iter_sync = matches.cbegin();
   return true;
-};
+}
 
-void RosBagReader::getPrevious() {};
+void RosBagReader::getPrevious() {}
 
 void RosBagReader::fastForward(int frame) {
   for(int i = 0; i<frame && hasMore(); i++) { getNext(); }
-};
+}
 
 const std::string RosBagReader::getFile() {
   return file;
-};
+}
 
 void RosBagReader::setAuto(bool /*value*/) {
   // ignore since auto exposure and auto white balance settings do not apply to log
-};
+}
 
 FrameData RosBagReader::getFrameData() {
   return data;
-};
+}
 
 Eigen::Matrix4f RosBagReader::getIncrementalTransformation(uint64_t timestamp) {
   if (!has_tf)
@@ -181,7 +181,7 @@ Eigen::Matrix4f RosBagReader::getIncrementalTransformation(uint64_t timestamp) {
     ref_time = timestamp;
   }
   return (poses.at(ref_time).inverse() * poses.at(timestamp)).matrix().cast<float>();
-};
+}
 
 bool RosBagReader::add_all_tf_msgs(const std::string &topic, const bool tf_static) {
   size_t nvalid = 0;

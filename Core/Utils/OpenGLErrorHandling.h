@@ -3,6 +3,7 @@
 #ifdef NDEBUG
 #define checkGLErrors()
 #else
+#include <GL/glu.h>
 #define checkGLErrors() checkGLErrors_(__FILE__, __LINE__)
 static void checkGLErrors_(char* file, int line) {
   GLenum err = GL_NO_ERROR;

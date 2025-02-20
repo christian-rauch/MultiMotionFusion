@@ -21,6 +21,7 @@ jobs:
         include:
           - docker_image: ubuntu:20.04
           - docker_image: ubuntu:22.04
+          - docker_image: ubuntu:24.04
 
     steps:
 

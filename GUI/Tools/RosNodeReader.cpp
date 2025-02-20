@@ -1,7 +1,14 @@
 #ifdef ROSREADER
 
 #include "RosNodeReader.hpp"
+
+#if __has_include(<cv_bridge/cv_bridge.h>)
 #include <cv_bridge/cv_bridge.h>
+#elif __has_include(<cv_bridge/cv_bridge.hpp>)
+#include <cv_bridge/cv_bridge.hpp>
+#else
+#error "no 'cv_bridge' header"
+#endif
 
 #if defined(ROS1)
     #include <tf2_eigen/tf2_eigen.h>

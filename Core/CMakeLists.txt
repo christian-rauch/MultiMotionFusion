@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0.2)
+cmake_minimum_required(VERSION 3.16)
 
 project(multimotionfusion LANGUAGES CXX CUDA)
 
@@ -13,6 +13,7 @@ find_package(SuiteSparse REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(OpenMP)
 find_package(Eigen3 REQUIRED NO_MODULE)
+find_package(OpenGL REQUIRED)
 
 find_package(super_point_inference REQUIRED)
 
@@ -136,6 +137,7 @@ target_link_libraries(${PROJECT_NAME}
     ${SUITESPARSE_LIBRARIES}
     ${OpenCV_LIBRARIES}
     super_point_inference
+    OpenGL::GLU
 )
 
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_11)

@@ -16,7 +16,7 @@ get_crop_roi(const cv::Size &source_dimensions, const cv::Size &target_dimension
   cv::Rect crop_roi;
 
   // scale of cropped dimensions = source / target
-  double scale;
+  double scale = 0;
 
   // aspect_ratio = width / height;
 
