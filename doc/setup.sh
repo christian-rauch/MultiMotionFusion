@@ -19,7 +19,7 @@ elif [ "$DISTRIB_RELEASE" = "22.04" ]; then
     ROS_VER="2"
     ROS_DIST="humble"
 elif [ "$DISTRIB_RELEASE" == "24.04" ]; then
-    CUDA_REPO_VER="ubuntu2204"
+    CUDA_REPO_VER="ubuntu2404"
     ROS_VER="2"
     ROS_DIST="jazzy"
 else
