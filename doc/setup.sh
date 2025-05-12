@@ -32,7 +32,7 @@ wget https://developer.download.nvidia.com/compute/cuda/repos/${CUDA_REPO_VER}/x
 sudo dpkg -i cuda-keyring_1.1-1_all.deb
 rm cuda-keyring_1.1-1_all.deb
 sudo apt update
-sudo apt install --no-install-recommends -y cuda-toolkit-12
+sudo apt install --no-install-recommends -y cuda-toolkit-12-6
 
 echo "install ROS ${ROS_VER}"
 sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
