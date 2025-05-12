@@ -27,11 +27,6 @@ jobs:
 
     steps:
 
-      - name: install sudo
-        run: |
-          apt update
-          apt install -y sudo
-
       - uses: actions/checkout@v4
 
       - name: setup
