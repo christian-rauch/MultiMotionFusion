@@ -2,6 +2,7 @@
 
 set -e
 
+which sudo || apt update && apt install -y sudo
 sudo apt update
 sudo -E apt install -y software-properties-common
 sudo add-apt-repository -y universe
