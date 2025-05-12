@@ -4,7 +4,8 @@ on:
   pull_request:
     paths-ignore:
       - '**/README.md'
-      - doc/**
+      - 'doc/**'
+      - '!doc/**/*.sh'
 
 jobs:
   build:
