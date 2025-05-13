@@ -137,6 +137,15 @@ void RosStatePublisher::pub_models(const ModelList &models, const int64_t timest
 #endif
     }
 
+    if (id==0) {
+        // publish "map" (model id 0) in camera frame
+        TransformStamped pose;
+        pose.transform = tf2::eigenToTransform(pose_global.cast<double>().inverse()).transform;
+        pose.header = hdr;
+        pose.child_frame_id = "map";
+        pose_objects.push_back(pose);
+    }
+
     const Eigen::Isometry3f T_0X(model->getPose());
 
     if (id>0) {
