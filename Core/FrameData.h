@@ -30,6 +30,7 @@ struct FrameData {
   }
 
   int64_t timestamp;
+  std::string frame_name;
 
   cv::Mat mask;   // External segmentation (optional!), CV_8UC1
   cv::Mat rgb;    // RGB data, CV_8UC3
