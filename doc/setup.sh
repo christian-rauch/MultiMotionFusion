@@ -2,6 +2,7 @@
 
 set -e
 
+which sudo || apt update && apt install -y sudo
 sudo apt update
 sudo -E apt install -y software-properties-common
 sudo add-apt-repository -y universe
@@ -19,7 +20,7 @@ elif [ "$DISTRIB_RELEASE" = "22.04" ]; then
     ROS_VER="2"
     ROS_DIST="humble"
 elif [ "$DISTRIB_RELEASE" == "24.04" ]; then
-    CUDA_REPO_VER="ubuntu2204"
+    CUDA_REPO_VER="ubuntu2404"
     ROS_VER="2"
     ROS_DIST="jazzy"
 else
@@ -32,7 +33,7 @@ wget https://developer.download.nvidia.com/compute/cuda/repos/${CUDA_REPO_VER}/x
 sudo dpkg -i cuda-keyring_1.1-1_all.deb
 rm cuda-keyring_1.1-1_all.deb
 sudo apt update
-sudo apt install --no-install-recommends -y cuda-toolkit-12
+sudo apt install --no-install-recommends -y cuda-toolkit-12-6
 
 echo "install ROS ${ROS_VER}"
 sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg

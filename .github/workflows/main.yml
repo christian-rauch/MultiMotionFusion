@@ -1,10 +1,12 @@
 name: CI
 
 on:
+  workflow_dispatch:
   pull_request:
     paths-ignore:
       - '**/README.md'
-      - doc/**
+      - 'doc/**'
+      - '!doc/**/*.sh'
 
 jobs:
   build:
@@ -24,11 +26,6 @@ jobs:
           - docker_image: ubuntu:24.04
 
     steps:
-
-      - name: install sudo
-        run: |
-          apt update
-          apt install -y sudo
 
       - uses: actions/checkout@v4
 
