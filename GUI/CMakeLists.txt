@@ -40,13 +40,14 @@ endif()
 if(ROSNODE)
     if(HASROS1)
         find_package(roscpp REQUIRED)
-        add_compile_options(-DROSUI)
     endif()
+    add_compile_options(-DROSUI)
     add_compile_options(-DROSSTATE)
     add_compile_options(-DROSREADER)
     find_package(image_transport REQUIRED)
     find_package(tf2_ros REQUIRED)
     find_package(cob_srvs REQUIRED)
+    find_package(std_srvs REQUIRED)
 endif()
 
 if(ROSBAG OR ROSNODE)
@@ -139,12 +140,14 @@ if(ROSNODE)
         ${image_transport_INCLUDE_DIRS}
         ${tf2_ros_INCLUDE_DIRS}
         ${cob_srvs_INCLUDE_DIRS}
+        ${std_srvs_INCLUDE_DIRS}
     )
     target_link_libraries(MultiMotionFusionTools
         ${roscpp_LIBRARIES}
         ${image_transport_LIBRARIES}
         ${tf2_ros_LIBRARIES}
         ${cob_srvs_LIBRARIES}
+        ${std_srvs_LIBRARIES}
     )
 if(HASROS2)
     target_link_libraries(MultiMotionFusionTools
