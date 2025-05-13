@@ -21,11 +21,11 @@
 
 class RosStatePublisher {
 public:
-    RosStatePublisher(const std::string &camera_frame);
+    RosStatePublisher();
 
-    void pub_segmentation(const cv::Mat &segmentation, const int64_t timestamp_ns);
+    void pub_segmentation(const cv::Mat &segmentation, const int64_t timestamp_ns, const std::string &camera_frame);
 
-    void pub_models(const ModelList &models, const int64_t timestamp_ns);
+    void pub_models(const ModelList &models, const int64_t timestamp_ns, const std::string &camera_frame);
 
     void reset();
 
@@ -57,6 +57,4 @@ private:
     std::unordered_map<uint8_t, rclcpp::Publisher<CompressedImage>::SharedPtr> pub_model_proj_depth;
     rclcpp::Publisher<String>::SharedPtr pub_status_message;
 #endif
-
-    const std::string camera_frame;
 };

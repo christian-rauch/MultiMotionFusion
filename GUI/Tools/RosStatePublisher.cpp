@@ -69,8 +69,7 @@ get_camera_info()
 }
 
 
-RosStatePublisher::RosStatePublisher(const std::string &camera_frame) :
-    camera_frame(camera_frame)
+RosStatePublisher::RosStatePublisher()
 {
 #if defined(ROS1)
   n = std::make_unique<ros::NodeHandle>("~");
@@ -87,7 +86,7 @@ RosStatePublisher::RosStatePublisher(const std::string &camera_frame) :
   pub_segm = it->advertise("~/segmentation", 1);
 }
 
-void RosStatePublisher::pub_segmentation(const cv::Mat &segmentation, const int64_t timestamp_ns)
+void RosStatePublisher::pub_segmentation(const cv::Mat &segmentation, const int64_t timestamp_ns, const std::string &camera_frame)
 {
   Header hdr;
   hdr.frame_id = camera_frame;
@@ -99,7 +98,7 @@ void RosStatePublisher::pub_segmentation(const cv::Mat &segmentation, const int6
   pub_segm.publish(cv_bridge::CvImage(hdr, "rgb8", segmentation).toImageMsg());
 }
 
-void RosStatePublisher::pub_models(const ModelList &models, const int64_t timestamp_ns)
+void RosStatePublisher::pub_models(const ModelList &models, const int64_t timestamp_ns, const std::string &camera_frame)
 {
   // all dense model point clouds are expressed in the camera frame
   Header hdr;
