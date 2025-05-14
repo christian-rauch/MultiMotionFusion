@@ -30,22 +30,22 @@ class RosInterface {
 public:
     RosInterface(GUI **gui, MultiMotionFusion **modelling);
 
-    bool on_reset(Trigger::Request::ConstSharedPtr req, Trigger::Response::SharedPtr res);
+    bool on_reset(Trigger::Request::ConstPtr req, Trigger::Response::Ptr res);
 
-    bool on_inhibit(SetBool::Request::ConstSharedPtr req, SetBool::Response::SharedPtr res);
+    bool on_inhibit(SetBool::Request::ConstPtr req, SetBool::Response::Ptr res);
 
-    bool on_pause(SetBool::Request::ConstSharedPtr req, SetBool::Response::SharedPtr res);
+    bool on_pause(SetBool::Request::ConstPtr req, SetBool::Response::Ptr res);
 
     template<bool P>
-    bool on_start_stop(Trigger::Request::ConstSharedPtr req, Trigger::Response::SharedPtr res);
+    bool on_start_stop(Trigger::Request::ConstPtr req, Trigger::Response::Ptr res);
 
-    bool on_deactivate(SetInt::Request::ConstSharedPtr req, SetInt::Response::SharedPtr res);
+    bool on_deactivate(SetInt::Request::ConstPtr req, SetInt::Response::Ptr res);
 
-    bool on_set_odom_init(SetString::Request::ConstSharedPtr req, SetString::Response::SharedPtr res);
+    bool on_set_odom_init(SetString::Request::ConstPtr req, SetString::Response::Ptr res);
 
-    bool on_set_icp_refine(SetBool::Request::ConstSharedPtr req, SetBool::Response::SharedPtr res);
+    bool on_set_icp_refine(SetBool::Request::ConstPtr req, SetBool::Response::Ptr res);
 
-    bool on_set_segm_mode(SetString::Request::ConstSharedPtr req, SetString::Response::SharedPtr res);
+    bool on_set_segm_mode(SetString::Request::ConstPtr req, SetString::Response::Ptr res);
 
 #if defined(ROS2)
     rclcpp::Node::SharedPtr n;

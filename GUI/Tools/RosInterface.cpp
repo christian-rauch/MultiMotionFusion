@@ -37,7 +37,7 @@ RosInterface::RosInterface(GUI **gui, MultiMotionFusion **modelling)
 #endif
 }
 
-bool RosInterface::on_reset(Trigger::Request::ConstSharedPtr req, Trigger::Response::SharedPtr res)
+bool RosInterface::on_reset(Trigger::Request::ConstPtr req, Trigger::Response::Ptr res)
 {
   if (!*gui) {
     res->success = false;
@@ -51,7 +51,7 @@ bool RosInterface::on_reset(Trigger::Request::ConstSharedPtr req, Trigger::Respo
   return true;
 }
 
-bool RosInterface::on_inhibit(SetBool::Request::ConstSharedPtr req, SetBool::Response::SharedPtr res)
+bool RosInterface::on_inhibit(SetBool::Request::ConstPtr req, SetBool::Response::Ptr res)
 {
   if (!*gui) {
     res->success = false;
@@ -81,7 +81,7 @@ bool RosInterface::on_inhibit(SetBool::Request::ConstSharedPtr req, SetBool::Res
   return true;
 }
 
-bool RosInterface::on_pause(SetBool::Request::ConstSharedPtr req, SetBool::Response::SharedPtr res)
+bool RosInterface::on_pause(SetBool::Request::ConstPtr req, SetBool::Response::Ptr res)
 {
   if (!*gui) {
     res->success = false;
@@ -112,7 +112,7 @@ bool RosInterface::on_pause(SetBool::Request::ConstSharedPtr req, SetBool::Respo
 }
 
 template<bool P>
-bool RosInterface::on_start_stop(Trigger::Request::ConstSharedPtr req, Trigger::Response::SharedPtr res)
+bool RosInterface::on_start_stop(Trigger::Request::ConstPtr req, Trigger::Response::Ptr res)
 {
     if (!*gui) {
         res->success = false;
@@ -142,7 +142,7 @@ bool RosInterface::on_start_stop(Trigger::Request::ConstSharedPtr req, Trigger::
     return true;
 }
 
-bool RosInterface::on_deactivate(SetInt::Request::ConstSharedPtr req, SetInt::Response::SharedPtr res)
+bool RosInterface::on_deactivate(SetInt::Request::ConstPtr req, SetInt::Response::Ptr res)
 {
   if (!*gui) {
     res->success = false;
@@ -177,7 +177,7 @@ bool RosInterface::on_deactivate(SetInt::Request::ConstSharedPtr req, SetInt::Re
   return true;
 }
 
-bool RosInterface::on_set_odom_init(SetString::Request::ConstSharedPtr req, SetString::Response::SharedPtr res)
+bool RosInterface::on_set_odom_init(SetString::Request::ConstPtr req, SetString::Response::Ptr res)
 {
   if (!*modelling) {
     res->success = false;
@@ -200,7 +200,7 @@ bool RosInterface::on_set_odom_init(SetString::Request::ConstSharedPtr req, SetS
   return true;
 }
 
-bool RosInterface::on_set_icp_refine(SetBool::Request::ConstSharedPtr req, SetBool::Response::SharedPtr res)
+bool RosInterface::on_set_icp_refine(SetBool::Request::ConstPtr req, SetBool::Response::Ptr res)
 {
   if (!*modelling) {
     res->success = false;
@@ -216,7 +216,7 @@ bool RosInterface::on_set_icp_refine(SetBool::Request::ConstSharedPtr req, SetBo
   return true;
 }
 
-bool RosInterface::on_set_segm_mode(SetString::Request::ConstSharedPtr req, SetString::Response::SharedPtr res)
+bool RosInterface::on_set_segm_mode(SetString::Request::ConstPtr req, SetString::Response::Ptr res)
 {
   if (!*modelling) {
     res->success = false;
