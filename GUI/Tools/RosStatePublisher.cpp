@@ -22,7 +22,6 @@
 #elif defined(ROS2)
     #include <sensor_msgs/point_cloud2_iterator.hpp>
     #include <tf2_eigen/tf2_eigen.hpp>
-    using namespace geometry_msgs::msg;
 #endif
 #include <opencv2/imgcodecs.hpp>
 
@@ -76,12 +75,14 @@ RosStatePublisher::RosStatePublisher()
   it = std::make_unique<image_transport::ImageTransport>(*n);
   pub_camera_info = n->advertise<CameraInfo>("camera_info", 1);
   pub_status_message = n->advertise<String>("status", 1, true);
+  pub_pose_map = n->advertise<PoseStamped>("/camera_pose", 1);
 #elif defined(ROS2)
   n = std::make_unique<rclcpp::Node>("mmf_state");
   it = std::make_unique<image_transport::ImageTransport>(n);
   broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(n);
   pub_camera_info = n->create_publisher<CameraInfo>("~/camera_info", 1);
   pub_status_message = n->create_publisher<String>("~/status", 1);
+  pub_pose_map = n->create_publisher<PoseStamped>("/camera_pose", 1);
 #endif
   pub_segm = it->advertise("~/segmentation", 1);
 }
@@ -143,6 +144,15 @@ void RosStatePublisher::pub_models(const ModelList &models, const int64_t timest
         pose.header = hdr;
         pose.child_frame_id = "map";
         pose_objects.push_back(pose);
+
+        PoseStamped msg_pose_stamped;
+        msg_pose_stamped.header = hdr;
+        msg_pose_stamped.pose = tf2::toMsg(pose_global.cast<double>().inverse()),
+#if defined(ROS1)
+        pub_pose_map.publish(msg_pose_stamped);
+#elif defined(ROS2)
+        pub_pose_map->publish(msg_pose_stamped);
+#endif
     }
 
     const Eigen::Isometry3f T_0X(model->getPose());

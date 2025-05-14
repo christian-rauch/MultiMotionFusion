@@ -10,9 +10,11 @@
     #include <sensor_msgs/msg/image.hpp>
     #include <sensor_msgs/msg/compressed_image.hpp>
     #include <sensor_msgs/msg/point_cloud2.hpp>
+    #include <geometry_msgs/msg/pose_stamped.hpp>
     #include <std_msgs/msg/string.hpp>
     using namespace sensor_msgs::msg;
     using namespace std_msgs::msg;
+    using namespace geometry_msgs::msg;
 #endif
 #include <tf2_ros/transform_broadcaster.h>
 #include <opencv2/core.hpp>
@@ -49,6 +51,7 @@ private:
     std::unordered_map<uint8_t, ros::Publisher> pub_model_proj_colour;
     std::unordered_map<uint8_t, ros::Publisher> pub_model_proj_depth;
     ros::Publisher pub_status_message;
+    ros::Publisher pub_pose_map;
 #elif defined(ROS2)
     rclcpp::Publisher<CameraInfo>::SharedPtr pub_camera_info;
     std::unordered_map<uint8_t, rclcpp::Publisher<CameraInfo>::SharedPtr> pub_camera_info_depth;
@@ -56,5 +59,6 @@ private:
     std::unordered_map<uint8_t, rclcpp::Publisher<CompressedImage>::SharedPtr> pub_model_proj_colour;
     std::unordered_map<uint8_t, rclcpp::Publisher<CompressedImage>::SharedPtr> pub_model_proj_depth;
     rclcpp::Publisher<String>::SharedPtr pub_status_message;
+    rclcpp::Publisher<PoseStamped>::SharedPtr pub_pose_map;
 #endif
 };
