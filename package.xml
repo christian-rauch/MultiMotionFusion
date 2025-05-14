@@ -62,7 +62,6 @@
   <depend>cv_bridge</depend>
   <depend>image_geometry</depend>
   <depend>super_point_inference</depend>
-  <depend condition="$ROS_VERSION == 1">eigen_conversions</depend>
   <depend>cob_srvs</depend>
 
   <export>

@@ -1,12 +1,28 @@
 #ifdef ROSSTATE
 
 #include "RosStatePublisher.hpp"
-#include <sensor_msgs/Image.h>
-#include <sensor_msgs/PointCloud2.h>
-#include <sensor_msgs/point_cloud2_iterator.h>
-#include <std_msgs/String.h>
+
+#if __has_include(<cv_bridge/cv_bridge.h>)
 #include <cv_bridge/cv_bridge.h>
-#include <eigen_conversions/eigen_msg.h>
+#elif __has_include(<cv_bridge/cv_bridge.hpp>)
+#include <cv_bridge/cv_bridge.hpp>
+#else
+#error "no 'cv_bridge' header"
+#endif
+
+#if defined(ROS1)
+    #include <sensor_msgs/Image.h>
+    #include <sensor_msgs/PointCloud2.h>
+    #include <sensor_msgs/point_cloud2_iterator.h>
+    #include <std_msgs/String.h>
+    #include <tf2_eigen/tf2_eigen.h>
+    using namespace sensor_msgs;
+    using namespace std_msgs;
+    using namespace geometry_msgs;
+#elif defined(ROS2)
+    #include <sensor_msgs/point_cloud2_iterator.hpp>
+    #include <tf2_eigen/tf2_eigen.hpp>
+#endif
 #include <opencv2/imgcodecs.hpp>
 
 
@@ -29,57 +45,78 @@ struct surfel_t {
 // a surfel should consume 3 x 4 x 32 = 384 bit = 48 byte
 static_assert(sizeof(surfel_t) == 48, "struct surfel_t is misaligned");
 
-static sensor_msgs::CameraInfo
+static CameraInfo
 get_camera_info()
 {
-  sensor_msgs::CameraInfo ci;
+  CameraInfo ci;
   ci.width = Resolution::getInstance().width();
   ci.height = Resolution::getInstance().height();
+#if defined(ROS1)
   ci.K[0] = ci.P[0] = Intrinsics::getInstance().fx();
   ci.K[2] = ci.P[2] = Intrinsics::getInstance().cx();
   ci.K[4] = ci.P[5] = Intrinsics::getInstance().fy();
   ci.K[5] = ci.P[6] = Intrinsics::getInstance().cy();
   ci.K[8] = ci.P[10] = 1;
+#elif defined(ROS2)
+  ci.k[0] = ci.p[0] = Intrinsics::getInstance().fx();
+  ci.k[2] = ci.p[2] = Intrinsics::getInstance().cx();
+  ci.k[4] = ci.p[5] = Intrinsics::getInstance().fy();
+  ci.k[5] = ci.p[6] = Intrinsics::getInstance().cy();
+  ci.k[8] = ci.p[10] = 1;
+#endif
   return ci;
 }
 
 
-RosStatePublisher::RosStatePublisher(const std::string &camera_frame) :
-    camera_frame(camera_frame)
+RosStatePublisher::RosStatePublisher()
 {
+#if defined(ROS1)
   n = std::make_unique<ros::NodeHandle>("~");
-
   it = std::make_unique<image_transport::ImageTransport>(*n);
-
-  pub_segm = it->advertise("segmentation", 1);
-
-  pub_camera_info = n->advertise<sensor_msgs::CameraInfo>("camera_info", 1);
-
-  pub_status_message = n->advertise<std_msgs::String>("status", 1, true);
+  pub_camera_info = n->advertise<CameraInfo>("camera_info", 1);
+  pub_status_message = n->advertise<String>("status", 1, true);
+  pub_pose_map = n->advertise<PoseStamped>("/camera_pose", 1);
+#elif defined(ROS2)
+  n = std::make_unique<rclcpp::Node>("mmf_state");
+  it = std::make_unique<image_transport::ImageTransport>(n);
+  broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(n);
+  pub_camera_info = n->create_publisher<CameraInfo>("~/camera_info", 1);
+  pub_status_message = n->create_publisher<String>("~/status", 1);
+  pub_pose_map = n->create_publisher<PoseStamped>("/camera_pose", 1);
+#endif
+  pub_segm = it->advertise("~/segmentation", 1);
 }
 
-void RosStatePublisher::pub_segmentation(const cv::Mat &segmentation, const int64_t timestamp_ns)
+void RosStatePublisher::pub_segmentation(const cv::Mat &segmentation, const int64_t timestamp_ns, const std::string &camera_frame)
 {
-  std_msgs::Header hdr;
+  Header hdr;
   hdr.frame_id = camera_frame;
+#if defined(ROS1)
   hdr.stamp.fromNSec(timestamp_ns);
+#elif defined(ROS2)
+  hdr.stamp = rclcpp::Time(timestamp_ns);
+#endif
   pub_segm.publish(cv_bridge::CvImage(hdr, "rgb8", segmentation).toImageMsg());
 }
 
-void RosStatePublisher::pub_models(const ModelList &models, const int64_t timestamp_ns)
+void RosStatePublisher::pub_models(const ModelList &models, const int64_t timestamp_ns, const std::string &camera_frame)
 {
   // all dense model point clouds are expressed in the camera frame
-  std_msgs::Header hdr;
+  Header hdr;
   hdr.frame_id = camera_frame;
+#if defined(ROS1)
   hdr.stamp.fromNSec(timestamp_ns);
+#elif defined(ROS2)
+  hdr.stamp = rclcpp::Time(timestamp_ns);
+#endif
 
   // object poses (id>0) with respect to the global model (id=0)
-  std::vector<geometry_msgs::TransformStamped> pose_objects;
+  std::vector<TransformStamped> pose_objects;
 
   const Eigen::Isometry3f pose_global(models.front()->getPose());
 
   // reserve a single point cloud and its modifier
-  sensor_msgs::PointCloud2 point_cloud;
+  PointCloud2 point_cloud;
   point_cloud.header = hdr;
   // unordered point cloud
   point_cloud.height = 1;
@@ -93,7 +130,29 @@ void RosStatePublisher::pub_models(const ModelList &models, const int64_t timest
 
     if (!pub_model_pc.count(id)) {
       // create new publisher for model
-      pub_model_pc[id] = n->advertise<sensor_msgs::PointCloud2>("model/"+std::to_string(id)+"/dense", 1);
+#if defined(ROS1)
+      pub_model_pc[id] = n->advertise<PointCloud2>("model/"+std::to_string(id)+"/dense", 1);
+#elif defined(ROS2)
+      pub_model_pc[id] = n->create_publisher<PointCloud2>("~/model/id"+std::to_string(id)+"/dense", 1);
+#endif
+    }
+
+    if (id==0) {
+        // publish "map" (model id 0) in camera frame
+        TransformStamped pose;
+        pose.transform = tf2::eigenToTransform(pose_global.cast<double>().inverse()).transform;
+        pose.header = hdr;
+        pose.child_frame_id = "map";
+        pose_objects.push_back(pose);
+
+        PoseStamped msg_pose_stamped;
+        msg_pose_stamped.header = hdr;
+        msg_pose_stamped.pose = tf2::toMsg(pose_global.cast<double>().inverse()),
+#if defined(ROS1)
+        pub_pose_map.publish(msg_pose_stamped);
+#elif defined(ROS2)
+        pub_pose_map->publish(msg_pose_stamped);
+#endif
     }
 
     const Eigen::Isometry3f T_0X(model->getPose());
@@ -101,8 +160,8 @@ void RosStatePublisher::pub_models(const ModelList &models, const int64_t timest
     if (id>0) {
       // object pose in camera frame
       const Eigen::Isometry3f T_cm = pose_global * T_0X.inverse();
-      geometry_msgs::TransformStamped pose;
-      tf::transformEigenToMsg(T_cm.cast<double>(), pose.transform);
+      TransformStamped pose;
+      pose.transform = tf2::eigenToTransform(T_cm.cast<double>()).transform;
       pose.header = hdr;
       pose.child_frame_id = "model/"+std::to_string(id);
       pose_objects.push_back(pose);
@@ -139,12 +198,16 @@ void RosStatePublisher::pub_models(const ModelList &models, const int64_t timest
       }
     }
 
+#if defined(ROS1)
     pub_model_pc[id].publish(point_cloud);
+#elif defined(ROS2)
+    pub_model_pc[id]->publish(point_cloud);
+#endif
 
     pc_modifier.clear();
   }
 
-  sensor_msgs::CameraInfo ci = get_camera_info();
+  CameraInfo ci = get_camera_info();
   ci.header = hdr;
 
   for (const ModelPointer &model : models) {
@@ -158,32 +221,56 @@ void RosStatePublisher::pub_models(const ModelList &models, const int64_t timest
     cv::Mat depth_mm;
     xyz[2].convertTo(depth_mm, CV_16UC1, 1e3);
 
+#if defined(ROS1)
     if (!pub_model_proj_colour.count(id)) {
-      pub_model_proj_colour[id] = n->advertise<sensor_msgs::CompressedImage>("model/"+std::to_string(id)+"/colour/compressed", 1);
+      pub_model_proj_colour[id] = n->advertise<CompressedImage>("model/"+std::to_string(id)+"/colour/compressed", 1);
     }
     if (!pub_model_proj_depth.count(id)) {
-      pub_model_proj_depth[id] = n->advertise<sensor_msgs::CompressedImage>("model/"+std::to_string(id)+"/depth/compressed", 1);
-      pub_camera_info_depth[id] = n->advertise<sensor_msgs::CameraInfo>("model/"+std::to_string(id)+"/camera_info", 1);
+      pub_model_proj_depth[id] = n->advertise<CompressedImage>("model/"+std::to_string(id)+"/depth/compressed", 1);
+      pub_camera_info_depth[id] = n->advertise<CameraInfo>("model/"+std::to_string(id)+"/camera_info", 1);
     }
 
     pub_model_proj_colour[id].publish(cv_bridge::CvImage(hdr, "rgb8", colour).toCompressedImageMsg());
+#elif defined(ROS2)
+    if (!pub_model_proj_colour.count(id)) {
+        pub_model_proj_colour[id] = n->create_publisher<CompressedImage>("~/model/id"+std::to_string(id)+"/colour/compressed", 1);
+    }
+    if (!pub_model_proj_depth.count(id)) {
+        pub_model_proj_depth[id] = n->create_publisher<CompressedImage>("~/model/id"+std::to_string(id)+"/depth/compressed", 1);
+        pub_camera_info_depth[id] = n->create_publisher<CameraInfo>("~/model/id"+std::to_string(id)+"/camera_info", 1);
+    }
+
+    pub_model_proj_colour[id]->publish(*cv_bridge::CvImage(hdr, "rgb8", colour).toCompressedImageMsg());
+#endif
 
     // we have to manually compress the 16 bit PNG image
-    sensor_msgs::CompressedImage msg_depth;
+    CompressedImage msg_depth;
     cv::imencode(".png", depth_mm, msg_depth.data);
     msg_depth.header = hdr;
     msg_depth.format = "16UC1; png compressed ";
 
+#if defined(ROS1)
     pub_model_proj_depth[id].publish(msg_depth);
-
     pub_camera_info_depth[id].publish(ci);
+#elif defined(ROS2)
+    pub_model_proj_depth[id]->publish(msg_depth);
+    pub_camera_info_depth[id]->publish(ci);
+#endif
   }
 
+#if defined(ROS1)
   pub_camera_info.publish(ci);
 
   if (!pose_objects.empty()) {
     broadcaster.sendTransform(pose_objects);
   }
+#elif defined(ROS2)
+  pub_camera_info->publish(ci);
+
+  if (!pose_objects.empty()) {
+      broadcaster->sendTransform(pose_objects);
+  }
+#endif
 }
 
 void RosStatePublisher::reset()
@@ -200,9 +287,13 @@ void RosStatePublisher::reset()
 
 void RosStatePublisher::send_status_message(const std::string &message)
 {
-  std_msgs::String msg;
+  String msg;
   msg.data = message;
+#if defined(ROS1)
   pub_status_message.publish(msg);
+#elif defined(ROS2)
+  pub_status_message->publish(msg);
+#endif
 }
 
 #endif

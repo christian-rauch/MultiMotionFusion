@@ -78,6 +78,7 @@ RosNodeReader::RosNodeReader(const uint32_t synchroniser_queue_size,
 void RosNodeReader::on_rgbd(const Image::ConstPtr& msg_colour, const Image::ConstPtr& msg_depth) {
   mutex.lock();
   const Header hdr_colour = msg_colour->header;
+  data.frame_name = hdr_colour.frame_id;
 #if defined(ROS1)
   data.timestamp = int64_t(hdr_colour.stamp.toNSec());
 #elif defined(ROS2)
