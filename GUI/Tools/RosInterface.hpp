@@ -8,8 +8,6 @@
     #include <cob_srvs/SetString.h>
     using namespace std_srvs;
     using namespace cob_srvs;
-    using ConstSharedPtr = ConstPtr;
-    using SharedPtr = Ptr;
 #elif defined(ROS2)
     #include <rclcpp/rclcpp.hpp>
     #include <std_srvs/srv/trigger.hpp>
