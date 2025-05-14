@@ -19,6 +19,7 @@ jobs:
       image: ${{ matrix.docker_image }}
 
     strategy:
+      fail-fast: false
       matrix:
         include:
           - docker_image: ubuntu:20.04

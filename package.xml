@@ -63,6 +63,7 @@
   <depend>image_geometry</depend>
   <depend>super_point_inference</depend>
   <depend>cob_srvs</depend>
+  <depend>std_srvs</depend>
 
   <export>
     <build_type>cmake</build_type>
