@@ -28,6 +28,8 @@ RosInterface::RosInterface(GUI **gui, MultiMotionFusion **modelling)
   srv_reset = n->create_service<Trigger>("~/reset", std::bind(&RosInterface::on_reset, this, _1, _2));
   srv_inhibit = n->create_service<SetBool>("~/inhibit", std::bind(&RosInterface::on_inhibit, this, _1, _2));
   srv_pause = n->create_service<SetBool>("~/pause", std::bind(&RosInterface::on_pause, this, _1, _2));
+  srv_start = n->create_service<Trigger>("~/start", std::bind(&RosInterface::on_start_stop<false>, this, _1, _2));
+  srv_stop = n->create_service<Trigger>("~/stop", std::bind(&RosInterface::on_start_stop<true>, this, _1, _2));
   srv_deactivate_model = n->create_service<SetInt>("~/deactivate_model", std::bind(&RosInterface::on_deactivate, this, _1, _2));
   srv_set_odom_init = n->create_service<SetString>("~/set_odom_init", std::bind(&RosInterface::on_set_odom_init, this, _1, _2));
   srv_set_icp_refine = n->create_service<SetBool>("~/set_icp_refine", std::bind(&RosInterface::on_set_icp_refine, this, _1, _2));
@@ -270,6 +272,37 @@ bool RosInterface::on_pause(SetBool::Request::ConstSharedPtr req, SetBool::Respo
     else {
         (*gui)->pause->Ref()->Set(req->data);
         res->success = (*gui)->pause->Get() == req->data;
+        if (res->success) {
+            res->message = "tracking and modelling is " + action;
+        }
+        else {
+            res->message = "could not apply pause setting";
+        }
+    }
+
+    return true;
+}
+
+template<bool P>
+bool RosInterface::on_start_stop(Trigger::Request::ConstSharedPtr req, Trigger::Response::SharedPtr res)
+{
+    if (!*gui) {
+        res->success = false;
+        res->message = "GUI not initialised";
+        return true;
+    }
+
+    const std::string action = P ? "paused" : "running";
+
+    const bool apply_change = (*gui)->pause->Get() != P;
+
+    if (!apply_change) {
+        res->success = false;
+        res->message = "pause setting not applied: already " + action;
+    }
+    else {
+        (*gui)->pause->Ref()->Set(P);
+        res->success = (*gui)->pause->Get() == P;
         if (res->success) {
             res->message = "tracking and modelling is " + action;
         }

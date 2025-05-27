@@ -51,6 +51,9 @@ public:
 
     bool on_pause(SetBool::Request::ConstSharedPtr req, SetBool::Response::SharedPtr res);
 
+    template<bool P>
+    bool on_start_stop(Trigger::Request::ConstSharedPtr req, Trigger::Response::SharedPtr res);
+
     bool on_deactivate(SetInt::Request::ConstSharedPtr req, SetInt::Response::SharedPtr res);
 
     bool on_set_odom_init(SetString::Request::ConstSharedPtr req, SetString::Response::SharedPtr res);
@@ -84,6 +87,8 @@ private:
     rclcpp::Service<Trigger>::SharedPtr srv_reset;
     rclcpp::Service<SetBool>::SharedPtr srv_inhibit;
     rclcpp::Service<SetBool>::SharedPtr srv_pause;
+    rclcpp::Service<Trigger>::SharedPtr srv_start;
+    rclcpp::Service<Trigger>::SharedPtr srv_stop;
     rclcpp::Service<SetInt>::SharedPtr srv_deactivate_model;
     rclcpp::Service<SetString>::SharedPtr srv_set_odom_init;
     rclcpp::Service<SetBool>::SharedPtr srv_set_icp_refine;
