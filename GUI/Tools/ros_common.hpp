@@ -17,16 +17,18 @@
 #if defined(ROS1)
     #include <sensor_msgs/CameraInfo.h>
     using namespace sensor_msgs;
+    using CICPtr = CameraInfo::ConstPtr;
 #elif defined(ROS2)
     #include <sensor_msgs/msg/camera_info.hpp>
     using namespace sensor_msgs::msg;
+    using CICPtr = CameraInfo::ConstSharedPtr;
 #endif
 
 class ImageCropTarget {
 public:
   ImageCropTarget() = default;
 
-  ImageCropTarget(const CameraInfo::ConstPtr &camera_info, const cv::Size &target_dimensions);
+  ImageCropTarget(const CICPtr &camera_info, const cv::Size &target_dimensions);
 
   void map_target(FrameData &data);
 

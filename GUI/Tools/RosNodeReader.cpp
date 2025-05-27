@@ -60,7 +60,7 @@ RosNodeReader::RosNodeReader(const uint32_t synchroniser_queue_size,
 #if defined(ROS1)
   CameraInfo::ConstPtr ci = ros::topic::waitForMessage<CameraInfo>("camera_info", *n);
 #elif defined(ROS2)
-  CameraInfo::Ptr ci = std::make_shared<CameraInfo>();
+  CameraInfo::SharedPtr ci = std::make_shared<CameraInfo>();
   if(!rclcpp::wait_for_message(*ci, n, "camera_info")) {
     throw std::runtime_error("error while waiting for message");
   }
@@ -75,7 +75,7 @@ RosNodeReader::RosNodeReader(const uint32_t synchroniser_queue_size,
   ref_pose.matrix().array() = 0;
 }
 
-void RosNodeReader::on_rgbd(const Image::ConstPtr& msg_colour, const Image::ConstPtr& msg_depth) {
+void RosNodeReader::on_rgbd(const ImgCPtr &msg_colour, const ImgCPtr &msg_depth) {
   mutex.lock();
   const Header hdr_colour = msg_colour->header;
   data.frame_name = hdr_colour.frame_id;
