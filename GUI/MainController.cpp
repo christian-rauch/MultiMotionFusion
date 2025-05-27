@@ -291,6 +291,9 @@ MainController::MainController(int argc, char* argv[])
     if (logReader) {
       executor->add_node(dynamic_cast<RosNodeReader*>(logReader.get())->n);
     }
+    if (ui_control) {
+      executor->add_node(dynamic_cast<RosInterface*>(ui_control.get())->n);
+    }
 #endif
 #endif
   }
