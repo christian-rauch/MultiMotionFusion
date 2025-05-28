@@ -44,7 +44,7 @@ get_crop_roi(const cv::Size &source_dimensions, const cv::Size &target_dimension
   return {crop_roi, scale};
 }
 
-ImageCropTarget::ImageCropTarget(const CameraInfo::ConstPtr &camera_info,
+ImageCropTarget::ImageCropTarget(const CICPtr &camera_info,
                                  const cv::Size &target_dimensions)
   : target_dimensions(target_dimensions)
 {
