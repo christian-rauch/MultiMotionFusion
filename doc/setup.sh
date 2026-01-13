@@ -44,4 +44,4 @@ echo "source /opt/ros/${ROS_DIST}/setup.bash" >> ~/.bashrc
 
 echo "initialise rosdep"
 sudo rosdep init
-rosdep update
+rosdep update --include-eol-distros
