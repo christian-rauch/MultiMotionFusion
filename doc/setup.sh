@@ -28,7 +28,7 @@ else
     exit 1
 fi
 
-CUDA_VER="12-9"
+CUDA_VER="13-3"
 
 echo "install CUDA"
 wget https://developer.download.nvidia.com/compute/cuda/repos/${CUDA_REPO_VER}/x86_64/cuda-keyring_1.1-1_all.deb
