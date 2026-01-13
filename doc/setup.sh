@@ -28,12 +28,14 @@ else
     exit 1
 fi
 
+CUDA_VER="12-9"
+
 echo "install CUDA"
 wget https://developer.download.nvidia.com/compute/cuda/repos/${CUDA_REPO_VER}/x86_64/cuda-keyring_1.1-1_all.deb
 sudo dpkg -i cuda-keyring_1.1-1_all.deb
 rm cuda-keyring_1.1-1_all.deb
 sudo apt update
-sudo apt install --no-install-recommends -y cuda-toolkit-12-6
+sudo apt install --no-install-recommends -y cuda-libraries-dev-${CUDA_VER} cuda-compiler-${CUDA_VER} cuda-nvtx-${CUDA_VER}
 
 echo "install ROS ${ROS_VER}"
 sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
