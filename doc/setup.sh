@@ -38,8 +38,18 @@ sudo apt update
 sudo apt install --no-install-recommends -y cuda-libraries-dev-${CUDA_VER} cuda-compiler-${CUDA_VER} cuda-nvtx-${CUDA_VER}
 
 echo "install ROS ${ROS_VER}"
-sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros${ROS_VER}/ubuntu $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/ros${ROS_VER}.list > /dev/null
+if [ "${ROS_VER}" = "" ]; then
+    sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros${ROS_VER}/ubuntu $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/ros${ROS_VER}.list > /dev/null
+elif [ "${ROS_VER}" = "2" ]; then
+    sudo apt install --no-install-recommends -y curl
+    export ROS_APT_SOURCE_VERSION=$(curl -s https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest | grep -F "tag_name" | awk -F\" '{print $4}')
+    curl -L -o /tmp/ros2-apt-source.deb "https://github.com/ros-infrastructure/ros-apt-source/releases/download/${ROS_APT_SOURCE_VERSION}/ros2-apt-source_${ROS_APT_SOURCE_VERSION}.$(. /etc/os-release && echo ${UBUNTU_CODENAME:-${VERSION_CODENAME}})_all.deb"
+    sudo apt install --no-install-recommends -y /tmp/ros2-apt-source.deb
+else
+    echo "unsupported ROS version"
+    exit 1
+fi
 sudo apt update
 sudo -E apt install --no-install-recommends -y ros-${ROS_DIST}-ros-base ros-dev-tools
 echo "source /opt/ros/${ROS_DIST}/setup.bash" >> ~/.bashrc
