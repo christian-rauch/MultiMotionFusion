@@ -26,6 +26,11 @@ elif [ "$DISTRIB_RELEASE" == "24.04" ]; then
     CUDA_VER="13-3"
     ROS_VER="2"
     ROS_DIST="jazzy"
+elif [ "$DISTRIB_RELEASE" == "26.04" ]; then
+    CUDA_REPO_VER="ubuntu2604"
+    CUDA_VER="13-3"
+    ROS_VER="2"
+    ROS_DIST="lyrical"
 else
     echo "unsupported Ubuntu distribution ($DISTRIB_RELEASE)"
     exit 1

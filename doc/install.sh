@@ -10,6 +10,8 @@ elif [ "$DISTRIB_RELEASE" == "22.04" ]; then
     ROS_DIST="humble"
 elif [ "$DISTRIB_RELEASE" == "24.04" ]; then
     ROS_DIST="jazzy"
+elif [ "$DISTRIB_RELEASE" == "26.04" ]; then
+    ROS_DIST="lyrical"
 else
     echo "unsupported Ubuntu distribution ($DISTRIB_RELEASE)"
     exit 1
