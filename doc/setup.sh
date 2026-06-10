@@ -13,22 +13,23 @@ source /etc/lsb-release
 
 if [ "$DISTRIB_RELEASE" = "20.04" ]; then
     CUDA_REPO_VER="ubuntu2004"
+    CUDA_VER="12-9"
     ROS_VER=""
     ROS_DIST="noetic"
 elif [ "$DISTRIB_RELEASE" = "22.04" ]; then
     CUDA_REPO_VER="ubuntu2204"
+    CUDA_VER="13-3"
     ROS_VER="2"
     ROS_DIST="humble"
 elif [ "$DISTRIB_RELEASE" == "24.04" ]; then
     CUDA_REPO_VER="ubuntu2404"
+    CUDA_VER="13-3"
     ROS_VER="2"
     ROS_DIST="jazzy"
 else
     echo "unsupported Ubuntu distribution ($DISTRIB_RELEASE)"
     exit 1
 fi
-
-CUDA_VER="13-3"
 
 echo "install CUDA"
 wget https://developer.download.nvidia.com/compute/cuda/repos/${CUDA_REPO_VER}/x86_64/cuda-keyring_1.1-1_all.deb
