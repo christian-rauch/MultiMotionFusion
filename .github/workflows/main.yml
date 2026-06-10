@@ -1,41 +1,33 @@
 name: CI
 
 on:
+  workflow_dispatch:
   pull_request:
     paths-ignore:
       - '**/README.md'
-      - doc/**
+      - 'doc/**'
+      - '!doc/**/*.sh'
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
-    env:
-      DEBIAN_FRONTEND: noninteractive
-
-    container:
-      image: ${{ matrix.docker_image }}
-
     strategy:
       matrix:
-        include:
-          - docker_image: ubuntu:20.04
-          - docker_image: ubuntu:22.04
-          - docker_image: ubuntu:24.04
+        ubuntu_version:
+          - "20.04"
+          - "22.04"
+          - "24.04"
 
     steps:
 
-      - name: install sudo
-        run: |
-          apt update
-          apt install -y sudo
+      - uses: jlumbroso/free-disk-space@v1.3.1
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: setup
-        run: |
-          $GITHUB_WORKSPACE/doc/setup.sh
-
-      - name: install
-        run: |
-          $GITHUB_WORKSPACE/doc/install.sh
+      - name: run "setup" and "install"
+        run: >
+          docker run
+          --env DEBIAN_FRONTEND="noninteractive"
+          --volume /home/runner/work/:/home/runner/work/
+          ubuntu:${{ matrix.ubuntu_version }}
+          /bin/sh -c "$GITHUB_WORKSPACE/doc/setup.sh; $GITHUB_WORKSPACE/doc/install.sh;"

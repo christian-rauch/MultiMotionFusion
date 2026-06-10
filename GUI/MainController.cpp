@@ -280,7 +280,7 @@ MainController::MainController(int argc, char* argv[])
 #ifdef ROSSTATE
     // publish segmentation and point clouds
     // TODO: get camera frame from input images
-    state_publisher = std::make_unique<RosStatePublisher>("rgb_camera_link");
+    state_publisher = std::make_unique<RosStatePublisher>();
 #endif
 #ifdef ROSUI
     ui_control = std::make_unique<RosInterface>(&gui, &mmf);
@@ -290,6 +290,9 @@ MainController::MainController(int argc, char* argv[])
 #ifdef ROSREADER
     if (logReader) {
       executor->add_node(dynamic_cast<RosNodeReader*>(logReader.get())->n);
+    }
+    if (ui_control) {
+      executor->add_node(dynamic_cast<RosInterface*>(ui_control.get())->n);
     }
 #endif
 #endif
@@ -699,8 +702,9 @@ void MainController::run() {
 #ifdef ROSSTATE
     if (state_publisher) {
       const int64_t time = logReader->getFrameData().timestamp;
-      state_publisher->pub_segmentation(mmf->getTextures()[GPUTexture::MASK_COLOR]->downloadTexture(), time);
-      state_publisher->pub_models(mmf->getModels(), time);
+      const std::string frame_name = logReader->getFrameData().frame_name;
+      state_publisher->pub_segmentation(mmf->getTextures()[GPUTexture::MASK_COLOR]->downloadTexture(), time, frame_name);
+      state_publisher->pub_models(mmf->getModels(), time, frame_name);
     }
 #endif
 

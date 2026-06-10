@@ -142,6 +142,8 @@ For convenience, create a script that sets the subset of input parameters and ac
 # ROS 1
 cat <<EOF > mmf_ros.sh
 #!/usr/bin/env bash
+export __NV_PRIME_RENDER_OFFLOAD=1
+export __GLX_VENDOR_LIBRARY_NAME=nvidia
 MultiMotionFusion -run -dim 640x480 -ros \
   colour:=/rgb/image_raw \
   depth:=/depth_to_rgb/image_raw/filtered \
@@ -152,6 +154,8 @@ EOF
 # ROS 2
 cat <<EOF > mmf_ros.sh
 #!/usr/bin/env bash
+export __NV_PRIME_RENDER_OFFLOAD=1
+export __GLX_VENDOR_LIBRARY_NAME=nvidia
 MultiMotionFusion -run -dim 640x480 -ros \
   \$@ \
   --ros-args \

@@ -4,6 +4,10 @@ project(multimotionfusion-gui LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 17)
 
+add_compile_options(
+    $<$<COMPILE_LANGUAGE:CXX>:-Werror=deprecated-declarations>
+)
+
 message(STATUS "Evaluating GUI/CMAKE")
 
 if($ENV{ROS_VERSION})
@@ -40,13 +44,14 @@ endif()
 if(ROSNODE)
     if(HASROS1)
         find_package(roscpp REQUIRED)
-        find_package(eigen_conversions REQUIRED)
-        add_compile_options(-DROSUI -DROSSTATE)
     endif()
+    add_compile_options(-DROSUI)
+    add_compile_options(-DROSSTATE)
     add_compile_options(-DROSREADER)
     find_package(image_transport REQUIRED)
     find_package(tf2_ros REQUIRED)
     find_package(cob_srvs REQUIRED)
+    find_package(std_srvs REQUIRED)
 endif()
 
 if(ROSBAG OR ROSNODE)
@@ -138,15 +143,15 @@ if(ROSNODE)
         ${roscpp_INCLUDE_DIRS}
         ${image_transport_INCLUDE_DIRS}
         ${tf2_ros_INCLUDE_DIRS}
-        ${eigen_conversions_INCLUDE_DIRS}
         ${cob_srvs_INCLUDE_DIRS}
+        ${std_srvs_INCLUDE_DIRS}
     )
     target_link_libraries(MultiMotionFusionTools
         ${roscpp_LIBRARIES}
         ${image_transport_LIBRARIES}
         ${tf2_ros_LIBRARIES}
-        ${eigen_conversions_LIBRARIES}
         ${cob_srvs_LIBRARIES}
+        ${std_srvs_LIBRARIES}
     )
 if(HASROS2)
     target_link_libraries(MultiMotionFusionTools

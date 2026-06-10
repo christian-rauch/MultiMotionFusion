@@ -13,11 +13,13 @@
     #include <sensor_msgs/Image.h>
     using namespace sensor_msgs;
     #include <image_transport/subscriber_filter.h>
+    using ImgCPtr = Image::ConstPtr;
 #elif defined(ROS2)
     #include <rclcpp/rclcpp.hpp>
     #include <sensor_msgs/msg/image.h>
     using namespace sensor_msgs::msg;
     #include <image_transport/subscriber_filter.hpp>
+    using ImgCPtr = Image::ConstSharedPtr;
 #endif
 
 
@@ -27,7 +29,7 @@ public:
                 const bool flipColors = false, const cv::Size &target_dimensions = {},
                 const std::string frame_gt_camera = {});
 
-  void on_rgbd(const Image::ConstPtr& msg_colour, const Image::ConstPtr& msg_depth);
+  void on_rgbd(const ImgCPtr& msg_colour, const ImgCPtr& msg_depth);
 
   void getNext() override;
 
