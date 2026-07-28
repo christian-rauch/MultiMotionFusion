@@ -53,6 +53,18 @@ repositories:
     url: https://github.com/christian-rauch/torch_cpp.git
     version: master
 EOF
+
+# 'cob_common' with fixes
+if [ "${ROS_VERSION}" == "2" ]; then
+vcs import << EOF
+repositories:
+  src/cob_common:
+    type: git
+    url: https://github.com/ahcorde/cob_common.git
+    version: ahcorde/rolling/remove_actionlib_msgs
+EOF
+fi
+
 rosdep install --from-paths src --ignore-src -y
 
 echo "build workspace"
