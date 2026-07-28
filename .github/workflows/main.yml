@@ -30,6 +30,7 @@ jobs:
         run: >
           docker run
           --env DEBIAN_FRONTEND="noninteractive"
+          --env GITHUB_REF_NAME=$GITHUB_REF_NAME
           --volume /home/runner/work/:/home/runner/work/
           ubuntu:${{ matrix.ubuntu_version }}
           /bin/sh -c "$GITHUB_WORKSPACE/doc/setup.sh; $GITHUB_WORKSPACE/doc/install.sh;"
