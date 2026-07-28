@@ -5,7 +5,6 @@
 #include "ros_common.hpp"
 #include <Utils/GroundTruthOdometryInterface.hpp>
 #include <Eigen/Geometry>
-#include <tf2_ros/transform_listener.h>
 
 #if defined(ROS1)
     #include <ros/ros.h>
@@ -14,6 +13,7 @@
     #include <image_transport/subscriber_filter.h>
     using ImgCPtr = Image::ConstPtr;
     #include <message_filters/sync_policies/approximate_time.h>
+    #include <tf2_ros/transform_listener.h>
 #elif defined(ROS2)
     #include <rclcpp/rclcpp.hpp>
     #include <sensor_msgs/msg/image.h>
@@ -21,6 +21,7 @@
     #include <image_transport/subscriber_filter.hpp>
     using ImgCPtr = Image::ConstSharedPtr;
     #include <message_filters/sync_policies/approximate_time.hpp>
+    #include <tf2_ros/transform_listener.hpp>
 #endif
 
 
