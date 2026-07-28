@@ -4,9 +4,9 @@ project(multimotionfusion-gui LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 17)
 
-add_compile_options(
-    $<$<COMPILE_LANGUAGE:CXX>:-Werror=deprecated-declarations>
-)
+# add_compile_options(
+#     $<$<COMPILE_LANGUAGE:CXX>:-Werror=deprecated-declarations>
+# )
 
 message(STATUS "Evaluating GUI/CMAKE")
 
