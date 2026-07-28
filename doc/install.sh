@@ -21,7 +21,7 @@ source /opt/ros/${ROS_DIST}/setup.bash
 
 # determine repo from environment variables inside CI or use defaults
 MMF_REPO_URL="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-christian-rauch/MultiMotionFusion}"
-MMF_BRANCH="${GITHUB_HEAD_REF:-master}"
+MMF_BRANCH="${GITHUB_REF_NAME:-master}"
 
 echo "setup workspace"
 mkdir -p ~/mmf_ws/
