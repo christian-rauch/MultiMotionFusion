@@ -65,7 +65,7 @@ repositories:
 EOF
 fi
 
-rosdep install --from-paths src --ignore-src -y -t buildtool -t build_export -t buildtool_export -t exec -t build
+rosdep install --from-paths src --ignore-src -y
 
 echo "build workspace"
 cd ~/mmf_ws/
