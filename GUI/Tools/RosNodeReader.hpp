@@ -2,7 +2,6 @@
 
 #pragma once
 #include "LogReader.h"
-#include <message_filters/sync_policies/approximate_time.h>
 #include "ros_common.hpp"
 #include <Utils/GroundTruthOdometryInterface.hpp>
 #include <Eigen/Geometry>
@@ -14,12 +13,14 @@
     using namespace sensor_msgs;
     #include <image_transport/subscriber_filter.h>
     using ImgCPtr = Image::ConstPtr;
+    #include <message_filters/sync_policies/approximate_time.h>
 #elif defined(ROS2)
     #include <rclcpp/rclcpp.hpp>
     #include <sensor_msgs/msg/image.h>
     using namespace sensor_msgs::msg;
     #include <image_transport/subscriber_filter.hpp>
     using ImgCPtr = Image::ConstSharedPtr;
+    #include <message_filters/sync_policies/approximate_time.hpp>
 #endif
 
 
