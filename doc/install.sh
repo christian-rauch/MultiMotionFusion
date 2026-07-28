@@ -35,7 +35,7 @@ repositories:
   src/Pangolin:
     type: git
     url: https://github.com/stevenlovegrove/Pangolin.git
-    version: v0.9.5
+    version: v0.9.1
   src/densecrf:
     type: git
     url: https://github.com/christian-rauch/densecrf.git
